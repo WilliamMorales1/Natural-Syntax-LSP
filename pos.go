@@ -99,7 +99,7 @@ func posDescription(pos PartOfSpeech) string {
 	case POS_DT:
 		return "Determiner"
 	case POS_EX:
-		return "Existential there"
+		return "Existential"
 	case POS_FW:
 		return "Foreign word"
 	case POS_IN:

@@ -3,3 +3,4 @@
 *.exe
 *.dll
 vocab.txt
+vscode-extension/node_modules/

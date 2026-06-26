@@ -1,0 +1,42 @@
+{
+  "name": "natural-syntax-ls",
+  "displayName": "Natural Syntax Highlighting",
+  "description": "Parts-of-speech semantic highlighting via natural-syntax-ls",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Natural Syntax LS",
+      "properties": {
+        "naturalSyntaxLs.serverPath": {
+          "type": "string",
+          "default": "natural-syntax-ls",
+          "description": "Path to the natural-syntax-ls binary."
+        },
+        "naturalSyntaxLs.filetypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["plaintext", "markdown"],
+          "description": "VSCode language IDs to activate natural-syntax-ls for."
+        },
+        "naturalSyntaxLs.tokenMapUpdate": {
+          "type": "object",
+          "default": {},
+          "description": "POS tag overrides. Key = tag (e.g. CC), value = {type, modifiers} or null to disable."
+        },
+        "naturalSyntaxLs.scoreThreshold": {
+          "type": ["number", "null"],
+          "default": null,
+          "description": "Minimum confidence score (0–1) for a token to be highlighted. Defaults to 0.333 if unset."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

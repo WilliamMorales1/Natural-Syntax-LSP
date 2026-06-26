@@ -10,6 +10,7 @@ import (
 func main() {
 	modelPath := flag.String("model", "", "Path to mobilebert_pos.onnx")
 	vocabPath := flag.String("vocab", "", "Path to vocab.txt")
+	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
 	// Search default locations if not specified.

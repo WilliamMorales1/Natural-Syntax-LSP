@@ -83,13 +83,7 @@ func (s *lspServer) handle(w io.Writer, msg jsonrpcMsg) {
 	}
 
 	if msg.ID != nil {
-		resp := jsonrpcMsg{JSONRPC: "2.0", ID: msg.ID}
-		if rpcErr != nil {
-			resp.Error = rpcErr
-		} else {
-			resp.Result = result
-		}
-		writeMessage(w, resp)
+		writeResponse(w, msg.ID, result, rpcErr)
 	}
 }
 
@@ -338,6 +332,23 @@ func readMessage(r *bufio.Reader) (jsonrpcMsg, error) {
 		return jsonrpcMsg{}, err
 	}
 	return msg, nil
+}
+
+func writeResponse(w io.Writer, id *json.RawMessage, result any, rpcErr *rpcError) {
+	type response struct {
+		JSONRPC string           `json:"jsonrpc"`
+		ID      *json.RawMessage `json:"id"`
+		Result  any              `json:"result"`
+		Error   *rpcError        `json:"error,omitempty"`
+	}
+	resp := response{JSONRPC: "2.0", ID: id, Result: result}
+	if rpcErr != nil {
+		resp.Result = nil
+		resp.Error = rpcErr
+	}
+	body, _ := json.Marshal(resp)
+	fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body))
+	w.Write(body)
 }
 
 func writeMessage(w io.Writer, msg jsonrpcMsg) {
