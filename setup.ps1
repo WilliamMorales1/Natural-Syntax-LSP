@@ -30,8 +30,8 @@ Ok "Go: $(go version)"
 
 # ── 2. Python deps ─────────────────────────────────────────────────────────
 
-Step "Installing Python dependencies (transformers, torch, onnx, requests)"
-& $python -m pip install --quiet transformers torch onnx requests
+Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
+& $python -m pip install --quiet transformers torch onnx onnxscript requests
 if ($LASTEXITCODE -ne 0) { Fail "pip install failed." }
 Ok "Python deps ready."
 
