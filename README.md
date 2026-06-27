@@ -4,7 +4,7 @@ Parts-of-speech semantic highlighting for VS Code via a local Go LSP server runn
 
 ## Setup
 
-Requires Go, Python 3, and Git for Windows (for bash).
+Requires Go, Python 3, Node.js, and Git for Windows (for bash).
 
 ```bash
 bash scripts/setup.sh
@@ -17,6 +17,17 @@ bash scripts/setup.sh --model all
 ```
 
 Then install the VS Code extension:
+
+```bash
+cd vscode-extension
+npm install
+npx vsce package
+code --install-extension natural-syntax-ls-0.1.0.vsix
+```
+
+### Rebuilding the VSIX
+
+Only needed if you modify files under `vscode-extension/` (e.g. `extension.ts`, `package.json`, or adding new settings/commands). The pre-built `.vsix` in the repo is fine for normal use.
 
 ```bash
 cd vscode-extension
@@ -41,6 +52,7 @@ The extension defaults to `bert-base`. Highlighting appears ~10 seconds after VS
 | `mobilebert` | ~100 MB | ~10s startup | Good |
 
 Switch via `naturalSyntaxLs.model` in VS Code settings. Run `bash setup.sh --model all` to export both.
+These models only work for English, although if you speak a highly spoken language, you can likely find a different model for your own language.
 
 ## Settings
 
@@ -51,6 +63,7 @@ Switch via `naturalSyntaxLs.model` in VS Code settings. Run `bash setup.sh --mod
 | `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate for |
 | `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight |
 | `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → color mappings |
+| `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover tooltips |
 
 ## POS Tag Colors
 
