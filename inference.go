@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"sort"
+	"strconv"
+	"strings"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
@@ -22,10 +26,48 @@ type POSModel struct {
 	attMask    *ort.Tensor[int64]
 	tokTypeIDs *ort.Tensor[int64]
 	output     *ort.Tensor[float32]
+	labels     []PartOfSpeech // index → PartOfSpeech, loaded from _labels.json
+}
+
+// labelsPathFor derives the labels JSON path from the model path.
+// e.g. mobilebert_pos.onnx → mobilebert_labels.json
+func labelsPathFor(modelPath string) string {
+	base := modelPath
+	if i := strings.LastIndex(base, "_pos.onnx"); i >= 0 {
+		base = base[:i]
+	} else {
+		base = strings.TrimSuffix(base, ".onnx")
+	}
+	return base + "_labels.json"
+}
+
+func loadLabels(labelsPath string) ([]PartOfSpeech, error) {
+	data, err := os.ReadFile(labelsPath)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	n := len(raw)
+	labels := make([]PartOfSpeech, n)
+	for idxStr, tag := range raw {
+		idx, err := strconv.Atoi(idxStr)
+		if err != nil || idx < 0 || idx >= n {
+			return nil, fmt.Errorf("bad label index %q", idxStr)
+		}
+		pos, ok := posFromString[tag]
+		if !ok {
+			pos = POS_O // unknown tags treated as O
+		}
+		labels[idx] = pos
+	}
+	return labels, nil
 }
 
 func newPOSModel(modelPath, vocabPath string) (*POSModel, error) {
-	if err := ort.InitializeEnvironment(); err != nil {
+	if err := ort.InitializeEnvironment(ort.WithLogLevelError()); err != nil {
 		return nil, fmt.Errorf("init ort env: %w", err)
 	}
 
@@ -34,8 +76,18 @@ func newPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 
+	labels, err := loadLabels(labelsPathFor(modelPath))
+	if err != nil {
+		// Fall back to default mobilebert label order if no sidecar found.
+		labels = make([]PartOfSpeech, N_PART_OF_SPEECH)
+		for i := range labels {
+			labels[i] = PartOfSpeech(i)
+		}
+	}
+	numLabels := int64(len(labels))
+
 	shape2 := ort.NewShape(1, maxSeqLen)
-	shape3 := ort.NewShape(1, maxSeqLen, N_PART_OF_SPEECH)
+	shape3 := ort.NewShape(1, maxSeqLen, numLabels)
 
 	inputIDs, err := ort.NewTensor(shape2, make([]int64, maxSeqLen))
 	if err != nil {
@@ -77,6 +129,7 @@ func newPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		attMask:    attMask,
 		tokTypeIDs: tokTypeIDs,
 		output:     output,
+		labels:     labels,
 	}, nil
 }
 
@@ -89,18 +142,43 @@ func (m *POSModel) Close() {
 	ort.DestroyEnvironment()
 }
 
+// chunkSize is the max words per inference chunk. Conservative to stay under
+// maxSeqLen even with aggressive subword splitting (~2 subwords/word average).
+const chunkSize = 200
+
 func (m *POSModel) Predict(text string) ([]POSToken, error) {
-	ids, mask, tti, words, swWordIdx, swIsFirst := m.tokenizer.Tokenize(text)
+	words := basicTokenize(text)
+	if len(words) == 0 {
+		return nil, nil
+	}
+
+	var tokens []POSToken
+	for start := 0; start < len(words); start += chunkSize {
+		end := start + chunkSize
+		if end > len(words) {
+			end = len(words)
+		}
+		chunk, err := m.predictChunk(words[start:end])
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, chunk...)
+	}
+
+	sort.Slice(tokens, func(i, j int) bool {
+		return tokens[i].OffsetBegin < tokens[j].OffsetBegin
+	})
+	return tokens, nil
+}
+
+func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
+	ids, mask, tti, swWordIdx, swIsFirst := m.tokenizer.tokenizeWords(words)
 
 	seqLen := len(ids)
 	if seqLen > maxSeqLen {
 		seqLen = maxSeqLen
-		ids = ids[:seqLen]
-		mask = mask[:seqLen]
-		tti = tti[:seqLen]
 	}
 
-	// Zero then fill pre-allocated tensor buffers.
 	idBuf := m.inputIDs.GetData()
 	maskBuf := m.attMask.GetData()
 	ttiBuf := m.tokTypeIDs.GetData()
@@ -109,17 +187,17 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 		maskBuf[i] = 0
 		ttiBuf[i] = 0
 	}
-	copy(idBuf, ids)
-	copy(maskBuf, mask)
-	copy(ttiBuf, tti)
+	copy(idBuf, ids[:seqLen])
+	copy(maskBuf, mask[:seqLen])
+	copy(ttiBuf, tti[:seqLen])
 
 	if err := m.session.Run(); err != nil {
 		return nil, fmt.Errorf("ort run: %w", err)
 	}
 
 	logits := m.output.GetData()
+	numLabels := len(m.labels)
 
-	// Gather best label per original word from its first subword.
 	type best struct {
 		label int
 		score float64
@@ -132,11 +210,11 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 		if wi < 0 || !swIsFirst[si] {
 			continue
 		}
-		base := si * N_PART_OF_SPEECH
-		if base+N_PART_OF_SPEECH > len(logits) {
+		base := si * numLabels
+		if base+numLabels > len(logits) {
 			break
 		}
-		scores := softmax(logits[base : base+N_PART_OF_SPEECH])
+		scores := softmax(logits[base : base+numLabels])
 		label := argmax(scores)
 		wordBest[wi] = best{label: label, score: float64(scores[label]), valid: true}
 	}
@@ -147,18 +225,18 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 		if !b.valid {
 			continue
 		}
+		pos := POS_O
+		if b.label >= 0 && b.label < numLabels {
+			pos = m.labels[b.label]
+		}
 		tokens = append(tokens, POSToken{
 			Word:        w.text,
 			Score:       b.score,
-			Tag:         PartOfSpeech(b.label),
+			Tag:         pos,
 			OffsetBegin: w.begin,
 			OffsetEnd:   w.end,
 		})
 	}
-
-	sort.Slice(tokens, func(i, j int) bool {
-		return tokens[i].OffsetBegin < tokens[j].OffsetBegin
-	})
 	return tokens, nil
 }
 

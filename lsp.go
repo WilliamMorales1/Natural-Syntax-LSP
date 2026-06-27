@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // LSP JSON-RPC over stdio.
@@ -26,18 +28,30 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func runLSP(model *POSModel) error {
-	registry := newDocumentRegistry(model)
-	srv := &lspServer{registry: registry}
+func runLSP(modelPath, vocabPath string) error {
+	srv := &lspServer{modelPath: modelPath, vocabPath: vocabPath, ready: make(chan struct{})}
 	return srv.serve(os.Stdin, os.Stdout)
 }
 
 type lspServer struct {
-	registry *DocumentRegistry
-	tokenMap TokenMap
+	modelPath  string
+	vocabPath  string
+	registry   atomic.Pointer[DocumentRegistry]
+	ready      chan struct{} // closed when registry is set or load failed
+	loadFailed atomic.Bool
+
+	pendingMu sync.Mutex
+	pending   []registryMsg // didOpen/didChange before model ready
+
+	writerMu  sync.Mutex
+	writer    io.Writer // set in serve(); used to push server→client requests
+	nextReqID atomic.Int64
 }
 
 func (s *lspServer) serve(r io.Reader, w io.Writer) error {
+	s.writerMu.Lock()
+	s.writer = w
+	s.writerMu.Unlock()
 	br := bufio.NewReader(r)
 	for {
 		msg, err := readMessage(br)
@@ -47,8 +61,11 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 			}
 			return err
 		}
-		if msg.Method != "" {
+		switch {
+		case msg.Method != "":
 			s.handle(w, msg)
+		case msg.Method == "" && msg.ID != nil:
+			// response to one of our server→client requests; ignore
 		}
 	}
 }
@@ -122,32 +139,59 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 	var params initializeParams
 	_ = json.Unmarshal(rawParams, &params)
 
-	if params.InitializationOptions != nil {
-		var opts initOptions
-		if err := json.Unmarshal(*params.InitializationOptions, &opts); err == nil {
-			if opts.TokenMapUpdate != nil {
-				update := make(map[PartOfSpeech]*TokenTypeNModifiers)
-				for tag, val := range opts.TokenMapUpdate {
-					pos, ok := posFromString[tag]
-					if !ok {
-						continue
-					}
-					if string(val) == "null" {
-						update[pos] = nil
-					} else {
-						var tnm TokenTypeNModifiers
-						if err := json.Unmarshal(val, &tnm); err == nil {
-							update[pos] = &tnm
+	// Load model in background so initialize responds immediately.
+	go func() {
+		model, err := newPOSModel(s.modelPath, s.vocabPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
+			s.loadFailed.Store(true)
+			close(s.ready)
+			return
+		}
+		reg := newDocumentRegistry(model)
+		s.registry.Store(reg)
+
+		// Replay pending didOpen/didChange BEFORE signaling ready, so they
+		// are ahead of any semantic-token requests in the registry queue.
+		s.pendingMu.Lock()
+		queued := s.pending
+		s.pending = nil
+		s.pendingMu.Unlock()
+		for _, m := range queued {
+			reg.send(m)
+		}
+		close(s.ready)
+		// Tell VS Code to re-request semantic tokens for all open documents.
+		s.sendRequest("workspace/semanticTokens/refresh")
+
+		// Apply initializationOptions if provided.
+		if params.InitializationOptions != nil {
+			var opts initOptions
+			if err := json.Unmarshal(*params.InitializationOptions, &opts); err == nil {
+				if opts.TokenMapUpdate != nil {
+					update := make(map[PartOfSpeech]*TokenTypeNModifiers)
+					for tag, val := range opts.TokenMapUpdate {
+						pos, ok := posFromString[tag]
+						if !ok {
+							continue
+						}
+						if string(val) == "null" {
+							update[pos] = nil
+						} else {
+							var tnm TokenTypeNModifiers
+							if err := json.Unmarshal(val, &tnm); err == nil {
+								update[pos] = &tnm
+							}
 						}
 					}
+					reg.send(registryMsg{kind: msgTokenMapUpdate, mapUpdate: update})
 				}
-				s.registry.send(registryMsg{kind: msgTokenMapUpdate, mapUpdate: update})
-			}
-			if opts.ScoreThreshold != nil {
-				s.registry.send(registryMsg{kind: msgScoreThreshold, threshold: *opts.ScoreThreshold})
+				if opts.ScoreThreshold != nil {
+					reg.send(registryMsg{kind: msgScoreThreshold, threshold: *opts.ScoreThreshold})
+				}
 			}
 		}
-	}
+	}()
 
 	types := make([]string, N_TOKEN_TYPES)
 	copy(types, tokenTypeNames[:])
@@ -193,12 +237,46 @@ type didCloseParams struct {
 	} `json:"textDocument"`
 }
 
+// sendRequest sends a server→client request (has an id; client must reply).
+// Replies from the client arrive as messages with no Method; we ignore them
+// in the default handler, which is fine for fire-and-forget requests.
+func (s *lspServer) sendRequest(method string) {
+	id := s.nextReqID.Add(1)
+	raw, _ := json.Marshal(id)
+	rm := json.RawMessage(raw)
+	s.writerMu.Lock()
+	w := s.writer
+	s.writerMu.Unlock()
+	if w == nil {
+		return
+	}
+	writeMessage(w, jsonrpcMsg{JSONRPC: "2.0", ID: &rm, Method: method})
+}
+
+func (s *lspServer) queueOrSend(m registryMsg) {
+	reg := s.registry.Load()
+	if reg != nil {
+		reg.send(m)
+		return
+	}
+	s.pendingMu.Lock()
+	// Check again under lock in case model finished between the Load and Lock.
+	reg = s.registry.Load()
+	if reg != nil {
+		s.pendingMu.Unlock()
+		reg.send(m)
+		return
+	}
+	s.pending = append(s.pending, m)
+	s.pendingMu.Unlock()
+}
+
 func (s *lspServer) handleDidOpen(raw json.RawMessage) {
 	var p didOpenParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
-	s.registry.send(registryMsg{
+	s.queueOrSend(registryMsg{
 		kind: msgItem,
 		item: &textItem{uri: p.TextDocument.URI, text: p.TextDocument.Text, version: p.TextDocument.Version},
 	})
@@ -216,18 +294,19 @@ func (s *lspServer) handleDidChange(raw json.RawMessage) {
 	if err := json.Unmarshal(p.ContentChanges[len(p.ContentChanges)-1], &change); err != nil {
 		return
 	}
-	s.registry.send(registryMsg{
+	s.queueOrSend(registryMsg{
 		kind: msgItem,
 		item: &textItem{uri: p.TextDocument.URI, text: change.Text, version: p.TextDocument.Version},
 	})
 }
 
 func (s *lspServer) handleDidClose(raw json.RawMessage) {
+	reg := s.registry.Load()
 	var p didCloseParams
-	if err := json.Unmarshal(raw, &p); err != nil {
+	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
 		return
 	}
-	s.registry.send(registryMsg{kind: msgDiscard, uri: p.TextDocument.URI})
+	reg.send(registryMsg{kind: msgDiscard, uri: p.TextDocument.URI})
 }
 
 // --- hover ---
@@ -252,12 +331,13 @@ type markupContent struct {
 }
 
 func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
+	reg := s.registry.Load()
 	var p hoverParams
-	if err := json.Unmarshal(raw, &p); err != nil {
+	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
 		return nil, nil
 	}
 	reply := make(chan *POSToken, 1)
-	s.registry.send(registryMsg{
+	reg.send(registryMsg{
 		kind:           msgHoverQuery,
 		uri:            p.TextDocument.URI,
 		hoverLine:      p.Position.Line,
@@ -285,19 +365,23 @@ type semanticTokensResult struct {
 }
 
 func (s *lspServer) handleSemanticTokensFull(raw json.RawMessage) (any, *rpcError) {
+	reg := s.registry.Load()
 	var p semanticTokensParams
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, nil
+		return semanticTokensResult{Data: []uint32{}}, nil
+	}
+	if reg == nil {
+		return semanticTokensResult{Data: []uint32{}}, nil
 	}
 	reply := make(chan []uint32, 1)
-	s.registry.send(registryMsg{
+	reg.send(registryMsg{
 		kind:     msgSemanticTokensCall,
 		uri:      p.TextDocument.URI,
 		semReply: reply,
 	})
 	data, ok := <-reply
-	if !ok {
-		return nil, nil
+	if !ok || data == nil {
+		return semanticTokensResult{Data: []uint32{}}, nil
 	}
 	return semanticTokensResult{Data: data}, nil
 }

@@ -2,5 +2,6 @@
 *.onnx.data
 *.exe
 *.dll
-vocab.txt
+*vocab.txt
+*labels.json
 vscode-extension/node_modules/

@@ -23,6 +23,12 @@
           "default": ["plaintext", "markdown"],
           "description": "VSCode language IDs to activate natural-syntax-ls for."
         },
+        "naturalSyntaxLs.model": {
+          "type": "string",
+          "enum": ["mobilebert", "bert-base"],
+          "default": "bert-base",
+          "description": "Which POS model to use. bert-base is more accurate but slower. Run setup.ps1 --Model bert-base to export it first."
+        },
         "naturalSyntaxLs.tokenMapUpdate": {
           "type": "object",
           "default": {},

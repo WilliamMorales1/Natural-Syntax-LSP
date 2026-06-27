@@ -16,9 +16,16 @@ async function activate(context) {
     const filetypes = config.get('filetypes', ['plaintext', 'markdown']);
     const tokenMapUpdate = config.get('tokenMapUpdate', {});
     const scoreThreshold = config.get('scoreThreshold', null);
+    const modelChoice = config.get('model', 'mobilebert');
+
+    const serverDir = path.dirname(serverPath);
+    const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
+    const modelFile = path.join(serverDir, `${slug}_pos.onnx`);
+    const vocabFile = path.join(serverDir, `${slug}_vocab.txt`);
 
     const serverOptions = {
         command: serverPath,
+        args: ['--model', modelFile, '--vocab', vocabFile],
         transport: TransportKind.stdio,
     };
 

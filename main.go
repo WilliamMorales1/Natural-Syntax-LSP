@@ -21,14 +21,19 @@ func main() {
 		*modelPath = findFile([]string{
 			os.Getenv("NATURAL_SYNTAX_LS_MODEL"),
 			filepath.Join(exeDir, "mobilebert_pos.onnx"),
+			filepath.Join(exeDir, "bert_base_pos.onnx"),
 			filepath.Join(userConfigDir(), "natural-syntax-ls", "mobilebert_pos.onnx"),
+			filepath.Join(userConfigDir(), "natural-syntax-ls", "bert_base_pos.onnx"),
 		})
 	}
 	if *vocabPath == "" {
 		*vocabPath = findFile([]string{
 			os.Getenv("NATURAL_SYNTAX_LS_VOCAB"),
-			filepath.Join(exeDir, "vocab.txt"),
-			filepath.Join(userConfigDir(), "natural-syntax-ls", "vocab.txt"),
+			filepath.Join(exeDir, "mobilebert_vocab.txt"),
+			filepath.Join(exeDir, "vocab.txt"), // legacy name
+			filepath.Join(exeDir, "bert_base_vocab.txt"),
+			filepath.Join(userConfigDir(), "natural-syntax-ls", "mobilebert_vocab.txt"),
+			filepath.Join(userConfigDir(), "natural-syntax-ls", "bert_base_vocab.txt"),
 		})
 	}
 
@@ -50,14 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	model, err := newPOSModel(*modelPath, *vocabPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
-		os.Exit(1)
-	}
-	defer model.Close()
-
-	if err := runLSP(model); err != nil {
+	if err := runLSP(*modelPath, *vocabPath); err != nil {
 		fmt.Fprintf(os.Stderr, "natural-syntax-ls: lsp: %v\n", err)
 		os.Exit(1)
 	}

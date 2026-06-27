@@ -87,6 +87,38 @@ func (t *BERTTokenizer) Tokenize(text string) (inputIDs, attMask, tokTypeIDs []i
 	return ids, mask, ttids, words, swWordIdx, swIsFirst
 }
 
+// tokenizeWords encodes a pre-split word slice (no basicTokenize step).
+// swWordIdx indices are local to the provided words slice.
+func (t *BERTTokenizer) tokenizeWords(words []wordSpan) (inputIDs, attMask, tokTypeIDs []int64, swWordIdx []int, swIsFirst []bool) {
+	ids := []int64{int64(t.clsID)}
+	swWordIdx = []int{-1}
+	swIsFirst = []bool{false}
+
+	for wi, w := range words {
+		pieces := t.wordPiece(w.text)
+		for pi, piece := range pieces {
+			id, ok := t.vocab[piece]
+			if !ok {
+				id = t.unkID
+			}
+			ids = append(ids, int64(id))
+			swWordIdx = append(swWordIdx, wi)
+			swIsFirst = append(swIsFirst, pi == 0)
+		}
+	}
+	ids = append(ids, int64(t.sepID))
+	swWordIdx = append(swWordIdx, -1)
+	swIsFirst = append(swIsFirst, false)
+
+	n := len(ids)
+	mask := make([]int64, n)
+	ttids := make([]int64, n)
+	for i := range ids {
+		mask[i] = 1
+	}
+	return ids, mask, ttids, swWordIdx, swIsFirst
+}
+
 func (t *BERTTokenizer) wordPiece(word string) []string {
 	lower := strings.ToLower(word)
 	if _, ok := t.vocab[lower]; ok {
