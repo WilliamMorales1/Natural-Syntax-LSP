@@ -30,6 +30,7 @@ type rpcError struct {
 
 func runLSP(modelPath, vocabPath string) error {
 	srv := &lspServer{modelPath: modelPath, vocabPath: vocabPath, ready: make(chan struct{})}
+	srv.wiktionary.Store(true) // on by default
 	return srv.serve(os.Stdin, os.Stdout)
 }
 
@@ -39,6 +40,8 @@ type lspServer struct {
 	registry   atomic.Pointer[DocumentRegistry]
 	ready      chan struct{} // closed when registry is set or load failed
 	loadFailed atomic.Bool
+
+	wiktionary atomic.Bool // true = show Wiktionary defs (default)
 
 	pendingMu sync.Mutex
 	pending   []registryMsg // didOpen/didChange before model ready
@@ -111,8 +114,9 @@ type initializeParams struct {
 }
 
 type initOptions struct {
-	TokenMapUpdate map[string]json.RawMessage `json:"token_map_update"`
-	ScoreThreshold *float64                   `json:"score_threshold"`
+	TokenMapUpdate        map[string]json.RawMessage `json:"token_map_update"`
+	ScoreThreshold        *float64                   `json:"score_threshold"`
+	WiktionaryDefinitions *bool                      `json:"wiktionary_definitions"`
 }
 
 type initializeResult struct {
@@ -188,6 +192,9 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 				}
 				if opts.ScoreThreshold != nil {
 					reg.send(registryMsg{kind: msgScoreThreshold, threshold: *opts.ScoreThreshold})
+				}
+				if opts.WiktionaryDefinitions != nil {
+					s.wiktionary.Store(*opts.WiktionaryDefinitions)
 				}
 			}
 		}
@@ -348,7 +355,12 @@ func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 	if tok == nil {
 		return nil, nil
 	}
-	text := fmt.Sprintf("%s (%s) · confidence: %.2f", tok.Word, posDescription(tok.Tag), tok.Score)
+	text := fmt.Sprintf("**%s** (%s) · confidence: %.2f", tok.Word, posDescription(tok.Tag), tok.Score)
+	if s.wiktionary.Load() {
+		if def, url, ok := fetchWiktionaryDef(tok.Word, tok.Tag); ok {
+			text += fmt.Sprintf("\n\n%s\n\n[Wiktionary](%s)", def, url)
+		}
+	}
 	return hoverResult{Contents: markupContent{Kind: "markdown", Value: text}}, nil
 }
 

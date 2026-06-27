@@ -38,6 +38,11 @@
           "type": ["number", "null"],
           "default": null,
           "description": "Minimum confidence score (0–1) for a token to be highlighted. Defaults to 0.333 if unset."
+        },
+        "naturalSyntaxLs.wiktionaryDefinitions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Wiktionary definitions in hover tooltips."
         }
       }
     }

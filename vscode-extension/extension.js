@@ -15,6 +15,7 @@ async function activate(context) {
     const filetypes = config.get('filetypes', ['plaintext', 'markdown']);
     const tokenMapUpdate = config.get('tokenMapUpdate', {});
     const scoreThreshold = config.get('scoreThreshold', null);
+    const wiktionaryDefinitions = config.get('wiktionaryDefinitions', true);
     const modelChoice = config.get('model', 'bert-base');
 
     // Resolve data directory: matches Go's os.UserConfigDir() + "natural-syntax-ls"
@@ -41,6 +42,7 @@ async function activate(context) {
         const opts = {};
         if (Object.keys(tokenMapUpdate).length > 0) opts.token_map_update = tokenMapUpdate;
         if (scoreThreshold !== null) opts.score_threshold = scoreThreshold;
+        if (!wiktionaryDefinitions) opts.wiktionary_definitions = false;
         return Object.keys(opts).length > 0 ? opts : undefined;
     })();
 
