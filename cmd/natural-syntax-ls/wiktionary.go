@@ -15,6 +15,7 @@ var styleBlockRe = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
 
 type wiktDef struct {
 	PartOfSpeech string `json:"partOfSpeech"`
+	Language     string `json:"language"`
 	Definitions  []struct {
 		Definition string `json:"definition"`
 	} `json:"definitions"`
@@ -47,6 +48,10 @@ func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
 	}
 
 	target := posToWiktCategory(pos)
+	numeralGlyph := pos == POS_CD && isNumeralGlyph(lower)
+	if numeralGlyph {
+		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
+	}
 	pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", lower)
 
 	// firstNonEmpty returns the first non-empty stripped definition from an entry.
@@ -59,22 +64,41 @@ func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
 		return ""
 	}
 
-	// Build candidate list: POS-matched first, then others, Symbol/Letter last.
 	lowPriPOS := map[string]bool{"symbol": true, "letter": true, "prefix": true, "suffix": true, "affix": true}
-	var matched, normal, lowPri []*wiktDef
+
+	type bucket struct{ trans, main []*wiktDef }
+	var matched, normal, lowPri bucket
+	addTo := func(b *bucket, e *wiktDef) {
+		if strings.EqualFold(e.Language, "Translingual") {
+			b.trans = append(b.trans, e)
+		} else {
+			b.main = append(b.main, e)
+		}
+	}
 	for i := range entries {
 		e := &entries[i]
 		lpos := strings.ToLower(e.PartOfSpeech)
 		switch {
 		case strings.EqualFold(e.PartOfSpeech, target):
-			matched = append(matched, e)
+			addTo(&matched, e)
 		case lowPriPOS[lpos]:
-			lowPri = append(lowPri, e)
+			addTo(&lowPri, e)
 		default:
-			normal = append(normal, e)
+			addTo(&normal, e)
 		}
 	}
-	for _, e := range append(append(matched, normal...), lowPri...) {
+
+	// For numeral glyphs: Translingual before English in every tier.
+	// For words: English before Translingual.
+	ordered := func(b bucket) []*wiktDef {
+		if numeralGlyph {
+			return append(b.trans, b.main...)
+		}
+		return append(b.main, b.trans...)
+	}
+
+	candidates := append(append(ordered(matched), ordered(normal)...), ordered(lowPri)...)
+	for _, e := range candidates {
 		if def := firstNonEmpty(e); def != "" {
 			return def, pageURL, true
 		}
@@ -100,6 +124,18 @@ func stripHTML(s string) string {
 		return e
 	})
 	return strings.TrimSpace(s)
+}
+
+func isNumeralGlyph(word string) bool {
+	if len(word) == 0 {
+		return false
+	}
+	for _, ch := range word {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func posToWiktCategory(pos PartOfSpeech) string {

@@ -337,6 +337,14 @@ type markupContent struct {
 	Value string `json:"value"`
 }
 
+func formatHoverContent(tok *POSToken, wiktDef, wiktURL string) string {
+	header := fmt.Sprintf("```yaml\n%s: %s  # %.2f\n```", tok.Word, posDescription(tok.Tag), tok.Score)
+	if wiktDef == "" {
+		return header
+	}
+	return fmt.Sprintf("%s\n\n%s\n\n[Wiktionary](%s)", header, wiktDef, wiktURL)
+}
+
 func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 	reg := s.registry.Load()
 	var p hoverParams
@@ -355,12 +363,13 @@ func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 	if tok == nil {
 		return nil, nil
 	}
-	text := fmt.Sprintf("**%s** (%s) · confidence: %.2f", tok.Word, posDescription(tok.Tag), tok.Score)
+	var wiktDef, wiktURL string
 	if s.wiktionary.Load() {
 		if def, url, ok := fetchWiktionaryDef(tok.Word, tok.Tag); ok {
-			text += fmt.Sprintf("\n\n%s\n\n[Wiktionary](%s)", def, url)
+			wiktDef, wiktURL = def, url
 		}
 	}
+	text := formatHoverContent(tok, wiktDef, wiktURL)
 	return hoverResult{Contents: markupContent{Kind: "markdown", Value: text}}, nil
 }
 
