@@ -7,13 +7,13 @@ Parts-of-speech semantic highlighting for VS Code via a local Go LSP server runn
 Requires Go, Python 3, and Git for Windows (for bash).
 
 ```bash
-bash setup.sh
+bash scripts/setup.sh
 ```
 
-This exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds the `natural-syntax-ls.exe` binary. To also export MobileBERT (~100 MB, faster):
+This exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds the `natural-syntax-ls.exe` binary. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS). To also export MobileBERT (~100 MB, faster):
 
 ```bash
-bash setup.sh --model all
+bash scripts/setup.sh --model all
 ```
 
 Then install the VS Code extension:

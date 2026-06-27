@@ -8,38 +8,39 @@ import (
 )
 
 func main() {
-	modelPath := flag.String("model", "", "Path to mobilebert_pos.onnx")
-	vocabPath := flag.String("vocab", "", "Path to vocab.txt")
+	modelPath := flag.String("model", "", "Path to a _pos.onnx model file")
+	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt file")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
-	// Search default locations if not specified.
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
+	dataDir := filepath.Join(userConfigDir(), "natural-syntax-ls")
 
 	if *modelPath == "" {
 		*modelPath = findFile([]string{
 			os.Getenv("NATURAL_SYNTAX_LS_MODEL"),
-			filepath.Join(exeDir, "mobilebert_pos.onnx"),
+			filepath.Join(dataDir, "bert_base_pos.onnx"),
+			filepath.Join(dataDir, "mobilebert_pos.onnx"),
 			filepath.Join(exeDir, "bert_base_pos.onnx"),
-			filepath.Join(userConfigDir(), "natural-syntax-ls", "mobilebert_pos.onnx"),
-			filepath.Join(userConfigDir(), "natural-syntax-ls", "bert_base_pos.onnx"),
+			filepath.Join(exeDir, "mobilebert_pos.onnx"),
 		})
 	}
 	if *vocabPath == "" {
 		*vocabPath = findFile([]string{
 			os.Getenv("NATURAL_SYNTAX_LS_VOCAB"),
-			filepath.Join(exeDir, "mobilebert_vocab.txt"),
-			filepath.Join(exeDir, "vocab.txt"), // legacy name
+			filepath.Join(dataDir, "bert_base_vocab.txt"),
+			filepath.Join(dataDir, "mobilebert_vocab.txt"),
 			filepath.Join(exeDir, "bert_base_vocab.txt"),
-			filepath.Join(userConfigDir(), "natural-syntax-ls", "mobilebert_vocab.txt"),
-			filepath.Join(userConfigDir(), "natural-syntax-ls", "bert_base_vocab.txt"),
+			filepath.Join(exeDir, "mobilebert_vocab.txt"),
 		})
 	}
 
-	// onnxruntime_go needs the shared library path on Windows.
 	ortLib := findFile([]string{
 		os.Getenv("ORT_LIB_PATH"),
+		filepath.Join(dataDir, "onnxruntime.dll"),
+		filepath.Join(dataDir, "libonnxruntime.so"),
+		filepath.Join(dataDir, "libonnxruntime.dylib"),
 		filepath.Join(exeDir, "onnxruntime.dll"),
 		filepath.Join(exeDir, "libonnxruntime.so"),
 		filepath.Join(exeDir, "libonnxruntime.dylib"),
@@ -49,8 +50,8 @@ func main() {
 	}
 
 	if *modelPath == "" || *vocabPath == "" {
-		fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find mobilebert_pos.onnx or vocab.txt")
-		fmt.Fprintln(os.Stderr, "Run export_model.py to generate them, then place next to this binary.")
+		fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find model or vocab file")
+		fmt.Fprintln(os.Stderr, "Run scripts/setup.sh to export them to the data directory.")
 		fmt.Fprintln(os.Stderr, "Or set NATURAL_SYNTAX_LS_MODEL and NATURAL_SYNTAX_LS_VOCAB env vars.")
 		os.Exit(1)
 	}

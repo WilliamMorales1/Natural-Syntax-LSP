@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./setup.sh [--model mobilebert|bert-base|all]
-#   --model  Which POS model to export (default: mobilebert)
+# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|all]
+#   --model  Which POS model to export (default: bert-base)
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-MODEL="mobilebert"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MODEL="bert-base"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -37,51 +37,64 @@ ok "Python: $($PYTHON --version 2>&1)"
 command -v go &>/dev/null || fail "Go not found. Install Go and add to PATH."
 ok "Go: $(go version)"
 
-# ── 2. Python deps ─────────────────────────────────────────────────────────
+# ── 2. Determine data directory ────────────────────────────────────────────
+
+DATA_DIR="$("$PYTHON" -c "
+import os, sys
+if sys.platform == 'win32' or os.name == 'nt':
+    base = os.environ.get('APPDATA', os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming'))
+else:
+    base = os.environ.get('XDG_CONFIG_HOME', os.path.join(os.path.expanduser('~'), '.config'))
+print(os.path.join(base, 'natural-syntax-ls'))
+")"
+mkdir -p "$DATA_DIR"
+ok "Data directory: $DATA_DIR"
+
+# ── 3. Python deps ─────────────────────────────────────────────────────────
 
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
 "$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests
 ok "Python deps ready."
 
-# ── 3. Export ONNX model(s) + vocab ────────────────────────────────────────
+# ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
 export_model() {
     local model_name="$1" label="$2" onnx_file="$3" vocab_file="$4" labels_file="$5"
-    if [[ -f "$ROOT/$onnx_file" && -f "$ROOT/$vocab_file" && -f "$ROOT/$labels_file" ]]; then
+    if [[ -f "$DATA_DIR/$onnx_file" && -f "$DATA_DIR/$vocab_file" && -f "$DATA_DIR/$labels_file" ]]; then
         ok "$onnx_file, $vocab_file, and $labels_file already exist, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/export_model.py" "$ROOT" --model "$model_name"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
         ok "$label exported."
     fi
 }
 
 case "$MODEL" in
-    mobilebert) export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json ;;
     bert-base)  export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json  ;;
+    mobilebert) export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json ;;
     all)
-        export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json
         export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json
+        export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json
         ;;
-    *) fail "Unknown model '$MODEL'. Use mobilebert, bert-base, or all." ;;
+    *) fail "Unknown model '$MODEL'. Use bert-base, mobilebert, or all." ;;
 esac
 
-# ── 4. Copy onnxruntime DLL/SO from Go module cache ───────────────────────
+# ── 5. Copy onnxruntime DLL/SO to data directory ──────────────────────────
 
 GOPATH="$(go env GOPATH)"
 
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    ORT_DEST="$ROOT/onnxruntime.dll"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
+    ORT_DEST="$DATA_DIR/onnxruntime.dll"
     ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime.dll"
     ORT_NAME="onnxruntime.dll"
 else
-    ORT_DEST="$ROOT/libonnxruntime.so"
+    ORT_DEST="$DATA_DIR/libonnxruntime.so"
     ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/libonnxruntime.so"
     ORT_NAME="libonnxruntime.so"
 fi
 
 if [[ -f "$ORT_DEST" ]]; then
-    ok "$ORT_NAME already present."
+    ok "$ORT_NAME already present in data directory."
 else
     step "Locating $ORT_NAME in Go module cache"
     ORT_SRC="$(ls $ORT_GLOB 2>/dev/null | tail -1 || true)"
@@ -92,20 +105,23 @@ else
     fi
     [[ -n "$ORT_SRC" ]] || fail "Cannot find $ORT_NAME in Go module cache. Run 'go mod download' manually."
     cp "$ORT_SRC" "$ORT_DEST"
-    ok "Copied $ORT_SRC"
+    ok "Copied $ORT_NAME to data directory."
 fi
 
-# ── 5. Build Go binary ─────────────────────────────────────────────────────
+# ── 6. Build Go binary ─────────────────────────────────────────────────────
 
 step "Building natural-syntax-ls"
-rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~"
-(cd "$ROOT" && go build -o natural-syntax-ls.exe .)
+rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~" "$ROOT/natural-syntax-ls"
+(cd "$ROOT" && go build -o natural-syntax-ls.exe ./cmd/natural-syntax-ls/)
 ok "Built: $ROOT/natural-syntax-ls.exe"
 
 # ── Done ───────────────────────────────────────────────────────────────────
 
 echo
-echo "Done! Set naturalSyntaxLs.serverPath in VS Code to:"
+echo "Done!"
+echo
+echo "Set naturalSyntaxLs.serverPath in VS Code to:"
 echo "  $ROOT/natural-syntax-ls.exe"
 echo
-echo "Set naturalSyntaxLs.model to 'mobilebert' or 'bert-base' in VS Code settings."
+echo "Model files are in: $DATA_DIR"
+echo "The extension finds them automatically."

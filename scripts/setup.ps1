@@ -1,13 +1,13 @@
 #Requires -Version 5
 <#
 .SYNOPSIS
-    Wrapper — delegates to setup.sh via Git Bash.
+    Wrapper — delegates to scripts/setup.sh via Git Bash.
 .PARAMETER Model
-    Which POS model to export: mobilebert (default), bert-base, or all.
+    Which POS model to export: bert-base (default), mobilebert, or all.
 #>
 param(
-    [ValidateSet("mobilebert","bert-base","all")]
-    [string]$Model = "mobilebert"
+    [ValidateSet("bert-base","mobilebert","all")]
+    [string]$Model = "bert-base"
 )
 
 $sh = Join-Path $PSScriptRoot "setup.sh"

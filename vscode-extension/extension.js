@@ -11,17 +11,20 @@ let client;
 async function activate(context) {
     const config = vscode.workspace.getConfiguration('naturalSyntaxLs');
     const binaryName = process.platform === 'win32' ? 'natural-syntax-ls.exe' : 'natural-syntax-ls';
-    const cargoBin = path.join(os.homedir(), '.cargo', 'bin', binaryName);
-    const serverPath = config.get('serverPath', '') || cargoBin;
+    const serverPath = config.get('serverPath', '') || binaryName;
     const filetypes = config.get('filetypes', ['plaintext', 'markdown']);
     const tokenMapUpdate = config.get('tokenMapUpdate', {});
     const scoreThreshold = config.get('scoreThreshold', null);
-    const modelChoice = config.get('model', 'mobilebert');
+    const modelChoice = config.get('model', 'bert-base');
 
-    const serverDir = path.dirname(serverPath);
+    // Resolve data directory: matches Go's os.UserConfigDir() + "natural-syntax-ls"
+    const dataDir = process.platform === 'win32'
+        ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
+        : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
+
     const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
-    const modelFile = path.join(serverDir, `${slug}_pos.onnx`);
-    const vocabFile = path.join(serverDir, `${slug}_vocab.txt`);
+    const modelFile = path.join(dataDir, `${slug}_pos.onnx`);
+    const vocabFile = path.join(dataDir, `${slug}_vocab.txt`);
 
     const serverOptions = {
         command: serverPath,
