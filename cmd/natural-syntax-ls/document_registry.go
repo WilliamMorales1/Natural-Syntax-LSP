@@ -6,48 +6,42 @@ import (
 
 const defaultScoreThreshold = 1.0 / 3.0
 
-// two holds at most 2 items; push discards oldest when full.
 type two[T any] struct {
-	slots [2]*T
+	items [2]*T
+	n     int
 }
 
 func (tw *two[T]) push(v *T) *T {
-	if tw.slots[0] == nil {
-		tw.slots[0] = v
+	if tw.n < 2 {
+		tw.items[tw.n] = v
+		tw.n++
 		return nil
 	}
-	if tw.slots[1] == nil {
-		tw.slots[1] = v
-		return nil
-	}
-	// Both full: discard slots[0], shift slots[1]→slots[0], store new in slots[1].
-	discarded := tw.slots[0]
-	tw.slots[0] = tw.slots[1]
-	tw.slots[1] = v
+	discarded := tw.items[0]
+	tw.items[0] = tw.items[1]
+	tw.items[1] = v
 	return discarded
 }
 
-// takeOlder removes and returns slots[0] when both are full, leaving slots[1].
 func (tw *two[T]) takeOlder() *T {
-	if tw.slots[0] != nil && tw.slots[1] != nil {
-		v := tw.slots[0]
-		tw.slots[0] = tw.slots[1]
-		tw.slots[1] = nil
-		return v
+	if tw.n < 2 {
+		return nil
 	}
-	return nil
+	v := tw.items[0]
+	tw.items[0] = tw.items[1]
+	tw.items[1] = nil
+	tw.n--
+	return v
 }
 
-// takeNewerAndClear returns whichever slot is filled and clears both.
 func (tw *two[T]) takeNewerAndClear() *T {
-	var v *T
-	if tw.slots[1] != nil {
-		v = tw.slots[1]
-	} else {
-		v = tw.slots[0]
+	if tw.n == 0 {
+		return nil
 	}
-	tw.slots[0] = nil
-	tw.slots[1] = nil
+	v := tw.items[tw.n-1]
+	tw.items[0] = nil
+	tw.items[1] = nil
+	tw.n = 0
 	return v
 }
 
@@ -264,7 +258,7 @@ func lineToCharOffset(text string, line int) int {
 	cur := 0
 	runes := []rune(text)
 	n := len(runes)
-	for l := 0; l < line; l++ {
+	for range line {
 		for cur < n && runes[cur] != '\n' {
 			cur++
 		}

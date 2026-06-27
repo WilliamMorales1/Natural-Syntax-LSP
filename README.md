@@ -71,19 +71,19 @@ Tags map to VS Code semantic token types, which inherit colors from your theme:
 
 | Tag | Meaning | Token Type |
 |---|---|---|
-| NN, NNS | Noun | `parameter` |
-| NNP, NNPS | Proper noun | `parameter` + declaration |
 | VB, VBD, VBG, VBP | Verb | `function` |
 | VBN, VBZ | Verb (past participle / 3rd person) | `method` |
+| NN, NNS | Noun | `variable` |
+| NNP, NNPS | Proper noun | `class` / `enum` |
 | JJ, JJR, JJS | Adjective | `type` / `struct` / `interface` |
-| RB, RBR, RBS | Adverb | `enumMember` |
-| DT | Determiner | `string` |
-| IN | Preposition / conjunction | `comment` |
-| MD | Modal | `keyword` |
-| CC | Coordinating conjunction | `keyword` |
-| PRP, PRP$ | Pronoun | `property` |
+| PRP$, WP, WP$ | Possessive / wh-pronoun | `property` / `regexp` |
+| RB, RBR, RBS, WRB | Adverb / wh-adverb | `enumMember` |
+| IN, RP, SYM, POS | Preposition / particle / symbol | `operator` |
+| CC, EX, MD, PRP, TO | Conjunction / modal / pronoun | `keyword` / `modifier` |
+| DT, PDT, WDT | Determiner | `macro` |
 | CD | Cardinal number | `number` |
-| TO | to | `keyword` |
+| FW, UH | Foreign word / interjection | `string` |
+| O | Other | `comment` |
 
 ## Test
 
@@ -95,4 +95,6 @@ After setup, open a plaintext file and paste this, or you can simply open up thi
 > and at last the North Wind gave up the attempt. Then the Sun shined out warmly, and immediately the traveler took off his cloak.
 > And so the North Wind was obliged to confess that the Sun was the stronger of the two.
 
-Words should appear in different colors within ~10 seconds. Hover over any word to see its part of speech and confidence score.
+Words should appear in different colors within ~10 seconds. Hover over any word to see its part of speech, confidence score (0.00—1.00), and definition from Wiktionary (if available). Example:
+
+![screenshot showing what the color highlighting and hover header look like](screenshotExample.png)

@@ -26,24 +26,26 @@ const (
 	POS_PDT  PartOfSpeech = 15
 	POS_POS  PartOfSpeech = 16
 	POS_PRP  PartOfSpeech = 17
-	POS_RB   PartOfSpeech = 18
-	POS_RBR  PartOfSpeech = 19
-	POS_RBS  PartOfSpeech = 20
-	POS_RP   PartOfSpeech = 21
-	POS_SYM  PartOfSpeech = 22
-	POS_TO   PartOfSpeech = 23
-	POS_UH   PartOfSpeech = 24
-	POS_VB   PartOfSpeech = 25
-	POS_VBD  PartOfSpeech = 26
-	POS_VBG  PartOfSpeech = 27
-	POS_VBN  PartOfSpeech = 28
-	POS_VBP  PartOfSpeech = 29
-	POS_VBZ  PartOfSpeech = 30
-	POS_WDT  PartOfSpeech = 31
-	POS_WP   PartOfSpeech = 32
-	POS_WRB  PartOfSpeech = 33
+	POS_PRPS PartOfSpeech = 18
+	POS_RB   PartOfSpeech = 19
+	POS_RBR  PartOfSpeech = 20
+	POS_RBS  PartOfSpeech = 21
+	POS_RP   PartOfSpeech = 22
+	POS_SYM  PartOfSpeech = 23
+	POS_TO   PartOfSpeech = 24
+	POS_UH   PartOfSpeech = 25
+	POS_VB   PartOfSpeech = 26
+	POS_VBD  PartOfSpeech = 27
+	POS_VBG  PartOfSpeech = 28
+	POS_VBN  PartOfSpeech = 29
+	POS_VBP  PartOfSpeech = 30
+	POS_VBZ  PartOfSpeech = 31
+	POS_WDT  PartOfSpeech = 32
+	POS_WP   PartOfSpeech = 33
+	POS_WPS	 PartOfSpeech = 34
+	POS_WRB  PartOfSpeech = 35
 
-	N_PART_OF_SPEECH = 34
+	N_PART_OF_SPEECH = 36
 )
 
 var posFromString = map[string]PartOfSpeech{
@@ -51,19 +53,19 @@ var posFromString = map[string]PartOfSpeech{
 	"FW": POS_FW, "IN": POS_IN, "JJ": POS_JJ, "JJR": POS_JJR,
 	"JJS": POS_JJS, "MD": POS_MD, "NN": POS_NN, "NNP": POS_NNP,
 	"NNPS": POS_NNPS, "NNS": POS_NNS, "O": POS_O, "PDT": POS_PDT,
-	"POS": POS_POS, "PRP": POS_PRP, "RB": POS_RB, "RBR": POS_RBR,
-	"RBS": POS_RBS, "RP": POS_RP, "SYM": POS_SYM, "TO": POS_TO,
-	"UH": POS_UH, "VB": POS_VB, "VBD": POS_VBD, "VBG": POS_VBG,
-	"VBN": POS_VBN, "VBP": POS_VBP, "VBZ": POS_VBZ, "WDT": POS_WDT,
-	"WP": POS_WP, "WRB": POS_WRB,
+	"POS": POS_POS, "PRP": POS_PRP, "PRP$": POS_PRPS, "RB": POS_RB, 
+	"RBR": POS_RBR, "RBS": POS_RBS, "RP": POS_RP, "SYM": POS_SYM, 
+	"TO": POS_TO, "UH": POS_UH, "VB": POS_VB, "VBD": POS_VBD, 
+	"VBG": POS_VBG, "VBN": POS_VBN, "VBP": POS_VBP, "VBZ": POS_VBZ, 
+	"WDT": POS_WDT, "WP": POS_WP, "WP$": POS_WPS, "WRB": POS_WRB,
 }
 
 var posToString = [N_PART_OF_SPEECH]string{
 	"CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR",
 	"JJS", "MD", "NN", "NNP", "NNPS", "NNS", "O", "PDT",
-	"POS", "PRP", "RB", "RBR", "RBS", "RP", "SYM", "TO",
+	"POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO",
 	"UH", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "WDT",
-	"WP", "WRB",
+	"WP", "WP$", "WRB",
 }
 
 func (p PartOfSpeech) String() string {
@@ -128,6 +130,8 @@ func posDescription(pos PartOfSpeech) string {
 		return "Possessive ending"
 	case POS_PRP:
 		return "Personal pronoun"
+	case POS_PRPS:
+		return "Possessive pronoun"
 	case POS_RB:
 		return "Adverb"
 	case POS_RBR:
@@ -158,6 +162,8 @@ func posDescription(pos PartOfSpeech) string {
 		return "Wh-determiner"
 	case POS_WP:
 		return "Wh-pronoun"
+	case POS_WPS:
+		return "Possessive wh-pronoun"
 	case POS_WRB:
 		return "Wh-adverb"
 	default:

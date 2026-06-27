@@ -154,10 +154,7 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 
 	var tokens []POSToken
 	for start := 0; start < len(words); start += chunkSize {
-		end := start + chunkSize
-		if end > len(words) {
-			end = len(words)
-		}
+		end := min(start+chunkSize, len(words))
 		chunk, err := m.predictChunk(words[start:end])
 		if err != nil {
 			return nil, err
@@ -174,10 +171,7 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
 	ids, mask, tti, swWordIdx, swIsFirst := m.tokenizer.tokenizeWords(words)
 
-	seqLen := len(ids)
-	if seqLen > maxSeqLen {
-		seqLen = maxSeqLen
-	}
+	seqLen := min(len(ids), maxSeqLen)
 
 	idBuf := m.inputIDs.GetData()
 	maskBuf := m.attMask.GetData()
@@ -201,11 +195,10 @@ func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
 	type best struct {
 		label int
 		score float64
-		valid bool
 	}
-	wordBest := make([]best, len(words))
+	wordBest := make([]*best, len(words))
 
-	for si := 0; si < seqLen; si++ {
+	for si := range seqLen {
 		wi := swWordIdx[si]
 		if wi < 0 || !swIsFirst[si] {
 			continue
@@ -216,13 +209,13 @@ func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
 		}
 		scores := softmax(logits[base : base+numLabels])
 		label := argmax(scores)
-		wordBest[wi] = best{label: label, score: float64(scores[label]), valid: true}
+		wordBest[wi] = &best{label: label, score: float64(scores[label])}
 	}
 
 	tokens := make([]POSToken, 0, len(words))
 	for wi, w := range words {
 		b := wordBest[wi]
-		if !b.valid {
+		if b == nil {
 			continue
 		}
 		pos := POS_O

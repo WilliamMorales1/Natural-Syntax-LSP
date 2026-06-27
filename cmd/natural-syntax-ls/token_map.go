@@ -13,7 +13,7 @@ type TokenMap [N_PART_OF_SPEECH]*TokenBits
 
 func defaultTokenMap() TokenMap {
 	var m TokenMap
-	for i := 0; i < N_PART_OF_SPEECH; i++ {
+	for i := range N_PART_OF_SPEECH {
 		bits := pos2TokenBits(PartOfSpeech(i))
 		m[i] = &bits
 	}
@@ -43,30 +43,8 @@ func (m *TokenMap) get(pos PartOfSpeech) *TokenBits {
 
 // TokenTypeNModifiers is the JSON-deserializable override shape.
 type TokenTypeNModifiers struct {
-	Type      TokenType      `json:"type"`
+	Type      TokenType       `json:"type"`
 	Modifiers []TokenModifier `json:"modifiers"`
-}
-
-// tokenMapUpdate is the JSON shape for initializationOptions.token_map_update.
-// Values can be null (disable) or a TokenTypeNModifiers object.
-type tokenMapUpdateEntry struct {
-	valid bool
-	tnm   *TokenTypeNModifiers
-}
-
-func (e *tokenMapUpdateEntry) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		e.valid = true
-		e.tnm = nil
-		return nil
-	}
-	var v TokenTypeNModifiers
-	if err := json.Unmarshal(data, &v); err != nil {
-		return err
-	}
-	e.valid = true
-	e.tnm = &v
-	return nil
 }
 
 // TokenType enum (indices match LSP SemanticTokensLegend positions).
@@ -133,15 +111,15 @@ func (t *TokenType) UnmarshalJSON(data []byte) error {
 type TokenModifier uint32
 
 const (
-	TM_Declaration  TokenModifier = 0
-	TM_Definition   TokenModifier = 1
-	TM_Readonly     TokenModifier = 2
-	TM_Static       TokenModifier = 3
-	TM_Deprecated   TokenModifier = 4
-	TM_Abstract     TokenModifier = 5
-	TM_Async        TokenModifier = 6
-	TM_Modification TokenModifier = 7
-	TM_Documentation TokenModifier = 8
+	TM_Declaration    TokenModifier = 0
+	TM_Definition     TokenModifier = 1
+	TM_Readonly       TokenModifier = 2
+	TM_Static         TokenModifier = 3
+	TM_Deprecated     TokenModifier = 4
+	TM_Abstract       TokenModifier = 5
+	TM_Async          TokenModifier = 6
+	TM_Modification   TokenModifier = 7
+	TM_Documentation  TokenModifier = 8
 	TM_DefaultLibrary TokenModifier = 9
 
 	N_TOKEN_MODIFIERS = 10
@@ -186,75 +164,79 @@ func pos2TokenBits(pos PartOfSpeech) TokenBits {
 	type tb = TokenBits
 	mod := func(ms ...TokenModifier) uint32 { return modifiersToBitmap(ms) }
 	switch pos {
-	case POS_CC:
+	case POS_CC: // and, but, or → purple
 		return tb{uint32(TT_Keyword), mod()}
-	case POS_CD:
+	case POS_CD: // cardinal number → orange
 		return tb{uint32(TT_Number), mod()}
-	case POS_DT:
-		return tb{uint32(TT_String), mod(TM_Documentation)}
-	case POS_EX:
-		return tb{uint32(TT_Keyword), mod(TM_Definition)}
-	case POS_FW:
+	case POS_DT: // the, a, an → orange
+		return tb{uint32(TT_Macro), mod()}
+	case POS_EX: // existential there → purple
+		return tb{uint32(TT_Keyword), mod(TM_Abstract)}
+	case POS_FW: // foreign word → green
 		return tb{uint32(TT_String), mod()}
-	case POS_IN:
-		return tb{uint32(TT_Comment), mod(TM_Async)}
-	case POS_JJ:
-		return tb{uint32(TT_Type), mod()}
-	case POS_JJR:
-		return tb{uint32(TT_Struct), mod(TM_Modification)}
-	case POS_JJS:
-		return tb{uint32(TT_Interface), mod(TM_DefaultLibrary)}
-	case POS_MD:
-		return tb{uint32(TT_Keyword), mod(TM_Readonly)}
-	case POS_NN:
-		return tb{uint32(TT_Parameter), mod()}
-	case POS_NNP:
-		return tb{uint32(TT_Parameter), mod(TM_Declaration)}
-	case POS_NNPS:
-		return tb{uint32(TT_Parameter), mod(TM_Declaration, TM_Modification)}
-	case POS_NNS:
-		return tb{uint32(TT_Parameter), mod(TM_Modification)}
-	case POS_O:
-		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
-	case POS_PDT:
-		return tb{uint32(TT_String), mod(TM_Abstract)}
-	case POS_POS:
-		return tb{uint32(TT_Property), mod(TM_Declaration)}
-	case POS_PRP:
-		return tb{uint32(TT_Property), mod()}
-	case POS_RB:
-		return tb{uint32(TT_EnumMember), mod()}
-	case POS_RBR:
-		return tb{uint32(TT_EnumMember), mod(TM_Async)}
-	case POS_RBS:
-		return tb{uint32(TT_EnumMember), mod(TM_DefaultLibrary)}
-	case POS_RP:
+	case POS_IN: // preposition → cyan
 		return tb{uint32(TT_Operator), mod()}
-	case POS_SYM:
+	case POS_JJ: // adjective → yellow
+		return tb{uint32(TT_Type), mod()}
+	case POS_JJR: // adjective comparative → yellow
+		return tb{uint32(TT_Struct), mod()}
+	case POS_JJS: // adjective superlative → yellow
+		return tb{uint32(TT_Interface), mod()}
+	case POS_MD: // modal: could, will → purple
+		return tb{uint32(TT_Modifier), mod()}
+	case POS_NN: // noun → red
+		return tb{uint32(TT_Variable), mod()}
+	case POS_NNP: // proper noun → yellow
+		return tb{uint32(TT_Class), mod()}
+	case POS_NNPS: // proper noun plural → yellow
+		return tb{uint32(TT_Enum), mod()}
+	case POS_NNS: // noun plural → red
+		return tb{uint32(TT_Variable), mod(TM_Modification)}
+	case POS_O: // other/punctuation → gray
+		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
+	case POS_PDT: // predeterminer: all, both → orange
+		return tb{uint32(TT_Macro), mod(TM_Definition)}
+	case POS_POS: // possessive 's → cyan
+		return tb{uint32(TT_Operator), mod(TM_Definition)}
+	case POS_PRP: // personal pronoun: I, he → purple
+		return tb{uint32(TT_Keyword), mod(TM_Declaration)}
+	case POS_PRPS: // possessive pronoun: my, his → red
+		return tb{uint32(TT_Property), mod()}
+	case POS_RB: // adverb → enumMember
+		return tb{uint32(TT_EnumMember), mod()}
+	case POS_RBR: // adverb comparative → enumMember
+		return tb{uint32(TT_EnumMember), mod(TM_Async)}
+	case POS_RBS: // adverb superlative → enumMember
+		return tb{uint32(TT_EnumMember), mod(TM_DefaultLibrary)}
+	case POS_RP: // particle → cyan
+		return tb{uint32(TT_Operator), mod(TM_Modification)}
+	case POS_SYM: // symbol → cyan
 		return tb{uint32(TT_Operator), mod(TM_Documentation)}
-	case POS_TO:
+	case POS_TO: // to → purple
 		return tb{uint32(TT_Keyword), mod(TM_Static)}
-	case POS_UH:
-		return tb{uint32(TT_Keyword), mod(TM_Modification)}
-	case POS_VB:
+	case POS_UH: // interjection: oh, wow → green
+		return tb{uint32(TT_String), mod(TM_Declaration)}
+	case POS_VB: // verb base → blue
 		return tb{uint32(TT_Function), mod()}
-	case POS_VBD:
+	case POS_VBD: // verb past tense → blue
 		return tb{uint32(TT_Function), mod(TM_Modification)}
-	case POS_VBG:
+	case POS_VBG: // verb gerund → blue
 		return tb{uint32(TT_Function), mod(TM_Async)}
-	case POS_VBN:
+	case POS_VBN: // verb past participle → blue
 		return tb{uint32(TT_Method), mod(TM_DefaultLibrary)}
-	case POS_VBP:
+	case POS_VBP: // verb non-3rd present → blue
 		return tb{uint32(TT_Function), mod(TM_Readonly)}
-	case POS_VBZ:
+	case POS_VBZ: // verb 3rd person → blue
 		return tb{uint32(TT_Method), mod(TM_Static)}
-	case POS_WDT:
-		return tb{uint32(TT_Keyword), mod(TM_Documentation)}
-	case POS_WP:
-		return tb{uint32(TT_Keyword), mod(TM_DefaultLibrary)}
-	case POS_WRB:
-		return tb{uint32(TT_Keyword), mod(TM_Async)}
+	case POS_WDT: // wh-determiner: which, that → orange
+		return tb{uint32(TT_Macro), mod(TM_Modification)}
+	case POS_WP: // wh-pronoun: who, what → red
+		return tb{uint32(TT_Regexp), mod()}
+	case POS_WPS: // possessive wh-pronoun: whose → red
+		return tb{uint32(TT_Property), mod(TM_Declaration)}
+	case POS_WRB: // wh-adverb: where, when → enumMember
+		return tb{uint32(TT_EnumMember), mod(TM_Modification)}
 	default:
-		return tb{uint32(TT_Comment), mod()}
+		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
 	}
 }
