@@ -218,6 +218,9 @@ func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
 		if b == nil {
 			continue
 		}
+		if isAllPunct(w.text) {
+			continue
+		}
 		pos := POS_O
 		if b.label >= 0 && b.label < numLabels {
 			pos = m.labels[b.label]

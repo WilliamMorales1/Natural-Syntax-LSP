@@ -163,7 +163,7 @@ func modifiersToBitmap(mods []TokenModifier) uint32 {
 func pos2TokenBits(pos PartOfSpeech) TokenBits {
 	type tb = TokenBits
 	mod := func(ms ...TokenModifier) uint32 { return modifiersToBitmap(ms) }
-	switch pos {
+	switch pos { // colors listed below are what would be displayed when using the One Dark Pro VS Code theme
 	case POS_CC: // and, but, or → purple
 		return tb{uint32(TT_Keyword), mod()}
 	case POS_CD: // cardinal number → orange
@@ -182,6 +182,8 @@ func pos2TokenBits(pos PartOfSpeech) TokenBits {
 		return tb{uint32(TT_Struct), mod()}
 	case POS_JJS: // adjective superlative → yellow
 		return tb{uint32(TT_Interface), mod()}
+	case POS_LS: // list item marker → ???
+		return tb{uint32(TT_Decorator), mod()}
 	case POS_MD: // modal: could, will → purple
 		return tb{uint32(TT_Modifier), mod()}
 	case POS_NN: // noun → red

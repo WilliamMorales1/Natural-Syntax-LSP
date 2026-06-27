@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"os"
-	"strings"
 	"unicode"
 )
 
@@ -120,11 +119,10 @@ func (t *BERTTokenizer) tokenizeWords(words []wordSpan) (inputIDs, attMask, tokT
 }
 
 func (t *BERTTokenizer) wordPiece(word string) []string {
-	lower := strings.ToLower(word)
-	if _, ok := t.vocab[lower]; ok {
-		return []string{lower}
+	if _, ok := t.vocab[word]; ok {
+		return []string{word}
 	}
-	runes := []rune(lower)
+	runes := []rune(word)
 	n := len(runes)
 	var result []string
 	start := 0
@@ -179,8 +177,32 @@ func basicTokenize(text string) []wordSpan {
 func splitPunct(runes []rune, offset uint32) []wordSpan {
 	var spans []wordSpan
 	start := 0
-	for i, r := range runes {
-		if unicode.IsPunct(r) || unicode.IsSymbol(r) {
+	n := len(runes)
+	for i := 0; i < n; {
+		r := runes[i]
+		isPossessiveApostrophe := r == '\'' &&
+			i+1 < n && (runes[i+1] == 's' || runes[i+1] == 'S') &&
+			(i+2 >= n || !unicode.IsLetter(runes[i+2]))
+		isMidWordApostrophe := r == '\'' && i > 0 && i+1 < n &&
+			unicode.IsLetter(runes[i-1]) && unicode.IsLetter(runes[i+1]) &&
+			!isPossessiveApostrophe
+		if isPossessiveApostrophe {
+			if i > start {
+				spans = append(spans, wordSpan{
+					text:  string(runes[start:i]),
+					begin: offset + uint32(start),
+					end:   offset + uint32(i),
+				})
+			}
+			end := i + 2
+			spans = append(spans, wordSpan{
+				text:  string(runes[i:end]),
+				begin: offset + uint32(i),
+				end:   offset + uint32(end),
+			})
+			start = end
+			i = end
+		} else if (unicode.IsPunct(r) || unicode.IsSymbol(r)) && !isMidWordApostrophe {
 			if i > start {
 				spans = append(spans, wordSpan{
 					text:  string(runes[start:i]),
@@ -191,9 +213,12 @@ func splitPunct(runes []rune, offset uint32) []wordSpan {
 			spans = append(spans, wordSpan{
 				text:  string(r),
 				begin: offset + uint32(i),
-				end:   offset + uint32(i+1),
+				end:   offset + uint32(i + 1),
 			})
 			start = i + 1
+			i++
+		} else {
+			i++
 		}
 	}
 	if start < len(runes) {
@@ -204,4 +229,13 @@ func splitPunct(runes []rune, offset uint32) []wordSpan {
 		})
 	}
 	return spans
+}
+
+func isAllPunct(s string) bool {
+	for _, r := range s {
+		if !unicode.IsPunct(r) && !unicode.IsSymbol(r) {
+			return false
+		}
+	}
+	return len(s) > 0
 }

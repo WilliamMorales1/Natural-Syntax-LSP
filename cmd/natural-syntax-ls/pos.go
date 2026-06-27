@@ -17,52 +17,54 @@ const (
 	POS_JJ   PartOfSpeech = 6
 	POS_JJR  PartOfSpeech = 7
 	POS_JJS  PartOfSpeech = 8
-	POS_MD   PartOfSpeech = 9
-	POS_NN   PartOfSpeech = 10
-	POS_NNP  PartOfSpeech = 11
-	POS_NNPS PartOfSpeech = 12
-	POS_NNS  PartOfSpeech = 13
-	POS_O    PartOfSpeech = 14
-	POS_PDT  PartOfSpeech = 15
-	POS_POS  PartOfSpeech = 16
-	POS_PRP  PartOfSpeech = 17
-	POS_PRPS PartOfSpeech = 18
-	POS_RB   PartOfSpeech = 19
-	POS_RBR  PartOfSpeech = 20
-	POS_RBS  PartOfSpeech = 21
-	POS_RP   PartOfSpeech = 22
-	POS_SYM  PartOfSpeech = 23
-	POS_TO   PartOfSpeech = 24
-	POS_UH   PartOfSpeech = 25
-	POS_VB   PartOfSpeech = 26
-	POS_VBD  PartOfSpeech = 27
-	POS_VBG  PartOfSpeech = 28
-	POS_VBN  PartOfSpeech = 29
-	POS_VBP  PartOfSpeech = 30
-	POS_VBZ  PartOfSpeech = 31
-	POS_WDT  PartOfSpeech = 32
-	POS_WP   PartOfSpeech = 33
-	POS_WPS	 PartOfSpeech = 34
-	POS_WRB  PartOfSpeech = 35
+	POS_LS   PartOfSpeech = 9
+	POS_MD   PartOfSpeech = 10
+	POS_NN   PartOfSpeech = 11
+	POS_NNP  PartOfSpeech = 12
+	POS_NNPS PartOfSpeech = 13
+	POS_NNS  PartOfSpeech = 14
+	POS_O    PartOfSpeech = 15
+	POS_PDT  PartOfSpeech = 16
+	POS_POS  PartOfSpeech = 17
+	POS_PRP  PartOfSpeech = 18
+	POS_PRPS PartOfSpeech = 19
+	POS_RB   PartOfSpeech = 20
+	POS_RBR  PartOfSpeech = 21
+	POS_RBS  PartOfSpeech = 22
+	POS_RP   PartOfSpeech = 23
+	POS_SYM  PartOfSpeech = 24
+	POS_TO   PartOfSpeech = 25
+	POS_UH   PartOfSpeech = 26
+	POS_VB   PartOfSpeech = 27
+	POS_VBD  PartOfSpeech = 28
+	POS_VBG  PartOfSpeech = 29
+	POS_VBN  PartOfSpeech = 30
+	POS_VBP  PartOfSpeech = 31
+	POS_VBZ  PartOfSpeech = 32
+	POS_WDT  PartOfSpeech = 33
+	POS_WP   PartOfSpeech = 34
+	POS_WPS  PartOfSpeech = 35
+	POS_WRB  PartOfSpeech = 36
 
-	N_PART_OF_SPEECH = 36
+	N_PART_OF_SPEECH = 37
 )
 
 var posFromString = map[string]PartOfSpeech{
 	"CC": POS_CC, "CD": POS_CD, "DT": POS_DT, "EX": POS_EX,
 	"FW": POS_FW, "IN": POS_IN, "JJ": POS_JJ, "JJR": POS_JJR,
-	"JJS": POS_JJS, "MD": POS_MD, "NN": POS_NN, "NNP": POS_NNP,
-	"NNPS": POS_NNPS, "NNS": POS_NNS, "O": POS_O, "PDT": POS_PDT,
-	"POS": POS_POS, "PRP": POS_PRP, "PRP$": POS_PRPS, "RB": POS_RB, 
-	"RBR": POS_RBR, "RBS": POS_RBS, "RP": POS_RP, "SYM": POS_SYM, 
-	"TO": POS_TO, "UH": POS_UH, "VB": POS_VB, "VBD": POS_VBD, 
-	"VBG": POS_VBG, "VBN": POS_VBN, "VBP": POS_VBP, "VBZ": POS_VBZ, 
-	"WDT": POS_WDT, "WP": POS_WP, "WP$": POS_WPS, "WRB": POS_WRB,
+	"JJS": POS_JJS, "LS": POS_LS, "MD": POS_MD, "NN": POS_NN,
+	"NNP": POS_NNP, "NNPS": POS_NNPS, "NNS": POS_NNS, "O": POS_O,
+	"PDT": POS_PDT, "POS": POS_POS, "PRP": POS_PRP, "PRP$": POS_PRPS,
+	"RB": POS_RB, "RBR": POS_RBR, "RBS": POS_RBS, "RP": POS_RP,
+	"SYM": POS_SYM, "TO": POS_TO, "UH": POS_UH, "VB": POS_VB,
+	"VBD": POS_VBD, "VBG": POS_VBG, "VBN": POS_VBN, "VBP": POS_VBP,
+	"VBZ": POS_VBZ, "WDT": POS_WDT, "WP": POS_WP, "WP$": POS_WPS,
+	"WRB": POS_WRB,
 }
 
 var posToString = [N_PART_OF_SPEECH]string{
 	"CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR",
-	"JJS", "MD", "NN", "NNP", "NNPS", "NNS", "O", "PDT",
+	"JJS", "LS", "MD", "NN", "NNP", "NNPS", "NNS", "O", "PDT",
 	"POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO",
 	"UH", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "WDT",
 	"WP", "WP$", "WRB",
@@ -112,6 +114,8 @@ func posDescription(pos PartOfSpeech) string {
 		return "Adjective, comparative"
 	case POS_JJS:
 		return "Adjective, superlative"
+	case POS_LS:
+		return "List item marker"
 	case POS_MD:
 		return "Modal"
 	case POS_NN:
