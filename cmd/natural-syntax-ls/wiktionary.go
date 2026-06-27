@@ -21,25 +21,42 @@ type wiktDef struct {
 	} `json:"definitions"`
 }
 
-// fetchWiktionaryDef returns (definition, wiktionary URL, ok).
-// Tries to match the word's POS; falls back to first available definition.
-func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
-	lower := strings.ToLower(word)
-	apiURL := fmt.Sprintf("https://en.wiktionary.org/api/rest_v1/page/definition/%s", lower)
+func wiktFetch(word string) (map[string][]wiktDef, error) {
+	apiURL := fmt.Sprintf("https://en.wiktionary.org/api/rest_v1/page/definition/%s", word)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return "", "", false
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "natural-syntax-ls/1.0 (https://github.com/wsm5224/NLSyntaxHighlighting-Go)")
 	resp, err := wiktionaryClient.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		return "", "", false
+		return nil, fmt.Errorf("request failed")
 	}
 	defer resp.Body.Close()
-
 	var payload map[string][]wiktDef
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", "", false
+		return nil, err
+	}
+	return payload, nil
+}
+
+// fetchWiktionaryDef returns (definition, wiktionary URL, ok).
+// Tries to match the word's POS; falls back to first available definition.
+// Tries exact case first, then lowercase.
+func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
+	lower := strings.ToLower(word)
+
+	resolved := word
+	payload, err := wiktFetch(word)
+	if err != nil || len(payload["en"]) == 0 {
+		if word == lower {
+			return "", "", false
+		}
+		payload, err = wiktFetch(lower)
+		if err != nil {
+			return "", "", false
+		}
+		resolved = lower
 	}
 
 	entries := payload["en"]
@@ -52,7 +69,7 @@ func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}
-	pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", lower)
+	pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", resolved)
 
 	// firstNonEmpty returns the first non-empty stripped definition from an entry.
 	firstNonEmpty := func(e *wiktDef) string {
