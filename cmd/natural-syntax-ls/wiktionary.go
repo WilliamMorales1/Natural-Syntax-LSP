@@ -48,7 +48,7 @@ func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
 	}
 
 	target := posToWiktCategory(pos)
-	numeralGlyph := pos == POS_CD && isNumeralGlyph(lower)
+	numeralGlyph := (pos == POS_CD || pos == POS_LS) && isNumeralGlyph(lower)
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}

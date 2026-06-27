@@ -2,26 +2,26 @@
 2. 	CD 	 Cardinal number                   one
 3. 	DT 	 Determiner                        the
 4. 	EX 	 Existential there                 there is
-5. 	FW 	 Foreign word                      おはよう
+5. 	FW 	 Foreign word                      おはようございます
 6. 	IN 	 Preposition, subordinating conj.  in, that
 7. 	JJ 	 Adjective                         big
 8. 	JJR  Adjective, comparative            more
 9. 	JJS  Adjective, superlative            most
-10. LS 	 List item marker                  1) (BROKEN)
+10. LS 	 List item marker                  Example: 1)
 11. MD 	 Modal                             should
 12. NN 	 Noun, singular or mass            thing, water
 13. NNS  Noun, plural                      things
 14. NNP  Proper noun, singular             California
-15. NNPS Proper noun, plural               Obamas
+15. NNPS Proper noun, plural               The Obamas
 16. PDT  Predeterminer                     all the boys
-17. POS  Possessive ending                 's (BROKEN)
+17. POS  Possessive ending                 Mary's dog
 18. PRP  Personal pronoun                  you
 19. PRP$ Possessive pronoun                your
 20. RB 	 Adverb                            quickly
 21. RBR  Adverb, comparative               faster
 22. RBS  Adverb, superlative               most carefully
 23. RP 	 Particle                          give up
-24. SYM  Symbol                            %
+24. SYM  Symbol                            % [filtered out]
 25. TO 	 to                                to
 26. UH 	 Interjection                      uh
 27. VB 	 Verb, base form                   be
@@ -34,10 +34,3 @@
 34. WP 	 Wh-pronoun                        what
 35. WP$  Possessive wh-pronoun             whose
 36. WRB  Wh-adverb                         when
-
-Nonsense example paragraph:
-Wow, there is a very big challenge which all the Americans face today.
-1) John whispered "おはよう" to his dog, whose shiny collar's tag jingled, and he wondered when he should give up trying to run faster.
-He had been rushing through the cold rain, seeking the most carefully hidden path, since it is usually the hardest route.
-Who could foresee that exactly one hundred % of the rivers wouldn't overflow?
-Whatever water remained was dirtier than before, so they drank it most cautiously.

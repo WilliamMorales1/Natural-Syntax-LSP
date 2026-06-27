@@ -82,6 +82,7 @@ Tags map to VS Code semantic token types, which inherit colors from your theme:
 | CC, EX, MD, PRP, TO | Conjunction / modal / pronoun | `keyword` / `modifier` |
 | DT, PDT, WDT | Determiner | `macro` |
 | CD | Cardinal number | `number` |
+| LS | List item marker | `decorator` |
 | FW, UH | Foreign word / interjection | `string` |
 | O | Other | `comment` |
 

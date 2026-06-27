@@ -163,80 +163,80 @@ func modifiersToBitmap(mods []TokenModifier) uint32 {
 func pos2TokenBits(pos PartOfSpeech) TokenBits {
 	type tb = TokenBits
 	mod := func(ms ...TokenModifier) uint32 { return modifiersToBitmap(ms) }
-	switch pos { // colors listed below are what would be displayed when using the One Dark Pro VS Code theme
-	case POS_CC: // and, but, or → purple
+	switch pos {
+	case POS_CC: // and, but, or
 		return tb{uint32(TT_Keyword), mod()}
-	case POS_CD: // cardinal number → orange
+	case POS_CD: // cardinal number
 		return tb{uint32(TT_Number), mod()}
-	case POS_DT: // the, a, an → orange
+	case POS_DT: // the, a, an
 		return tb{uint32(TT_Macro), mod()}
-	case POS_EX: // existential there → purple
+	case POS_EX: // existential there
 		return tb{uint32(TT_Keyword), mod(TM_Abstract)}
-	case POS_FW: // foreign word → green
+	case POS_FW: // foreign word
 		return tb{uint32(TT_String), mod()}
-	case POS_IN: // preposition → cyan
+	case POS_IN: // preposition
 		return tb{uint32(TT_Operator), mod()}
-	case POS_JJ: // adjective → yellow
+	case POS_JJ: // adjective
 		return tb{uint32(TT_Type), mod()}
-	case POS_JJR: // adjective comparative → yellow
+	case POS_JJR: // adjective comparative
 		return tb{uint32(TT_Struct), mod()}
-	case POS_JJS: // adjective superlative → yellow
+	case POS_JJS: // adjective superlative
 		return tb{uint32(TT_Interface), mod()}
-	case POS_LS: // list item marker → ???
+	case POS_LS: // list item marker
 		return tb{uint32(TT_Decorator), mod()}
-	case POS_MD: // modal: could, will → purple
+	case POS_MD: // modal: could, will
 		return tb{uint32(TT_Modifier), mod()}
-	case POS_NN: // noun → red
+	case POS_NN: // noun
 		return tb{uint32(TT_Variable), mod()}
-	case POS_NNP: // proper noun → yellow
+	case POS_NNP: // proper noun
 		return tb{uint32(TT_Class), mod()}
-	case POS_NNPS: // proper noun plural → yellow
+	case POS_NNPS: // proper noun plural 
 		return tb{uint32(TT_Enum), mod()}
-	case POS_NNS: // noun plural → red
+	case POS_NNS: // noun plural
 		return tb{uint32(TT_Variable), mod(TM_Modification)}
-	case POS_O: // other/punctuation → gray
+	case POS_O: // other/punctuation
 		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
-	case POS_PDT: // predeterminer: all, both → orange
+	case POS_PDT: // predeterminer: all, both
 		return tb{uint32(TT_Macro), mod(TM_Definition)}
-	case POS_POS: // possessive 's → cyan
+	case POS_POS: // possessive 's [doesn't work]
 		return tb{uint32(TT_Operator), mod(TM_Definition)}
-	case POS_PRP: // personal pronoun: I, he → purple
+	case POS_PRP: // personal pronoun: I, he
 		return tb{uint32(TT_Keyword), mod(TM_Declaration)}
-	case POS_PRPS: // possessive pronoun: my, his → red
+	case POS_PRPS: // possessive pronoun: my, his
 		return tb{uint32(TT_Property), mod()}
-	case POS_RB: // adverb → enumMember
+	case POS_RB: // adverb
 		return tb{uint32(TT_EnumMember), mod()}
-	case POS_RBR: // adverb comparative → enumMember
+	case POS_RBR: // adverb comparative
 		return tb{uint32(TT_EnumMember), mod(TM_Async)}
-	case POS_RBS: // adverb superlative → enumMember
+	case POS_RBS: // adverb superlative
 		return tb{uint32(TT_EnumMember), mod(TM_DefaultLibrary)}
-	case POS_RP: // particle → cyan
+	case POS_RP: // particle
 		return tb{uint32(TT_Operator), mod(TM_Modification)}
-	case POS_SYM: // symbol → cyan
+	case POS_SYM: // symbol [filtered out]
 		return tb{uint32(TT_Operator), mod(TM_Documentation)}
-	case POS_TO: // to → purple
+	case POS_TO: // to
 		return tb{uint32(TT_Keyword), mod(TM_Static)}
-	case POS_UH: // interjection: oh, wow → green
+	case POS_UH: // interjection: oh, wow
 		return tb{uint32(TT_String), mod(TM_Declaration)}
-	case POS_VB: // verb base → blue
+	case POS_VB: // verb base
 		return tb{uint32(TT_Function), mod()}
-	case POS_VBD: // verb past tense → blue
+	case POS_VBD: // verb past tense
 		return tb{uint32(TT_Function), mod(TM_Modification)}
-	case POS_VBG: // verb gerund → blue
+	case POS_VBG: // verb gerund
 		return tb{uint32(TT_Function), mod(TM_Async)}
-	case POS_VBN: // verb past participle → blue
+	case POS_VBN: // verb past participle
 		return tb{uint32(TT_Method), mod(TM_DefaultLibrary)}
-	case POS_VBP: // verb non-3rd present → blue
+	case POS_VBP: // verb non-3rd present
 		return tb{uint32(TT_Function), mod(TM_Readonly)}
-	case POS_VBZ: // verb 3rd person → blue
+	case POS_VBZ: // verb 3rd person
 		return tb{uint32(TT_Method), mod(TM_Static)}
-	case POS_WDT: // wh-determiner: which, that → orange
+	case POS_WDT: // wh-determiner: which, that
 		return tb{uint32(TT_Macro), mod(TM_Modification)}
-	case POS_WP: // wh-pronoun: who, what → red
+	case POS_WP: // wh-pronoun: who, what
 		return tb{uint32(TT_Regexp), mod()}
-	case POS_WPS: // possessive wh-pronoun: whose → red
+	case POS_WPS: // possessive wh-pronoun: whose
 		return tb{uint32(TT_Property), mod(TM_Declaration)}
-	case POS_WRB: // wh-adverb: where, when → enumMember
+	case POS_WRB: // wh-adverb: where, when
 		return tb{uint32(TT_EnumMember), mod(TM_Modification)}
 	default:
 		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
