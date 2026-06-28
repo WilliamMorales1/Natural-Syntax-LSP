@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var wiktionaryClient = &http.Client{Timeout: 3 * time.Second}
+var wiktionaryClient = &http.Client{Timeout: 8 * time.Second}
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 var styleBlockRe = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
 

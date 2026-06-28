@@ -98,15 +98,16 @@ type registryMsg struct {
 
 // DocumentRegistry serialises all document state on a single goroutine.
 type DocumentRegistry struct {
-	ch        chan registryMsg
-	model     *POSModel
-	tokenMap  TokenMap
-	threshold float64
-	stores    map[string]*documentStore
-	mu        sync.Mutex // protects nothing — registry is single-goroutine; mu for Send
+	ch           chan registryMsg
+	model        Predictor
+	tokenMap     TokenMap
+	threshold    float64
+	stores       map[string]*documentStore
+	mu           sync.Mutex // protects nothing — registry is single-goroutine; mu for Send
+	onDocReady   func(uri string, doc *document) // called after each document is processed
 }
 
-func newDocumentRegistry(model *POSModel) *DocumentRegistry {
+func newDocumentRegistry(model Predictor) *DocumentRegistry {
 	dr := &DocumentRegistry{
 		ch:        make(chan registryMsg, 64),
 		model:     model,
@@ -170,6 +171,9 @@ func (dr *DocumentRegistry) handlePredicted(uri string, doc *document) {
 		*reply <- tokens
 	}
 	store.doc = doc
+	if dr.onDocReady != nil {
+		go dr.onDocReady(uri, doc)
+	}
 
 	if queued := store.queued; queued != nil {
 		store.queued = nil

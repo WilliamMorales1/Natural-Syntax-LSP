@@ -1,33 +1,28 @@
 # Natural Syntax LSP
 
-Parts-of-speech semantic highlighting for VS Code via a local Go LSP server running BERT inference with ONNX Runtime. Hover over any word to see its POS tag and confidence score.
+Parts-of-speech or semantic-embedding highlighting for VS Code via a local Go LSP server running ONNX inference. Hover over any word to see its tag and a Wiktionary definition.
+
+Two modes:
+
+- **POS mode** (default) — BERT/MobileBERT classifies each word's part of speech and maps it to a VS Code semantic token type (color determined by your theme).
+- **Semantic mode** — `all-MiniLM-L6-v2` embeds each word into a 384-dim vector, projects it onto a 2D plane, and maps the angle to a continuous HSL color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
 
 ## Setup
 
-Requires Go, Python 3, Node.js, and Git for Windows (for bash).
+Requires Go, Python, Node.js, and Git for Windows (for bash).
 
 ```bash
 bash scripts/setup.sh
 ```
 
-This exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds the `natural-syntax-ls.exe` binary. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS). To also export MobileBERT (~100 MB, faster):
+Exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds `natural-syntax-ls.exe`. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
 
 ```bash
-bash scripts/setup.sh --model all
+bash scripts/setup.sh --model all        # also exports MobileBERT (~100 MB)
+bash scripts/setup.sh --model semantic   # exports all-MiniLM-L6-v2 (~22 MB) for semantic mode
 ```
 
-Then install the VS Code extension:
-
-```bash
-cd vscode-extension
-npm install
-npx vsce package
-code --install-extension natural-syntax-ls-0.1.0.vsix
-```
-
-### Rebuilding the VSIX
-
-Only needed if you modify files under `vscode-extension/` (e.g. `extension.ts`, `package.json`, or adding new settings/commands). The pre-built `.vsix` in the repo is fine for normal use.
+Install the VS Code extension:
 
 ```bash
 cd vscode-extension
@@ -36,38 +31,47 @@ npx vsce package
 code --install-extension natural-syntax-ls-0.1.0.vsix
 ```
 
-Set the server path in VS Code settings:
+Set the server path in VS Code settings if it is not on your PATH:
 
 ```json
 "naturalSyntaxLs.serverPath": "C:\\path\\to\\natural-syntax-ls.exe"
 ```
 
-The extension defaults to `bert-base`. Highlighting appears ~10 seconds after VS Code loads while the model initializes.
+### Rebuilding the VSIX
+
+Only needed if you modify files under `vscode-extension/`:
+
+```bash
+cd vscode-extension
+npx vsce package
+code --install-extension natural-syntax-ls-0.1.0.vsix
+```
 
 ## Models
 
-| Model | Size | Speed | Accuracy |
+| Model | Size | Mode | Notes |
 |---|---|---|---|
-| `bert-base` (default) | ~400 MB | ~10s startup | Higher |
-| `mobilebert` | ~100 MB | ~10s startup | Good |
+| `bert-base` (default) | ~400 MB | POS | Higher accuracy |
+| `mobilebert` | ~100 MB | POS | Faster startup |
+| `all-MiniLM-L6-v2` | ~22 MB | Semantic | Continuous color embedding |
 
-Switch via `naturalSyntaxLs.model` in VS Code settings. Run `bash setup.sh --model all` to export both.
-These models only work for English, although if you speak a highly spoken language, you can likely find a different model for your own language.
+Switch POS model via `naturalSyntaxLs.model`. Switch between modes via `naturalSyntaxLs.mode`.
 
 ## Settings
 
 | Setting | Default | Description |
 |---|---|---|
-| `naturalSyntaxLs.serverPath` | `natural-syntax-ls` | Path to the binary |
-| `naturalSyntaxLs.model` | `bert-base` | `bert-base` or `mobilebert` |
-| `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate for |
-| `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight |
-| `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → color mappings |
-| `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover tooltips |
+| `naturalSyntaxLs.serverPath` | `natural-syntax-ls` | Path to the Go binary |
+| `naturalSyntaxLs.mode` | `pos` | `pos` or `semantic` |
+| `naturalSyntaxLs.model` | `bert-base` | `bert-base` or `mobilebert` (POS mode only) |
+| `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate on |
+| `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight (POS mode) |
+| `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → token type mappings |
+| `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover |
 
-## POS Tag Colors
+## POS Tag Colors (POS mode)
 
-Tags map to VS Code semantic token types, which inherit colors from your theme:
+Tags map to VS Code semantic token types; color comes from your theme.
 
 | Tag | Meaning | Token Type |
 |---|---|---|
@@ -86,16 +90,18 @@ Tags map to VS Code semantic token types, which inherit colors from your theme:
 | FW, UH | Foreign word / interjection | `string` |
 | O | Other | `comment` |
 
+## Semantic Mode Colors
+
+Each word is embedded by `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue: HSL(hue, 75%, 62%) → RGB → `#RRGGBB`. Semantically similar words get similar hues. The color is not theme-dependent.
+
+Hover shows the hex color code and a Wiktionary definition (when available).
+
 ## Test
 
-After setup, open a plaintext file and paste this, or you can simply open up this Markdown file after:
+Open a plaintext file and paste:
 
 > The North Wind and the Sun were disputing which was the stronger, when a traveler came along wrapped in a warm cloak.
-> They agreed that the one who first succeeded in making the traveler take his cloak off should be considered stronger than the other.
-> Then the North Wind blew as hard as he could, but the more he blew the more closely did the traveler fold his cloak around him;
-> and at last the North Wind gave up the attempt. Then the Sun shined out warmly, and immediately the traveler took off his cloak.
-> And so the North Wind was obliged to confess that the Sun was the stronger of the two.
 
-Words should appear in different colors within ~10 seconds. Hover over any word to see its part of speech, confidence score (0.00—1.00), and definition from Wiktionary (if available). Example:
+Words color within ~10 seconds (POS) or ~5 seconds (semantic). Hover any word to see its tag and Wiktionary definition.
 
-![screenshot showing what the color highlighting and hover header look like](screenshotExample.png)
+![screenshot showing color highlighting and hover](screenshotExample.png)

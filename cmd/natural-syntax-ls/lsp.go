@@ -28,15 +28,21 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func runLSP(modelPath, vocabPath string) error {
-	srv := &lspServer{modelPath: modelPath, vocabPath: vocabPath, ready: make(chan struct{})}
+type lspConfig struct {
+	modelPath string
+	vocabPath string
+	mode      string // "pos" or "semantic"
+	embedPath string // path to embedding ONNX (semantic mode)
+}
+
+func runLSP(cfg lspConfig) error {
+	srv := &lspServer{cfg: cfg, ready: make(chan struct{})}
 	srv.wiktionary.Store(true) // on by default
 	return srv.serve(os.Stdin, os.Stdout)
 }
 
 type lspServer struct {
-	modelPath  string
-	vocabPath  string
+	cfg        lspConfig
 	registry   atomic.Pointer[DocumentRegistry]
 	ready      chan struct{} // closed when registry is set or load failed
 	loadFailed atomic.Bool
@@ -145,14 +151,30 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 
 	// Load model in background so initialize responds immediately.
 	go func() {
-		model, err := newPOSModel(s.modelPath, s.vocabPath)
+		var predictor Predictor
+		var err error
+		if s.cfg.mode == "semantic" {
+			predictor, err = newEmbeddingModel(s.cfg.embedPath, s.cfg.vocabPath)
+		} else {
+			predictor, err = newPOSModel(s.cfg.modelPath, s.cfg.vocabPath)
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
 			s.loadFailed.Store(true)
 			close(s.ready)
 			return
 		}
-		reg := newDocumentRegistry(model)
+		reg := newDocumentRegistry(predictor)
+		if s.cfg.mode == "semantic" {
+			// POS_O → nil so encodeSemanticTokens emits nothing; colors come
+			// from the $/nls/semanticColors push notification instead.
+			reg.send(registryMsg{kind: msgTokenMapUpdate, mapUpdate: map[PartOfSpeech]*TokenTypeNModifiers{
+				POS_O: nil,
+			}})
+			reg.onDocReady = func(uri string, doc *document) {
+				s.sendSemanticColors(uri, doc)
+			}
+		}
 		s.registry.Store(reg)
 
 		// Replay pending didOpen/didChange BEFORE signaling ready, so they
@@ -338,7 +360,16 @@ type markupContent struct {
 }
 
 func formatHoverContent(tok *POSToken, wiktDef, wiktURL string) string {
-	header := fmt.Sprintf("```yaml\n%s: %s  # %.2f\n```", tok.Word, posDescription(tok.Tag), tok.Score)
+	label := posDescription(tok.Tag)
+	if tok.Description != "" {
+		label = tok.Description
+	}
+	var header string
+	if tok.Color != "" {
+		header = fmt.Sprintf("```yaml\n%s: %s\n```", tok.Word, label)
+	} else {
+		header = fmt.Sprintf("```yaml\n%s: %s  # %.2f\n```", tok.Word, label, tok.Score)
+	}
 	if wiktDef == "" {
 		return header
 	}
@@ -405,6 +436,65 @@ func (s *lspServer) handleSemanticTokensFull(raw json.RawMessage) (any, *rpcErro
 		return semanticTokensResult{Data: []uint32{}}, nil
 	}
 	return semanticTokensResult{Data: data}, nil
+}
+
+// --- $/nls/semanticColors push notification ---
+
+type colorTokenJSON struct {
+	Line      int    `json:"line"`
+	Character int    `json:"character"`
+	Length    int    `json:"length"`
+	Color     string `json:"color"`
+}
+
+type semanticColorsParams struct {
+	URI    string           `json:"uri"`
+	Tokens []colorTokenJSON `json:"tokens"`
+}
+
+func (s *lspServer) sendSemanticColors(uri string, doc *document) {
+	if doc == nil || len(doc.tokens) == 0 {
+		return
+	}
+	runes := []rune(doc.text)
+	n := len(runes)
+	lineStarts := []int{0}
+	for i, r := range runes {
+		if r == '\n' && i+1 < n {
+			lineStarts = append(lineStarts, i+1)
+		}
+	}
+	tokens := make([]colorTokenJSON, 0, len(doc.tokens))
+	for _, tok := range doc.tokens {
+		if tok.Color == "" {
+			continue
+		}
+		charIdx := int(tok.OffsetBegin)
+		line := charOffsetToLine(lineStarts, charIdx)
+		col := charIdx - lineStarts[line]
+		tokens = append(tokens, colorTokenJSON{
+			Line:      line,
+			Character: col,
+			Length:    int(tok.OffsetEnd - tok.OffsetBegin),
+			Color:     tok.Color,
+		})
+	}
+	if len(tokens) == 0 {
+		return
+	}
+	s.writeNotification("$/nls/semanticColors", semanticColorsParams{URI: uri, Tokens: tokens})
+}
+
+func (s *lspServer) writeNotification(method string, params any) {
+	body, _ := json.Marshal(params)
+	rm := json.RawMessage(body)
+	s.writerMu.Lock()
+	w := s.writer
+	s.writerMu.Unlock()
+	if w == nil {
+		return
+	}
+	writeMessage(w, jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: rm})
 }
 
 // --- JSON-RPC framing ---

@@ -43,6 +43,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show Wiktionary definitions in hover tooltips."
+        },
+        "naturalSyntaxLs.mode": {
+          "type": "string",
+          "enum": ["pos", "semantic"],
+          "default": "pos",
+          "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning using all-MiniLM-L6-v2 — run scripts/export_embedding_model.py first."
         }
       }
     }

@@ -8,6 +8,61 @@ const os = require('os');
 /** @type {LanguageClient | undefined} */
 let client;
 
+/** @type {Map<string, vscode.TextEditorDecorationType>} color hex → decoration type */
+const colorDecorationTypes = new Map();
+
+/** @type {Map<string, Array<{color:string, ranges:vscode.Range[]}>>} uri → per-color range groups */
+const decorationCache = new Map();
+
+function getOrCreateDecorationType(color) {
+    if (!colorDecorationTypes.has(color)) {
+        colorDecorationTypes.set(color, vscode.window.createTextEditorDecorationType({
+            color,
+            borderRadius: '2px',
+        }));
+    }
+    return colorDecorationTypes.get(color);
+}
+
+/** Apply a cached decoration list to an editor. */
+function applyColorDecorations(editor, groups) {
+    if (!editor || !groups) return;
+    for (const { color, ranges } of groups) {
+        editor.setDecorations(getOrCreateDecorationType(color), ranges);
+    }
+}
+
+/**
+ * Handle a $/nls/semanticColors notification from the server.
+ * @param {{ uri: string, tokens: Array<{line:number,character:number,length:number,color:string}> }} params
+ */
+function handleSemanticColors(params) {
+    const { uri, tokens } = params;
+    console.log('[nls] got semanticColors for', uri, '—', tokens.length, 'tokens');
+
+    // Group ranges by color.
+    /** @type {Map<string, vscode.Range[]>} */
+    const byColor = new Map();
+    for (const { line, character, length, color } of tokens) {
+        if (!byColor.has(color)) byColor.set(color, []);
+        byColor.get(color).push(new vscode.Range(line, character, line, character + length));
+    }
+
+    const groups = [];
+    for (const [color, ranges] of byColor) {
+        groups.push({ color, ranges });
+    }
+    decorationCache.set(uri, groups);
+
+    // Apply to any visible editor showing this URI.
+    for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document.uri.toString() === uri) {
+            applyColorDecorations(editor, groups);
+            console.log('[nls] applied', groups.length, 'colors to', uri);
+        }
+    }
+}
+
 async function activate(context) {
     const config = vscode.workspace.getConfiguration('naturalSyntaxLs');
     const binaryName = process.platform === 'win32' ? 'natural-syntax-ls.exe' : 'natural-syntax-ls';
@@ -17,26 +72,35 @@ async function activate(context) {
     const scoreThreshold = config.get('scoreThreshold', null);
     const wiktionaryDefinitions = config.get('wiktionaryDefinitions', true);
     const modelChoice = config.get('model', 'bert-base');
+    const mode = config.get('mode', 'pos');
 
-    // Resolve data directory: matches Go's os.UserConfigDir() + "natural-syntax-ls"
+    console.log('[nls] activating, mode =', mode);
+
     const dataDir = process.platform === 'win32'
         ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
         : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
 
-    const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
-    const modelFile = path.join(dataDir, `${slug}_pos.onnx`);
-    const vocabFile = path.join(dataDir, `${slug}_vocab.txt`);
+    let serverArgs;
+    if (mode === 'semantic') {
+        const embedFile = path.join(dataDir, 'minilm_embed.onnx');
+        const vocabFile = path.join(dataDir, 'minilm_vocab.txt');
+        console.log('[nls] embed =', embedFile);
+        serverArgs = ['--mode', 'semantic', '--embed-model', embedFile, '--vocab', vocabFile];
+    } else {
+        const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
+        serverArgs = [
+            '--model', path.join(dataDir, `${slug}_pos.onnx`),
+            '--vocab', path.join(dataDir, `${slug}_vocab.txt`),
+        ];
+    }
 
     const serverOptions = {
         command: serverPath,
-        args: ['--model', modelFile, '--vocab', vocabFile],
+        args: serverArgs,
         transport: TransportKind.stdio,
     };
 
-    const documentSelector = filetypes.map((lang) => ({
-        scheme: 'file',
-        language: lang,
-    }));
+    const documentSelector = filetypes.map(lang => ({ scheme: 'file', language: lang }));
 
     const initializationOptions = (() => {
         const opts = {};
@@ -46,19 +110,35 @@ async function activate(context) {
         return Object.keys(opts).length > 0 ? opts : undefined;
     })();
 
-    const clientOptions = {
-        documentSelector,
-        initializationOptions,
-    };
-
     client = new LanguageClient(
         'naturalSyntaxLs',
         'Natural Syntax LS',
         serverOptions,
-        clientOptions,
+        { documentSelector, initializationOptions },
     );
 
     await client.start();
+    console.log('[nls] client started');
+
+    if (mode === 'semantic') {
+        // Listen for the server's color push notification.
+        client.onNotification('$/nls/semanticColors', handleSemanticColors);
+
+        // Reapply cached decorations when switching to an editor we've already colored.
+        context.subscriptions.push(
+            vscode.window.onDidChangeActiveTextEditor(editor => {
+                if (!editor) return;
+                const cached = decorationCache.get(editor.document.uri.toString());
+                if (cached) applyColorDecorations(editor, cached);
+            })
+        );
+
+        context.subscriptions.push(new vscode.Disposable(() => {
+            for (const [, dt] of colorDecorationTypes) dt.dispose();
+            colorDecorationTypes.clear();
+            decorationCache.clear();
+        }));
+    }
 }
 
 async function deactivate() {

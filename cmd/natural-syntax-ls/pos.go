@@ -181,6 +181,10 @@ type POSToken struct {
 	Tag         PartOfSpeech
 	OffsetBegin uint32
 	OffsetEnd   uint32
+	// Description overrides the POS label in hover text.
+	Description string
+	// Color is a "#RRGGBB" hex color set by semantic mode; empty in POS mode.
+	Color string
 }
 
 func filterToken(t POSToken, threshold float64) bool {

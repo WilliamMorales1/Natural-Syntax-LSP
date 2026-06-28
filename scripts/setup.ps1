@@ -6,7 +6,7 @@
     Which POS model to export: bert-base (default), mobilebert, or all.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","all")]
+    [ValidateSet("bert-base","mobilebert","all","semantic")]
     [string]$Model = "bert-base"
 )
 

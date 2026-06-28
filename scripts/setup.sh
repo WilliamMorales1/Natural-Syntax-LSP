@@ -16,6 +16,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate early.
+case "$MODEL" in
+    bert-base|mobilebert|all|semantic) ;;
+    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, all, or semantic." >&2; exit 1 ;;
+esac
+
 step() { echo; echo "==> $1"; }
 ok()   { echo "    $1"; }
 fail() { echo "ERROR: $1" >&2; exit 1; }
@@ -69,14 +75,25 @@ export_model() {
     fi
 }
 
+export_embedding_model() {
+    if [[ -f "$DATA_DIR/minilm_embed.onnx" && -f "$DATA_DIR/minilm_vocab.txt" ]]; then
+        ok "minilm_embed.onnx and minilm_vocab.txt already exist, skipping export."
+    else
+        step "Exporting all-MiniLM-L6-v2 embedding model (~22 MB)"
+        "$PYTHON" "$ROOT/scripts/export_embedding_model.py" "$DATA_DIR"
+        ok "Embedding model exported."
+    fi
+}
+
 case "$MODEL" in
     bert-base)  export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json  ;;
     mobilebert) export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json ;;
+    semantic)   export_embedding_model ;;
     all)
         export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json
         export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json
+        export_embedding_model
         ;;
-    *) fail "Unknown model '$MODEL'. Use bert-base, mobilebert, or all." ;;
 esac
 
 # ── 5. Copy onnxruntime DLL/SO to data directory ──────────────────────────
