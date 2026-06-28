@@ -47,7 +47,7 @@ The extension defaults to `bert-base`. Highlighting appears ~10 seconds after VS
 ## Models
 
 | Model | Size | Speed | Accuracy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `bert-base` (default) | ~400 MB | ~10s startup | Higher |
 | `mobilebert` | ~100 MB | ~10s startup | Good |
 
@@ -57,7 +57,7 @@ These models only work for English, although if you speak a highly spoken langua
 ## Settings
 
 | Setting | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `naturalSyntaxLs.serverPath` | `natural-syntax-ls` | Path to the binary |
 | `naturalSyntaxLs.model` | `bert-base` | `bert-base` or `mobilebert` |
 | `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate for |
