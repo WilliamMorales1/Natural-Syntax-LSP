@@ -44,6 +44,20 @@
           "default": true,
           "description": "Show Wiktionary definitions in hover tooltips."
         },
+        "naturalSyntaxLs.semanticLightness": {
+          "type": "number",
+          "default": 0.75,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "OKLCH lightness for semantic mode colors (0–1). Increase for light themes, decrease for very dark themes."
+        },
+        "naturalSyntaxLs.semanticChroma": {
+          "type": "number",
+          "default": 0.14,
+          "minimum": 0,
+          "maximum": 0.4,
+          "description": "OKLCH chroma (color intensity) for semantic mode colors. Higher = more vivid."
+        },
         "naturalSyntaxLs.mode": {
           "type": "string",
           "enum": ["pos", "semantic"],

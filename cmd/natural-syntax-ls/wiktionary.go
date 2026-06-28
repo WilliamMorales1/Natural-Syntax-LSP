@@ -6,10 +6,19 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
 var wiktionaryClient = &http.Client{Timeout: 8 * time.Second}
+
+type wiktCacheEntry struct {
+	def string
+	url string
+	ok  bool
+}
+
+var wiktCache sync.Map // key: lowercase word → wiktCacheEntry
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 var styleBlockRe = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
 
@@ -44,6 +53,20 @@ func wiktFetch(word string) (map[string][]wiktDef, error) {
 // Tries to match the word's POS; falls back to first available definition.
 // Tries exact case first, then lowercase.
 func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
+	lower := strings.ToLower(word)
+	cacheKey := lower + ":" + pos.String()
+	if v, ok := wiktCache.Load(cacheKey); ok {
+		e := v.(wiktCacheEntry)
+		return e.def, e.url, e.ok
+	}
+	def, url, ok := fetchWiktionaryDefUncached(word, pos)
+	if ok {
+		wiktCache.Store(cacheKey, wiktCacheEntry{def, url, true})
+	}
+	return def, url, ok
+}
+
+func fetchWiktionaryDefUncached(word string, pos PartOfSpeech) (string, string, bool) {
 	lower := strings.ToLower(word)
 
 	resolved := word

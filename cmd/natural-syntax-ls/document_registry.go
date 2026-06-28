@@ -52,12 +52,18 @@ type document struct {
 	version int32
 }
 
+type hoverRequest struct {
+	line, char uint32
+	reply      chan *POSToken
+}
+
 // documentStore tracks per-URI state.
 type documentStore struct {
 	queued         *textItem
 	processing     bool
 	doc            *document
 	pendingReplies two[chan []uint32]
+	pendingHover   *hoverRequest
 	latestVersion  int32
 }
 
@@ -171,6 +177,10 @@ func (dr *DocumentRegistry) handlePredicted(uri string, doc *document) {
 		*reply <- tokens
 	}
 	store.doc = doc
+	if ph := store.pendingHover; ph != nil {
+		store.pendingHover = nil
+		dr.handleHoverQuery(uri, ph.line, ph.char, ph.reply)
+	}
 	if dr.onDocReady != nil {
 		go dr.onDocReady(uri, doc)
 	}
@@ -197,6 +207,14 @@ func (dr *DocumentRegistry) handleSemanticTokensCall(uri string, reply chan []ui
 func (dr *DocumentRegistry) handleHoverQuery(uri string, line, character uint32, reply chan *POSToken) {
 	store, ok := dr.stores[uri]
 	if !ok || store.doc == nil {
+		if ok && store.processing {
+			// Doc not ready yet — stash hover; handlePredicted will resolve it.
+			if store.pendingHover != nil {
+				store.pendingHover.reply <- nil // cancel previous waiting hover
+			}
+			store.pendingHover = &hoverRequest{line: line, char: character, reply: reply}
+			return
+		}
 		reply <- nil
 		return
 	}

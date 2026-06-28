@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // LSP JSON-RPC over stdio.
@@ -72,14 +73,16 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 		}
 		switch {
 		case msg.Method != "":
-			s.handle(w, msg)
+			// Dispatch in a goroutine so slow handlers (hover, semantic tokens)
+			// don't block the read loop and starve other incoming messages.
+			go s.handle(msg)
 		case msg.Method == "" && msg.ID != nil:
 			// response to one of our server→client requests; ignore
 		}
 	}
 }
 
-func (s *lspServer) handle(w io.Writer, msg jsonrpcMsg) {
+func (s *lspServer) handle(msg jsonrpcMsg) {
 	var result any
 	var rpcErr *rpcError
 
@@ -109,7 +112,7 @@ func (s *lspServer) handle(w io.Writer, msg jsonrpcMsg) {
 	}
 
 	if msg.ID != nil {
-		writeResponse(w, msg.ID, result, rpcErr)
+		s.writeResponse(msg.ID, result, rpcErr)
 	}
 }
 
@@ -123,6 +126,8 @@ type initOptions struct {
 	TokenMapUpdate        map[string]json.RawMessage `json:"token_map_update"`
 	ScoreThreshold        *float64                   `json:"score_threshold"`
 	WiktionaryDefinitions *bool                      `json:"wiktionary_definitions"`
+	SemanticLightness     *float64                   `json:"semantic_lightness"`
+	SemanticChroma        *float64                   `json:"semantic_chroma"`
 }
 
 type initializeResult struct {
@@ -218,6 +223,17 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 				if opts.WiktionaryDefinitions != nil {
 					s.wiktionary.Store(*opts.WiktionaryDefinitions)
 				}
+				if opts.SemanticLightness != nil || opts.SemanticChroma != nil {
+					cur := semanticColorParamsPtr.Load()
+					l, c := cur.L, cur.C
+					if opts.SemanticLightness != nil {
+						l = *opts.SemanticLightness
+					}
+					if opts.SemanticChroma != nil {
+						c = *opts.SemanticChroma
+					}
+					setSemanticColorParams(l, c)
+				}
 			}
 		}
 	}()
@@ -266,20 +282,31 @@ type didCloseParams struct {
 	} `json:"textDocument"`
 }
 
+// writeBytes writes a pre-marshaled JSON body as a framed LSP message, under writerMu.
+func (s *lspServer) writeBytes(body []byte) {
+	s.writerMu.Lock()
+	if s.writer != nil {
+		fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n", len(body))
+		s.writer.Write(body)
+	}
+	s.writerMu.Unlock()
+}
+
+// writeMsg serializes msg and writes it atomically under writerMu.
+func (s *lspServer) writeMsg(msg jsonrpcMsg) {
+	body, _ := json.Marshal(msg)
+	s.writeBytes(body)
+}
+
 // sendRequest sends a server→client request (has an id; client must reply).
 // Replies from the client arrive as messages with no Method; we ignore them
 // in the default handler, which is fine for fire-and-forget requests.
+
 func (s *lspServer) sendRequest(method string) {
 	id := s.nextReqID.Add(1)
 	raw, _ := json.Marshal(id)
 	rm := json.RawMessage(raw)
-	s.writerMu.Lock()
-	w := s.writer
-	s.writerMu.Unlock()
-	if w == nil {
-		return
-	}
-	writeMessage(w, jsonrpcMsg{JSONRPC: "2.0", ID: &rm, Method: method})
+	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", ID: &rm, Method: method})
 }
 
 func (s *lspServer) queueOrSend(m registryMsg) {
@@ -390,7 +417,11 @@ func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 		hoverCharacter: p.Position.Character,
 		hoverReply:     reply,
 	})
-	tok := <-reply
+	var tok *POSToken
+	select {
+	case tok = <-reply:
+	case <-time.After(30 * time.Second):
+	}
 	if tok == nil {
 		return nil, nil
 	}
@@ -488,13 +519,7 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 func (s *lspServer) writeNotification(method string, params any) {
 	body, _ := json.Marshal(params)
 	rm := json.RawMessage(body)
-	s.writerMu.Lock()
-	w := s.writer
-	s.writerMu.Unlock()
-	if w == nil {
-		return
-	}
-	writeMessage(w, jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: rm})
+	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: rm})
 }
 
 // --- JSON-RPC framing ---
@@ -529,25 +554,25 @@ func readMessage(r *bufio.Reader) (jsonrpcMsg, error) {
 	return msg, nil
 }
 
-func writeResponse(w io.Writer, id *json.RawMessage, result any, rpcErr *rpcError) {
-	type response struct {
+func (s *lspServer) writeResponse(id *json.RawMessage, result any, rpcErr *rpcError) {
+	// JSON-RPC 2.0 requires "result" field in success responses (even if null).
+	// Do NOT use jsonrpcMsg here — its Result field has omitempty.
+	type successResp struct {
 		JSONRPC string           `json:"jsonrpc"`
 		ID      *json.RawMessage `json:"id"`
-		Result  any              `json:"result"`
-		Error   *rpcError        `json:"error,omitempty"`
+		Result  any              `json:"result"` // no omitempty — null must be present
 	}
-	resp := response{JSONRPC: "2.0", ID: id, Result: result}
+	type errorResp struct {
+		JSONRPC string           `json:"jsonrpc"`
+		ID      *json.RawMessage `json:"id"`
+		Error   *rpcError        `json:"error"`
+	}
+	var body []byte
 	if rpcErr != nil {
-		resp.Result = nil
-		resp.Error = rpcErr
+		body, _ = json.Marshal(errorResp{JSONRPC: "2.0", ID: id, Error: rpcErr})
+	} else {
+		body, _ = json.Marshal(successResp{JSONRPC: "2.0", ID: id, Result: result})
 	}
-	body, _ := json.Marshal(resp)
-	fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body))
-	w.Write(body)
+	s.writeBytes(body)
 }
 
-func writeMessage(w io.Writer, msg jsonrpcMsg) {
-	body, _ := json.Marshal(msg)
-	fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body))
-	w.Write(body)
-}

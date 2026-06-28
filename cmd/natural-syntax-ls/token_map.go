@@ -189,9 +189,9 @@ func pos2TokenBits(pos PartOfSpeech) TokenBits {
 	case POS_NN: // noun
 		return tb{uint32(TT_Variable), mod()}
 	case POS_NNP: // proper noun
-		return tb{uint32(TT_Class), mod()}
-	case POS_NNPS: // proper noun plural 
-		return tb{uint32(TT_Enum), mod()}
+		return tb{uint32(TT_Namespace), mod()}
+	case POS_NNPS: // proper noun plural
+		return tb{uint32(TT_TypeParameter), mod()}
 	case POS_NNS: // noun plural
 		return tb{uint32(TT_Variable), mod(TM_Modification)}
 	case POS_O: // other/punctuation

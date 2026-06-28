@@ -68,6 +68,8 @@ Switch POS model via `naturalSyntaxLs.model`. Switch between modes via `naturalS
 | `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight (POS mode) |
 | `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover |
+| `naturalSyntaxLs.semanticLightness` | `0.75` | OKLCH lightness for semantic colors (0–1); increase for light themes |
+| `naturalSyntaxLs.semanticChroma` | `0.14` | OKLCH chroma (color intensity) for semantic colors |
 
 ## POS Tag Colors (POS mode)
 
@@ -78,7 +80,7 @@ Tags map to VS Code semantic token types; color comes from your theme.
 | VB, VBD, VBG, VBP | Verb | `function` |
 | VBN, VBZ | Verb (past participle / 3rd person) | `method` |
 | NN, NNS | Noun | `variable` |
-| NNP, NNPS | Proper noun | `class` / `enum` |
+| NNP, NNPS | Proper noun | `namespace` / `typeParameter` |
 | JJ, JJR, JJS | Adjective | `type` / `struct` / `interface` |
 | PRP$, WP, WP$ | Possessive / wh-pronoun | `property` / `regexp` |
 | RB, RBR, RBS, WRB | Adverb / wh-adverb | `enumMember` |
@@ -92,7 +94,9 @@ Tags map to VS Code semantic token types; color comes from your theme.
 
 ## Semantic Mode Colors
 
-Each word is embedded by `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue: HSL(hue, 75%, 62%) → RGB → `#RRGGBB`. Semantically similar words get similar hues. The color is not theme-dependent.
+Each word is embedded by `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue in OKLCH color space (perceptually uniform lightness). Similar words get similar hues. The color is not theme-dependent.
+
+Default: OKLCH(0.75, 0.14, hue). Adjust `semanticLightness` and `semanticChroma` for your theme.
 
 Hover shows the hex color code and a Wiktionary definition (when available).
 
