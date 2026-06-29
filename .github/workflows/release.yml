@@ -51,7 +51,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
-        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} .
+        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
 
       - name: Copy ORT shared library (unix)
         if: matrix.os != 'windows-latest'
