@@ -62,7 +62,17 @@
           "type": "string",
           "enum": ["pos", "semantic"],
           "default": "pos",
-          "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning using all-MiniLM-L6-v2 — run scripts/export_embedding_model.py first."
+          "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning — run scripts/export_embedding_model.py first."
+        },
+        "naturalSyntaxLs.semanticModel": {
+          "type": "string",
+          "enum": ["minilm", "mpnet"],
+          "enumDescriptions": [
+            "all-MiniLM-L6-v2 — 22 MB, 384-dim, fast. Good for most use cases.",
+            "all-mpnet-base-v2 — 110 MB, 768-dim, BERT-base scale. Higher quality semantic similarity."
+          ],
+          "default": "minilm",
+          "description": "Which embedding model to use in semantic mode. Run scripts/export_embedding_model.py --variant <model> to export it first."
         }
       }
     }

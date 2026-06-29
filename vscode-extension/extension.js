@@ -82,12 +82,15 @@ async function activate(context) {
         ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
         : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
 
+    const semanticModel = config.get('semanticModel', 'minilm');
+
     let serverArgs;
     if (mode === 'semantic') {
-        const embedFile = path.join(dataDir, 'minilm_embed.onnx');
-        const vocabFile = path.join(dataDir, 'minilm_vocab.txt');
+        const prefix = semanticModel === 'mpnet' ? 'mpnet' : 'minilm';
+        const embedFile = path.join(dataDir, `${prefix}_embed.onnx`);
+        const vocabFile = path.join(dataDir, `${prefix}_vocab.txt`);
         console.log('[nls] embed =', embedFile);
-        serverArgs = ['--mode', 'semantic', '--embed-model', embedFile, '--vocab', vocabFile];
+        serverArgs = ['--mode', 'semantic', '--embed-variant', prefix, '--embed-model', embedFile, '--vocab', vocabFile];
     } else {
         const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
         serverArgs = [
