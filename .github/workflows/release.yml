@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            platform: linux-x64
+            binary: natural-syntax-ls
+            ort_glob: "libonnxruntime*.so*"
+            ort_dest: libonnxruntime.so
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            platform: windows-x64
+            binary: natural-syntax-ls.exe
+            ort_glob: "onnxruntime*.dll"
+            ort_dest: onnxruntime.dll
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            platform: darwin-x64
+            binary: natural-syntax-ls
+            ort_glob: "libonnxruntime*.dylib"
+            ort_dest: libonnxruntime.dylib
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            platform: darwin-arm64
+            binary: natural-syntax-ls
+            ort_glob: "libonnxruntime*.dylib"
+            ort_dest: libonnxruntime.dylib
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} .
+
+      - name: Copy ORT shared library (unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          ORT_DIR="$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$(go list -m github.com/yalue/onnxruntime_go | awk '{print $2}')/test_data"
+          echo "ORT_DIR=$ORT_DIR"
+          cp $ORT_DIR/${{ matrix.ort_glob }} vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}
+
+      - name: Copy ORT shared library (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ver = (go list -m github.com/yalue/onnxruntime_go).Split(' ')[1]
+          $ortDir = "$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$ver/test_data"
+          Write-Host "ORT_DIR=$ortDir"
+          $src = Get-ChildItem "$ortDir/${{ matrix.ort_glob }}" | Select-Object -First 1
+          Copy-Item $src.FullName "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.platform }}
+          path: vscode-extension/bin/${{ matrix.platform }}/
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: vscode-extension/bin
+          merge-multiple: false
+
+      - name: Flatten artifact dirs
+        shell: bash
+        run: |
+          for platform in linux-x64 windows-x64 darwin-x64 darwin-arm64; do
+            mkdir -p vscode-extension/bin/$platform
+            if [ -d "vscode-extension/bin/bin-$platform" ]; then
+              mv vscode-extension/bin/bin-$platform/* vscode-extension/bin/$platform/
+              rmdir vscode-extension/bin/bin-$platform
+            fi
+          done
+          chmod +x vscode-extension/bin/linux-x64/natural-syntax-ls \
+                   vscode-extension/bin/darwin-x64/natural-syntax-ls \
+                   vscode-extension/bin/darwin-arm64/natural-syntax-ls
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install vsce and deps
+        working-directory: vscode-extension
+        run: |
+          npm install
+          npm install -g @vscode/vsce
+
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: vsce package --allow-missing-repository
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: vscode-extension/*.vsix
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vscode-extension/*.vsix

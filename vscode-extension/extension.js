@@ -63,10 +63,24 @@ function handleSemanticColors(params) {
     }
 }
 
+function getBundledServerPath(extensionPath) {
+    const platform = process.platform;
+    const arch = process.arch;
+    let platformKey;
+    if (platform === 'win32') {
+        platformKey = 'windows-x64';
+    } else if (platform === 'darwin') {
+        platformKey = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+    } else {
+        platformKey = 'linux-x64';
+    }
+    const binaryName = platform === 'win32' ? 'natural-syntax-ls.exe' : 'natural-syntax-ls';
+    return path.join(extensionPath, 'bin', platformKey, binaryName);
+}
+
 async function activate(context) {
     const config = vscode.workspace.getConfiguration('naturalSyntaxLs');
-    const binaryName = process.platform === 'win32' ? 'natural-syntax-ls.exe' : 'natural-syntax-ls';
-    const serverPath = config.get('serverPath', '') || binaryName;
+    const serverPath = config.get('serverPath', '') || getBundledServerPath(context.extensionPath);
     const filetypes = config.get('filetypes', ['plaintext', 'markdown']);
     const tokenMapUpdate = config.get('tokenMapUpdate', {});
     const scoreThreshold = config.get('scoreThreshold', null);

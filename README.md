@@ -7,36 +7,47 @@ Two modes:
 - **POS mode** (default) — BERT/MobileBERT classifies each word's part of speech and maps it to a VS Code semantic token type (color determined by your theme).
 - **Semantic mode** — `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2` embeds each word into a high-dimensional vector, projects it onto a 2D plane, and maps the angle to a continuous OKLCH color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
 
-## Setup
+## Installation
 
-Requires Go, Python, Node.js, and Git for Windows (for bash).
+### From a GitHub Release (recommended)
+
+Download the `.vsix` from the [latest release](../../releases/latest) and install:
 
 ```bash
-scripts/setup.sh
+code --install-extension natural-syntax-ls-*.vsix
 ```
 
-Exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds `bin/natural-syntax-ls.exe`. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
+The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for your platform (Windows x64, Linux x64, macOS x64, macOS arm64), so no Go toolchain is needed.
+
+You still need to export the ONNX model files (Python + pip):
 
 ```bash
+scripts/setup.sh             # BERT-base POS model (~400 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~100 MB)
 scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~110 MB)
 scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~22 MB)
 scripts/setup.sh --model all         # all models
 ```
 
-Install the VS Code extension (and recreate the VSIX if extension.js is modified):
+Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
+
+### From source
+
+Requires Go, Python, Node.js.
 
 ```bash
+scripts/setup.sh   # exports models, builds binary
+
 cd vscode-extension
 npm install
 npx vsce package
 code --install-extension natural-syntax-ls-0.1.0.vsix
 ```
 
-Set the server path in VS Code settings:
+To use your own binary instead of the bundled one, set in VS Code settings:
 
 ```json
-"naturalSyntaxLs.serverPath": "C:\\path\\to\\bin\\natural-syntax-ls.exe"
+"naturalSyntaxLs.serverPath": "/path/to/natural-syntax-ls"
 ```
 
 ## Models

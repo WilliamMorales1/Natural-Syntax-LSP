@@ -1,0 +1,5 @@
+.vscode/**
+.gitignore
+*.vsix
+node_modules/**
+!node_modules/vscode-languageclient/**
