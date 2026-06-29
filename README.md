@@ -5,7 +5,7 @@ Parts-of-speech or semantic-embedding highlighting for VS Code via a local Go LS
 Two modes:
 
 - **POS mode** (default) — BERT/MobileBERT classifies each word's part of speech and maps it to a VS Code semantic token type (color determined by your theme).
-- **Semantic mode** — `all-MiniLM-L6-v2` embeds each word into a 384-dim vector, projects it onto a 2D plane, and maps the angle to a continuous HSL color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
+- **Semantic mode** — `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2` embeds each word into a high-dimensional vector, projects it onto a 2D plane, and maps the angle to a continuous OKLCH color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
 
 ## Setup
 
@@ -19,7 +19,13 @@ Exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, cop
 
 ```bash
 bash scripts/setup.sh --model all        # also exports MobileBERT (~100 MB)
-bash scripts/setup.sh --model semantic   # exports all-MiniLM-L6-v2 (~22 MB) for semantic mode
+bash scripts/setup.sh --model semantic   # exports all-mpnet-base-v2 (~110 MB) for semantic mode
+```
+
+To use the lighter `all-MiniLM-L6-v2` model instead:
+
+```bash
+python scripts/export_embedding_model.py --variant minilm
 ```
 
 Install the VS Code extension:
@@ -53,9 +59,10 @@ code --install-extension natural-syntax-ls-0.1.0.vsix
 |---|---|---|---|
 | `bert-base` (default) | ~400 MB | POS | Higher accuracy |
 | `mobilebert` | ~100 MB | POS | Faster startup |
-| `all-MiniLM-L6-v2` | ~22 MB | Semantic | Continuous color embedding |
+| `all-mpnet-base-v2` (default) | ~110 MB | Semantic | 768-dim, BERT-base scale, best quality |
+| `all-MiniLM-L6-v2` | ~22 MB | Semantic | 384-dim, faster, lower quality |
 
-Switch POS model via `naturalSyntaxLs.model`. Switch between modes via `naturalSyntaxLs.mode`.
+Switch POS model via `naturalSyntaxLs.model`. Switch semantic model via `naturalSyntaxLs.semanticModel`. Switch between modes via `naturalSyntaxLs.mode`.
 
 ## Settings
 
@@ -68,6 +75,7 @@ Switch POS model via `naturalSyntaxLs.model`. Switch between modes via `naturalS
 | `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight (POS mode) |
 | `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover |
+| `naturalSyntaxLs.semanticModel` | `mpnet` | `mpnet` (110 MB, 768-dim) or `minilm` (22 MB, 384-dim) — semantic mode only |
 | `naturalSyntaxLs.semanticLightness` | `0.75` | OKLCH lightness for semantic colors (0–1); increase for light themes |
 | `naturalSyntaxLs.semanticChroma` | `0.14` | OKLCH chroma (color intensity) for semantic colors |
 
@@ -94,7 +102,7 @@ Tags map to VS Code semantic token types; color comes from your theme.
 
 ## Semantic Mode Colors
 
-Each word is embedded by `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue in OKLCH color space (perceptually uniform lightness). Similar words get similar hues. The color is not theme-dependent.
+Each word is embedded by `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue in OKLCH color space (perceptually uniform lightness). Similar words get similar hues. The color is not theme-dependent.
 
 Default: OKLCH(0.75, 0.14, hue). Adjust `semanticLightness` and `semanticChroma` for your theme.
 

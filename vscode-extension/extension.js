@@ -82,7 +82,7 @@ async function activate(context) {
         ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
         : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
 
-    const semanticModel = config.get('semanticModel', 'minilm');
+    const semanticModel = config.get('semanticModel', 'mpnet');
 
     let serverArgs;
     if (mode === 'semantic') {

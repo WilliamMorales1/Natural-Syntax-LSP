@@ -71,7 +71,7 @@
             "all-MiniLM-L6-v2 — 22 MB, 384-dim, fast. Good for most use cases.",
             "all-mpnet-base-v2 — 110 MB, 768-dim, BERT-base scale. Higher quality semantic similarity."
           ],
-          "default": "minilm",
+          "default": "mpnet",
           "description": "Which embedding model to use in semantic mode. Run scripts/export_embedding_model.py --variant <model> to export it first."
         }
       }

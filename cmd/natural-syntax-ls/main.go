@@ -11,7 +11,7 @@ func main() {
 	modelPath    := flag.String("model", "", "Path to a _pos.onnx model file")
 	vocabPath    := flag.String("vocab", "", "Path to a _vocab.txt file")
 	embedPath    := flag.String("embed-model", "", "Path to embedding ONNX model (semantic mode)")
-	embedVariant := flag.String("embed-variant", "minilm", "Embedding model variant: minilm (22MB, 384-dim) or mpnet (110MB, 768-dim)")
+	embedVariant := flag.String("embed-variant", "mpnet", "Embedding model variant: mpnet (110MB, 768-dim, default) or minilm (22MB, 384-dim)")
 	mode         := flag.String("mode", "pos", "Highlighting mode: pos or semantic")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
@@ -20,11 +20,11 @@ func main() {
 	exeDir := filepath.Dir(exe)
 	dataDir := filepath.Join(userConfigDir(), "natural-syntax-ls")
 
-	embedHiddenSize := 384 // default for minilm
+	embedHiddenSize := 768 // default for mpnet
 	if *mode == "semantic" {
 		isMPNet := *embedVariant == "mpnet"
-		if isMPNet {
-			embedHiddenSize = 768
+		if !isMPNet {
+			embedHiddenSize = 384
 		}
 		if *embedPath == "" {
 			if isMPNet {

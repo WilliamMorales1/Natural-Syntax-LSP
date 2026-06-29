@@ -53,8 +53,8 @@ def default_data_dir():
     return os.path.join(base, "natural-syntax-ls")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--variant", choices=list(VARIANTS), default="minilm",
-                    help="Which model to export (default: minilm)")
+parser.add_argument("--variant", choices=list(VARIANTS), default="mpnet",
+                    help="Which model to export (default: mpnet)")
 parser.add_argument("out_dir", nargs="?", default=None,
                     help="Output directory (default: platform config dir for natural-syntax-ls)")
 args = parser.parse_args()
