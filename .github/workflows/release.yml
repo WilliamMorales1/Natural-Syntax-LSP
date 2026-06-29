@@ -40,9 +40,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
 
@@ -57,21 +57,25 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          ORT_DIR="$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$(go list -m github.com/yalue/onnxruntime_go | awk '{print $2}')/test_data"
-          echo "ORT_DIR=$ORT_DIR"
-          cp $ORT_DIR/${{ matrix.ort_glob }} vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}
+          ORT_MOD="$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$(go list -m github.com/yalue/onnxruntime_go | awk '{print $2}')"
+          echo "ORT_MOD=$ORT_MOD"
+          ls "$ORT_MOD"
+          ORT_LIB=$(find "$ORT_MOD" -name "${{ matrix.ort_glob }}" | head -1)
+          echo "ORT_LIB=$ORT_LIB"
+          cp "$ORT_LIB" vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}
 
       - name: Copy ORT shared library (windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $ver = (go list -m github.com/yalue/onnxruntime_go).Split(' ')[1]
-          $ortDir = "$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$ver/test_data"
-          Write-Host "ORT_DIR=$ortDir"
-          $src = Get-ChildItem "$ortDir/${{ matrix.ort_glob }}" | Select-Object -First 1
+          $ortMod = "$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$ver"
+          Write-Host "ORT_MOD=$ortMod"
+          $src = Get-ChildItem -Recurse "$ortMod" -Filter "${{ matrix.ort_glob }}" | Select-Object -First 1
+          Write-Host "ORT_LIB=$($src.FullName)"
           Copy-Item $src.FullName "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: bin-${{ matrix.platform }}
           path: vscode-extension/bin/${{ matrix.platform }}/
@@ -80,9 +84,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4.3.0
         with:
           path: vscode-extension/bin
           merge-multiple: false
@@ -101,7 +105,7 @@ jobs:
                    vscode-extension/bin/darwin-x64/natural-syntax-ls \
                    vscode-extension/bin/darwin-arm64/natural-syntax-ls
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
 
@@ -115,12 +119,12 @@ jobs:
         working-directory: vscode-extension
         run: vsce package --allow-missing-repository
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: vsix
           path: vscode-extension/*.vsix
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.3.2
         with:
           files: vscode-extension/*.vsix
