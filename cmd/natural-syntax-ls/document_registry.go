@@ -57,14 +57,29 @@ type hoverRequest struct {
 	reply      chan *POSToken
 }
 
+// chunkResult holds per-chunk prediction results and the word spans used.
+type chunkResult struct {
+	wordTexts []string   // word texts for dirty detection
+	words     []wordSpan // full spans for offset patching
+	tokens    []POSToken
+}
+
 // documentStore tracks per-URI state.
 type documentStore struct {
 	queued         *textItem
+	queuedWords    []wordSpan
 	processing     bool
 	doc            *document
 	pendingReplies two[chan []uint32]
 	pendingHover   *hoverRequest
 	latestVersion  int32
+
+	// incremental prediction state (valid while processing == true)
+	processingText    string
+	processingVersion int32
+	chunkResults      []*chunkResult
+	chunksTotal       int
+	chunksDone        int
 }
 
 // textItem is a document text from the client.
@@ -80,6 +95,7 @@ type msgKind int
 const (
 	msgItem msgKind = iota
 	msgPredicted
+	msgPartialPredicted
 	msgDiscard
 	msgTokenMapUpdate
 	msgScoreThreshold
@@ -100,6 +116,9 @@ type registryMsg struct {
 	hoverLine      uint32
 	hoverCharacter uint32
 	hoverReply     chan *POSToken
+	// for msgPartialPredicted
+	chunkIdx int
+	chunk    *chunkResult
 }
 
 // DocumentRegistry serialises all document state on a single goroutine.
@@ -110,7 +129,7 @@ type DocumentRegistry struct {
 	threshold    float64
 	stores       map[string]*documentStore
 	mu           sync.Mutex // protects nothing — registry is single-goroutine; mu for Send
-	onDocReady   func(uri string, doc *document) // called after each document is processed
+	onDocReady   func(uri string, doc *document) // called after each chunk and on completion
 }
 
 func newDocumentRegistry(model Predictor) *DocumentRegistry {
@@ -135,7 +154,9 @@ func (dr *DocumentRegistry) loop() {
 		case msgItem:
 			dr.handleItem(m.item)
 		case msgPredicted:
-			dr.handlePredicted(m.uri, m.doc)
+			dr.handlePredicted(m.uri)
+		case msgPartialPredicted:
+			dr.handlePartialPredicted(m.uri, m.chunkIdx, m.chunk)
 		case msgDiscard:
 			delete(dr.stores, m.uri)
 		case msgTokenMapUpdate:
@@ -156,15 +177,44 @@ func (dr *DocumentRegistry) handleItem(item *textItem) {
 		return
 	}
 	store.latestVersion = item.version
-	dr.scheduleProcessing(item, store)
+	words := basicTokenize(item.text)
+	dr.scheduleProcessing(item, words, store)
 }
 
-func (dr *DocumentRegistry) handlePredicted(uri string, doc *document) {
+func (dr *DocumentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr *chunkResult) {
 	store, ok := dr.stores[uri]
-	if !ok {
+	if !ok || !store.processing {
+		return
+	}
+	store.chunkResults[chunkIdx] = cr
+	store.chunksDone++
+
+	// Update doc so hover sees the latest partial data.
+	partialDoc := &document{
+		text:    store.processingText,
+		tokens:  mergeChunkTokens(store.chunkResults),
+		version: store.processingVersion,
+	}
+	store.doc = partialDoc
+
+	if dr.onDocReady != nil {
+		go dr.onDocReady(uri, partialDoc)
+	}
+}
+
+func (dr *DocumentRegistry) handlePredicted(uri string) {
+	store, ok := dr.stores[uri]
+	if !ok || !store.processing {
 		return
 	}
 	store.processing = false
+
+	doc := &document{
+		text:    store.processingText,
+		tokens:  mergeChunkTokens(store.chunkResults),
+		version: store.processingVersion,
+	}
+	store.doc = doc
 
 	var reply *chan []uint32
 	if store.queued != nil {
@@ -176,7 +226,6 @@ func (dr *DocumentRegistry) handlePredicted(uri string, doc *document) {
 		tokens := encodeSemanticTokens(doc, &dr.tokenMap)
 		*reply <- tokens
 	}
-	store.doc = doc
 	if ph := store.pendingHover; ph != nil {
 		store.pendingHover = nil
 		dr.handleHoverQuery(uri, ph.line, ph.char, ph.reply)
@@ -186,8 +235,10 @@ func (dr *DocumentRegistry) handlePredicted(uri string, doc *document) {
 	}
 
 	if queued := store.queued; queued != nil {
+		queuedWords := store.queuedWords
 		store.queued = nil
-		dr.scheduleProcessing(queued, store)
+		store.queuedWords = nil
+		dr.scheduleProcessing(queued, queuedWords, store)
 	}
 }
 
@@ -208,9 +259,8 @@ func (dr *DocumentRegistry) handleHoverQuery(uri string, line, character uint32,
 	store, ok := dr.stores[uri]
 	if !ok || store.doc == nil {
 		if ok && store.processing {
-			// Doc not ready yet — stash hover; handlePredicted will resolve it.
 			if store.pendingHover != nil {
-				store.pendingHover.reply <- nil // cancel previous waiting hover
+				store.pendingHover.reply <- nil
 			}
 			store.pendingHover = &hoverRequest{line: line, char: character, reply: reply}
 			return
@@ -236,32 +286,124 @@ func (dr *DocumentRegistry) handleHoverQuery(uri string, line, character uint32,
 	reply <- nil
 }
 
-func (dr *DocumentRegistry) scheduleProcessing(item *textItem, store *documentStore) {
+func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan, store *documentStore) {
 	if store.processing {
 		store.queued = item
+		store.queuedWords = words
 		return
 	}
 	store.processing = true
 	store.queued = nil
-	threshold := dr.threshold
-	go func() {
-		tokens, err := dr.model.Predict(item.text)
-		if err != nil {
-			tokens = nil
-		}
-		// Filter tokens.
-		filtered := tokens[:0]
-		for _, t := range tokens {
-			if filterToken(t, threshold) {
-				filtered = append(filtered, t)
+	store.queuedWords = nil
+	store.processingText = item.text
+	store.processingVersion = item.version
+
+	numChunks := (len(words) + chunkSize - 1) / chunkSize
+	if len(words) == 0 {
+		numChunks = 0
+	}
+
+	// Determine dirty chunks; pre-populate clean ones with offset-patched results.
+	newChunkResults := make([]*chunkResult, numChunks)
+	dirty := make([]bool, numChunks)
+
+	if len(store.chunkResults) == numChunks {
+		for i := range numChunks {
+			start := i * chunkSize
+			end := min(start+chunkSize, len(words))
+			if old := store.chunkResults[i]; old != nil && chunksEqual(old.wordTexts, words[start:end]) {
+				newChunkResults[i] = patchChunkOffsets(old, words[start:end])
+			} else {
+				dirty[i] = true
 			}
 		}
-		doc := &document{
+	} else {
+		for i := range dirty {
+			dirty[i] = true
+		}
+	}
+
+	cleanCount := 0
+	for _, d := range dirty {
+		if !d {
+			cleanCount++
+		}
+	}
+
+	store.chunkResults = newChunkResults
+	store.chunksTotal = numChunks
+	store.chunksDone = cleanCount
+
+	// Immediately push colors for clean chunks.
+	if cleanCount > 0 && dr.onDocReady != nil {
+		partialDoc := &document{
 			text:    item.text,
-			tokens:  filtered,
+			tokens:  mergeChunkTokens(newChunkResults),
 			version: item.version,
 		}
-		dr.send(registryMsg{kind: msgPredicted, uri: item.uri, doc: doc})
+		store.doc = partialDoc
+		go dr.onDocReady(item.uri, partialDoc)
+	}
+
+	// If everything is clean, finalize immediately without spawning a goroutine.
+	if cleanCount == numChunks {
+		// Reuse handlePredicted logic inline by sending the signal synchronously.
+		store.processing = false
+		doc := &document{
+			text:    item.text,
+			tokens:  mergeChunkTokens(newChunkResults),
+			version: item.version,
+		}
+		store.doc = doc
+
+		var reply *chan []uint32
+		if store.queued != nil {
+			reply = store.pendingReplies.takeOlder()
+		} else {
+			reply = store.pendingReplies.takeNewerAndClear()
+		}
+		if reply != nil {
+			tokens := encodeSemanticTokens(doc, &dr.tokenMap)
+			*reply <- tokens
+		}
+		if ph := store.pendingHover; ph != nil {
+			store.pendingHover = nil
+			dr.handleHoverQuery(item.uri, ph.line, ph.char, ph.reply)
+		}
+		if dr.onDocReady != nil {
+			go dr.onDocReady(item.uri, doc)
+		}
+		return
+	}
+
+	threshold := dr.threshold
+	uri := item.uri
+	go func() {
+		for i := range numChunks {
+			if !dirty[i] {
+				continue
+			}
+			start := i * chunkSize
+			end := min(start+chunkSize, len(words))
+			chunkWords := words[start:end]
+			tokens, err := dr.model.PredictChunk(chunkWords)
+			if err != nil {
+				tokens = nil
+			}
+			filtered := tokens[:0]
+			for _, t := range tokens {
+				if filterToken(t, threshold) {
+					filtered = append(filtered, t)
+				}
+			}
+			wordTexts := make([]string, len(chunkWords))
+			for j, w := range chunkWords {
+				wordTexts[j] = w.text
+			}
+			cr := &chunkResult{wordTexts: wordTexts, words: chunkWords, tokens: filtered}
+			dr.send(registryMsg{kind: msgPartialPredicted, uri: uri, chunkIdx: i, chunk: cr})
+		}
+		dr.send(registryMsg{kind: msgPredicted, uri: uri})
 	}()
 }
 
@@ -272,6 +414,56 @@ func (dr *DocumentRegistry) storeFor(uri string) *documentStore {
 		dr.stores[uri] = s
 	}
 	return s
+}
+
+// chunksEqual reports whether old word texts match the new word spans.
+func chunksEqual(oldTexts []string, newWords []wordSpan) bool {
+	if len(oldTexts) != len(newWords) {
+		return false
+	}
+	for i, w := range newWords {
+		if oldTexts[i] != w.text {
+			return false
+		}
+	}
+	return true
+}
+
+// patchChunkOffsets returns a new chunkResult with offsets updated from newWords.
+// Word texts are assumed equal (same order), so position j in old maps to j in new.
+func patchChunkOffsets(old *chunkResult, newWords []wordSpan) *chunkResult {
+	// Map old begin offset → word index within chunk.
+	oldBeginToIdx := make(map[uint32]int, len(old.words))
+	for j, w := range old.words {
+		oldBeginToIdx[w.begin] = j
+	}
+
+	patched := make([]POSToken, len(old.tokens))
+	for i, t := range old.tokens {
+		patched[i] = t
+		if j, ok := oldBeginToIdx[t.OffsetBegin]; ok && j < len(newWords) {
+			patched[i].OffsetBegin = newWords[j].begin
+			patched[i].OffsetEnd = newWords[j].end
+		}
+	}
+
+	wordTexts := make([]string, len(newWords))
+	for j, w := range newWords {
+		wordTexts[j] = w.text
+	}
+	return &chunkResult{wordTexts: wordTexts, words: newWords, tokens: patched}
+}
+
+// mergeChunkTokens concatenates chunk token slices in order.
+// Chunks are contiguous document regions so no sort is needed.
+func mergeChunkTokens(results []*chunkResult) []POSToken {
+	var tokens []POSToken
+	for _, cr := range results {
+		if cr != nil {
+			tokens = append(tokens, cr.tokens...)
+		}
+	}
+	return tokens
 }
 
 // lineToCharOffset returns the unicode char index of the start of the given line

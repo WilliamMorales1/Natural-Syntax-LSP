@@ -155,7 +155,7 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 	var tokens []POSToken
 	for start := 0; start < len(words); start += chunkSize {
 		end := min(start+chunkSize, len(words))
-		chunk, err := m.predictChunk(words[start:end])
+		chunk, err := m.PredictChunk(words[start:end])
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +168,7 @@ func (m *POSModel) Predict(text string) ([]POSToken, error) {
 	return tokens, nil
 }
 
-func (m *POSModel) predictChunk(words []wordSpan) ([]POSToken, error) {
+func (m *POSModel) PredictChunk(words []wordSpan) ([]POSToken, error) {
 	ids, mask, tti, swWordIdx, swIsFirst := m.tokenizer.tokenizeWords(words)
 
 	seqLen := min(len(ids), maxSeqLen)

@@ -134,6 +134,31 @@ func (m *EmbeddingModel) Predict(text string) ([]POSToken, error) {
 	return tokens, nil
 }
 
+func (m *EmbeddingModel) PredictChunk(words []wordSpan) ([]POSToken, error) {
+	embeds, err := m.embedChunk(words)
+	if err != nil {
+		return nil, err
+	}
+	var tokens []POSToken
+	for i, w := range words {
+		if isAllPunct(w.text) {
+			continue
+		}
+		v := l2Normalize(embeds[i])
+		color := embeddingToColor(v)
+		tokens = append(tokens, POSToken{
+			Word:        w.text,
+			Score:       1.0,
+			Tag:         POS_O,
+			Color:       color,
+			OffsetBegin: w.begin,
+			OffsetEnd:   w.end,
+			Description: fmt.Sprintf("Semantic color %s", color),
+		})
+	}
+	return tokens, nil
+}
+
 func (m *EmbeddingModel) embedChunk(words []wordSpan) ([][]float32, error) {
 	ids, mask, tti, swWordIdx, _ := m.tokenizer.tokenizeWords(words)
 

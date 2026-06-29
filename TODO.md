@@ -1,21 +1,5 @@
 # TODO
 
-## Incremental / streaming updates
-
-**Files:** `cmd/natural-syntax-ls/document_registry.go`, `cmd/natural-syntax-ls/embedding_inference.go` (or `predictor.go`)
-
-The whole document is re-predicted on every change (`scheduleProcessing` in `document_registry.go`). Large docs feel slow (~10s for BERT-base on 500 words).
-
-**What to do:**
-
-- Split `Predict(text)` into `PredictChunk(words []wordSpan) ([]POSToken, error)` — both models already chunk internally (`chunkSize` in `embedding_inference.go`; `main.go` tokenizer logic).
-- In `DocumentRegistry`, track which char ranges are dirty (set on `didChange`). On each change, only re-predict dirty chunks.
-- Push partial results via a new `msgPartialPredicted` message kind so the registry can update `store.doc.tokens` incrementally and call `onDocReady` after each chunk.
-- For semantic mode, also push `$/nls/semanticColors` after each chunk so colors appear progressively.
-- Coordinate with the existing `pendingReplies` queue: `semanticTokens/full` requests should wait for at least one full pass before responding.
-
----
-
 ## Bundle binary in VSIX
 
 **Files:** `vscode-extension/package.json`, `vscode-extension/extension.js`, `.github/workflows/` (new)
