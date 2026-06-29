@@ -1,20 +1,5 @@
 # TODO
 
-## Attention-weighted subword pooling
-
-**File:** `cmd/natural-syntax-ls/embedding_inference.go`, `EmbeddingModel.embedChunk()`
-
-Currently mean-pools subword hidden states per word (lines ~160–192). This ignores attention: padding tokens and rare subwords get equal weight.
-
-**What to do:**
-
-- The ONNX session outputs `last_hidden_state` (shape `[1, seqLen, 384]`). The model also has an `attention_mask` input already populated in `m.attMask`.
-- Weight each subword's hidden state by its attention mask value before averaging. Mask is 1 for real tokens, 0 for padding — already computed and available in `maskBuf`.
-- Alternatively, export the model with `output_attentions=True` and use the last-layer attention scores as weights. This requires a new ONNX export (edit `scripts/export_embedding_model.py`) and a new output tensor in the session.
-- Simple first step: use the attention mask weights (already available, no new export needed). This eliminates padding-token contamination at chunk boundaries.
-
----
-
 ## Incremental / streaming updates
 
 **Files:** `cmd/natural-syntax-ls/document_registry.go`, `cmd/natural-syntax-ls/embedding_inference.go` (or `predictor.go`)
