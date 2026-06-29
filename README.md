@@ -12,23 +12,19 @@ Two modes:
 Requires Go, Python, Node.js, and Git for Windows (for bash).
 
 ```bash
-bash scripts/setup.sh
+scripts/setup.sh
 ```
 
-Exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds `natural-syntax-ls.exe`. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
+Exports the BERT-base POS model to ONNX (~400 MB), downloads the vocabulary, copies the ONNX Runtime DLL, and builds `bin/natural-syntax-ls.exe`. Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
 
 ```bash
-bash scripts/setup.sh --model all        # also exports MobileBERT (~100 MB)
-bash scripts/setup.sh --model semantic   # exports all-mpnet-base-v2 (~110 MB) for semantic mode
+scripts/setup.sh --model mobilebert  # lighter POS model (~100 MB)
+scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~110 MB)
+scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~22 MB)
+scripts/setup.sh --model all         # all models
 ```
 
-To use the lighter `all-MiniLM-L6-v2` model instead:
-
-```bash
-python scripts/export_embedding_model.py --variant minilm
-```
-
-Install the VS Code extension:
+Install the VS Code extension (and recreate the VSIX if extension.js is modified):
 
 ```bash
 cd vscode-extension
@@ -37,20 +33,10 @@ npx vsce package
 code --install-extension natural-syntax-ls-0.1.0.vsix
 ```
 
-Set the server path in VS Code settings if it is not on your PATH:
+Set the server path in VS Code settings:
 
 ```json
-"naturalSyntaxLs.serverPath": "C:\\path\\to\\natural-syntax-ls.exe"
-```
-
-### Rebuilding the VSIX
-
-Only needed if you modify files under `vscode-extension/`:
-
-```bash
-cd vscode-extension
-npx vsce package
-code --install-extension natural-syntax-ls-0.1.0.vsix
+"naturalSyntaxLs.serverPath": "C:\\path\\to\\bin\\natural-syntax-ls.exe"
 ```
 
 ## Models

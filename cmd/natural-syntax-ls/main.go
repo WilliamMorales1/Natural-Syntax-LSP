@@ -8,86 +8,60 @@ import (
 )
 
 func main() {
-	modelPath    := flag.String("model", "", "Path to a _pos.onnx model file")
+	// supported models: mpnet, minilm, mobilebert, bert_base
+	modelPath    := flag.String("model", "", "Path to a .onnx model file")
 	vocabPath    := flag.String("vocab", "", "Path to a _vocab.txt file")
-	embedPath    := flag.String("embed-model", "", "Path to embedding ONNX model (semantic mode)")
-	embedVariant := flag.String("embed-variant", "mpnet", "Embedding model variant: mpnet (110MB, 768-dim, default) or minilm (22MB, 384-dim)")
 	mode         := flag.String("mode", "pos", "Highlighting mode: pos or semantic")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
-	dataDir := filepath.Join(userConfigDir(), "natural-syntax-ls")
+	userDir, err := os.UserConfigDir()
+	if err != nil {
+		userDir = ""
+	}
+	dataDir := filepath.Join(userDir, "natural-syntax-ls")
 
-	embedHiddenSize := 768 // default for mpnet
+	embedHiddenSize := 768
+	if *modelPath == "minilm.onnx" {
+		embedHiddenSize = 384
+	}
+
+	if *modelPath == "" {
+		*modelPath = findFile([]string{
+			filepath.Join(dataDir, "bert_base.onnx"),
+			filepath.Join(dataDir, "mobilebert.onnx"),
+			filepath.Join(exeDir, "bert_base.onnx"),
+			filepath.Join(exeDir, "mobilebert.onnx"),
+			filepath.Join(dataDir, "mpnet.onnx"),
+			filepath.Join(dataDir, "minilm.onnx"),
+			filepath.Join(exeDir, "mpnet.onnx"),
+			filepath.Join(exeDir, "minilm.onnx"),
+		})
+	}
+
+	if *vocabPath == "" {
+		*vocabPath = findFile([]string{
+			filepath.Join(dataDir, "mpnet_vocab.txt"),
+			filepath.Join(dataDir, "minilm_vocab.txt"),
+			filepath.Join(exeDir, "mpnet_vocab.txt"),
+			filepath.Join(exeDir, "minilm_vocab.txt"),
+			filepath.Join(dataDir, "bert_base_vocab.txt"),
+			filepath.Join(dataDir, "mobilebert_vocab.txt"),
+			filepath.Join(exeDir, "bert_base_vocab.txt"),
+			filepath.Join(exeDir, "mobilebert_vocab.txt"),
+		})
+	}
+
 	if *mode == "semantic" {
-		isMPNet := *embedVariant == "mpnet"
-		if !isMPNet {
-			embedHiddenSize = 384
-		}
-		if *embedPath == "" {
-			if isMPNet {
-				*embedPath = findFile([]string{
-					os.Getenv("NATURAL_SYNTAX_LS_EMBED"),
-					filepath.Join(dataDir, "mpnet_embed.onnx"),
-					filepath.Join(exeDir, "mpnet_embed.onnx"),
-				})
-			} else {
-				*embedPath = findFile([]string{
-					os.Getenv("NATURAL_SYNTAX_LS_EMBED"),
-					filepath.Join(dataDir, "minilm_embed.onnx"),
-					filepath.Join(exeDir, "minilm_embed.onnx"),
-				})
-			}
-		}
-		if *vocabPath == "" {
-			if isMPNet {
-				*vocabPath = findFile([]string{
-					os.Getenv("NATURAL_SYNTAX_LS_VOCAB"),
-					filepath.Join(dataDir, "mpnet_vocab.txt"),
-					filepath.Join(exeDir, "mpnet_vocab.txt"),
-				})
-			} else {
-				*vocabPath = findFile([]string{
-					os.Getenv("NATURAL_SYNTAX_LS_VOCAB"),
-					filepath.Join(dataDir, "minilm_vocab.txt"),
-					filepath.Join(exeDir, "minilm_vocab.txt"),
-				})
-			}
-		}
-		if *embedPath == "" || *vocabPath == "" {
-			fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find embedding model or vocab file")
-			fmt.Fprintf(os.Stderr, "Run scripts/export_embedding_model.py --variant %s to export them.\n", *embedVariant)
-			fmt.Fprintln(os.Stderr, "Or set NATURAL_SYNTAX_LS_EMBED and NATURAL_SYNTAX_LS_VOCAB env vars.")
-			os.Exit(1)
-		}
-		initColorProjections(embedHiddenSize)
-	} else {
-		if *modelPath == "" {
-			*modelPath = findFile([]string{
-				os.Getenv("NATURAL_SYNTAX_LS_MODEL"),
-				filepath.Join(dataDir, "bert_base_pos.onnx"),
-				filepath.Join(dataDir, "mobilebert_pos.onnx"),
-				filepath.Join(exeDir, "bert_base_pos.onnx"),
-				filepath.Join(exeDir, "mobilebert_pos.onnx"),
-			})
-		}
-		if *vocabPath == "" {
-			*vocabPath = findFile([]string{
-				os.Getenv("NATURAL_SYNTAX_LS_VOCAB"),
-				filepath.Join(dataDir, "bert_base_vocab.txt"),
-				filepath.Join(dataDir, "mobilebert_vocab.txt"),
-				filepath.Join(exeDir, "bert_base_vocab.txt"),
-				filepath.Join(exeDir, "mobilebert_vocab.txt"),
-			})
-		}
-		if *modelPath == "" || *vocabPath == "" {
-			fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find model or vocab file")
-			fmt.Fprintln(os.Stderr, "Run scripts/setup.sh to export them to the data directory.")
-			fmt.Fprintln(os.Stderr, "Or set NATURAL_SYNTAX_LS_MODEL and NATURAL_SYNTAX_LS_VOCAB env vars.")
-			os.Exit(1)
-		}
+		initSemantic(embedHiddenSize)
+	}
+
+	if *modelPath == "" || *vocabPath == "" {
+		fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find embedding model or vocab file")
+		fmt.Fprintf(os.Stderr, "Run scripts/export_models.py to export them.\n")
+		os.Exit(1)
 	}
 
 	ortLib := findFile([]string{
@@ -107,7 +81,6 @@ func main() {
 		modelPath:       *modelPath,
 		vocabPath:       *vocabPath,
 		mode:            *mode,
-		embedPath:       *embedPath,
 		embedHiddenSize: embedHiddenSize,
 	}
 	if err := runLSP(cfg); err != nil {
@@ -126,12 +99,4 @@ func findFile(candidates []string) string {
 		}
 	}
 	return ""
-}
-
-func userConfigDir() string {
-	d, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return d
 }

@@ -18,8 +18,8 @@ done
 
 # Validate early.
 case "$MODEL" in
-    bert-base|mobilebert|all|semantic) ;;
-    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, all, or semantic." >&2; exit 1 ;;
+    bert-base|mobilebert|all|minilm|mpnet) ;;
+    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, all, minilm, or mpnet." >&2; exit 1 ;;
 esac
 
 step() { echo; echo "==> $1"; }
@@ -64,35 +64,40 @@ ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
-export_model() {
-    local model_name="$1" label="$2" onnx_file="$3" vocab_file="$4" labels_file="$5"
-    if [[ -f "$DATA_DIR/$onnx_file" && -f "$DATA_DIR/$vocab_file" && -f "$DATA_DIR/$labels_file" ]]; then
-        ok "$onnx_file, $vocab_file, and $labels_file already exist, skipping export."
+export_pos_model() {
+    local model_name="$1" label="$2"
+    local slug="${model_name//-/_}"
+    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_vocab.txt" && -f "$DATA_DIR/${slug}_labels.json" ]]; then
+        ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" --mode pos
         ok "$label exported."
     fi
 }
 
-export_embedding_model() {
-    if [[ -f "$DATA_DIR/minilm_embed.onnx" && -f "$DATA_DIR/minilm_vocab.txt" ]]; then
-        ok "minilm_embed.onnx and minilm_vocab.txt already exist, skipping export."
+export_semantic_model() {
+    local model_name="$1" label="$2"
+    local slug="${model_name//-/_}"
+    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_vocab.txt" ]]; then
+        ok "${slug}.onnx already exists, skipping export."
     else
-        step "Exporting all-MiniLM-L6-v2 embedding model (~22 MB)"
-        "$PYTHON" "$ROOT/scripts/export_embedding_model.py" "$DATA_DIR"
-        ok "Embedding model exported."
+        step "Exporting $label to ONNX"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" --mode semantic
+        ok "$label exported."
     fi
 }
 
 case "$MODEL" in
-    bert-base)  export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json  ;;
-    mobilebert) export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json ;;
-    semantic)   export_embedding_model ;;
+    bert-base)  export_pos_model  bert-base  "BERT-base POS (~400 MB)" ;;
+    mobilebert) export_pos_model  mobilebert "MobileBERT POS (~100 MB)" ;;
+    minilm)     export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)" ;;
+    mpnet)      export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)" ;;
     all)
-        export_model bert-base  "BERT-base POS (~400 MB)"   bert_base_pos.onnx   bert_base_vocab.txt   bert_base_labels.json
-        export_model mobilebert "MobileBERT POS (~100 MB)"  mobilebert_pos.onnx  mobilebert_vocab.txt  mobilebert_labels.json
-        export_embedding_model
+        export_pos_model  bert-base  "BERT-base POS (~400 MB)"
+        export_pos_model  mobilebert "MobileBERT POS (~100 MB)"
+        export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)"
+        export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)"
         ;;
 esac
 
@@ -129,8 +134,8 @@ fi
 
 step "Building natural-syntax-ls"
 rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~" "$ROOT/natural-syntax-ls"
-(cd "$ROOT" && go build -o natural-syntax-ls.exe ./cmd/natural-syntax-ls/)
-ok "Built: $ROOT/natural-syntax-ls.exe"
+(cd "$ROOT" && go build -o bin/natural-syntax-ls.exe ./cmd/natural-syntax-ls/)
+ok "Built: $ROOT/bin/natural-syntax-ls.exe"
 
 # ── Done ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +143,7 @@ echo
 echo "Done!"
 echo
 echo "Set naturalSyntaxLs.serverPath in VS Code to:"
-echo "  $ROOT/natural-syntax-ls.exe"
+echo "  $ROOT/bin/natural-syntax-ls.exe"
 echo
 echo "Model files are in: $DATA_DIR"
 echo "The extension finds them automatically."

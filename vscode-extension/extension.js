@@ -87,14 +87,14 @@ async function activate(context) {
     let serverArgs;
     if (mode === 'semantic') {
         const prefix = semanticModel === 'mpnet' ? 'mpnet' : 'minilm';
-        const embedFile = path.join(dataDir, `${prefix}_embed.onnx`);
+        const embedFile = path.join(dataDir, `${prefix}.onnx`);
         const vocabFile = path.join(dataDir, `${prefix}_vocab.txt`);
         console.log('[nls] embed =', embedFile);
-        serverArgs = ['--mode', 'semantic', '--embed-variant', prefix, '--embed-model', embedFile, '--vocab', vocabFile];
+        serverArgs = ['--mode', 'semantic', '--model', embedFile, '--vocab', vocabFile];
     } else {
         const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
         serverArgs = [
-            '--model', path.join(dataDir, `${slug}_pos.onnx`),
+            '--model', path.join(dataDir, `${slug}.onnx`),
             '--vocab', path.join(dataDir, `${slug}_vocab.txt`),
         ];
     }

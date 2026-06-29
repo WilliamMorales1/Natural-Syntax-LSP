@@ -28,9 +28,9 @@ var (
 	colorProjY []float32
 )
 
-// initColorProjections builds the two projection vectors for the given hidden dim.
+// initSemantic builds the two projection vectors for the given hidden dim.
 // Must be called once before any embeddingToColor call.
-func initColorProjections(dim int) {
+func initSemantic(dim int) {
 	rng := rand.New(rand.NewSource(0xC0105500))
 
 	colorProjX = make([]float32, dim)
