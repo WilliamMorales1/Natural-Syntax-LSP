@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -14,28 +15,36 @@ jobs:
             goarch: amd64
             platform: linux-x64
             binary: natural-syntax-ls
-            ort_glob: "libonnxruntime*.so*"
+            ort_archive: onnxruntime-linux-x64
+            ort_ext: tgz
+            ort_lib: libonnxruntime.so
             ort_dest: libonnxruntime.so
           - os: windows-latest
             goos: windows
             goarch: amd64
             platform: windows-x64
             binary: natural-syntax-ls.exe
-            ort_glob: "onnxruntime*.dll"
+            ort_archive: onnxruntime-win-x64
+            ort_ext: zip
+            ort_lib: onnxruntime.dll
             ort_dest: onnxruntime.dll
           - os: macos-13
             goos: darwin
             goarch: amd64
             platform: darwin-x64
             binary: natural-syntax-ls
-            ort_glob: "libonnxruntime*.dylib"
+            ort_archive: onnxruntime-osx-x86_64
+            ort_ext: tgz
+            ort_lib: libonnxruntime.dylib
             ort_dest: libonnxruntime.dylib
           - os: macos-latest
             goos: darwin
             goarch: arm64
             platform: darwin-arm64
             binary: natural-syntax-ls
-            ort_glob: "libonnxruntime*.dylib"
+            ort_archive: onnxruntime-osx-arm64
+            ort_ext: tgz
+            ort_lib: libonnxruntime.dylib
             ort_dest: libonnxruntime.dylib
 
     runs-on: ${{ matrix.os }}
@@ -46,34 +55,83 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build binary
+      - name: Install mingw (Windows CGO)
+        if: matrix.os == 'windows-latest'
+        run: choco install mingw --no-progress -y
+        shell: pwsh
+
+      - name: Build binary (unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
         run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
 
-      - name: Copy ORT shared library (unix)
+      - name: Build binary (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "1"
+          CC: gcc
+        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+
+      - name: Get ORT version (unix)
+        if: matrix.os != 'windows-latest'
+        id: ort_ver_unix
+        shell: bash
+        run: |
+          MOD_PATH=$(go env GOPATH)/pkg/mod/$(go list -m github.com/yalue/onnxruntime_go | tr ' ' '@')
+          ORT_VER=$(grep -oP '(?<=/onnxruntime/releases/(?:tag|download)/v)[0-9]+\.[0-9]+\.[0-9]+' "$MOD_PATH/README.md" | head -1)
+          echo "ORT version from README: $ORT_VER"
+          echo "ort_ver=$ORT_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Get ORT version (windows)
+        if: matrix.os == 'windows-latest'
+        id: ort_ver_win
+        shell: pwsh
+        run: |
+          $modPath = "$(go env GOPATH)/pkg/mod/$(go list -m github.com/yalue/onnxruntime_go)".Replace(' ', '@')
+          $readme = Get-Content "$modPath/README.md" -Raw
+          $m = [regex]::Match($readme, '(?<=/onnxruntime/releases/(?:tag|download)/v)[\d.]+')
+          $ver = $m.Value
+          Write-Host "ORT version from README: $ver"
+          "ort_ver=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Download ORT (unix)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          ORT_MOD="$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$(go list -m github.com/yalue/onnxruntime_go | awk '{print $2}')"
-          echo "ORT_MOD=$ORT_MOD"
-          ls "$ORT_MOD"
-          ORT_LIB=$(find "$ORT_MOD" -name "${{ matrix.ort_glob }}" | head -1)
-          echo "ORT_LIB=$ORT_LIB"
-          cp "$ORT_LIB" vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}
+          ORT_VER="${{ steps.ort_ver_unix.outputs.ort_ver }}"
+          ARCHIVE="${{ matrix.ort_archive }}-${ORT_VER}.${{ matrix.ort_ext }}"
+          URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/${ARCHIVE}"
+          echo "Downloading $URL"
+          curl -fL "$URL" -o ort_archive.${{ matrix.ort_ext }}
+          mkdir ort_extracted
+          tar xzf ort_archive.${{ matrix.ort_ext }} -C ort_extracted --strip-components=1
+          mkdir -p vscode-extension/bin/${{ matrix.platform }}
+          # find the lib — could be in lib/ or lib64/
+          LIB=$(find ort_extracted -name "${{ matrix.ort_lib }}" | head -1)
+          echo "Found ORT lib: $LIB"
+          cp "$LIB" vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}
 
-      - name: Copy ORT shared library (windows)
+      - name: Download ORT (windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $ver = (go list -m github.com/yalue/onnxruntime_go).Split(' ')[1]
-          $ortMod = "$(go env GOPATH)/pkg/mod/github.com/yalue/onnxruntime_go@$ver"
-          Write-Host "ORT_MOD=$ortMod"
-          $src = Get-ChildItem -Recurse "$ortMod" -Filter "${{ matrix.ort_glob }}" | Select-Object -First 1
-          Write-Host "ORT_LIB=$($src.FullName)"
-          Copy-Item $src.FullName "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}"
+          $ver = "${{ steps.ort_ver_win.outputs.ort_ver }}"
+          $archive = "${{ matrix.ort_archive }}-$ver.${{ matrix.ort_ext }}"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$ver/$archive"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest $url -OutFile ort_archive.zip
+          Expand-Archive ort_archive.zip -DestinationPath ort_extracted
+          New-Item -ItemType Directory -Force vscode-extension/bin/${{ matrix.platform }}
+          $lib = Get-ChildItem -Recurse ort_extracted -Filter "${{ matrix.ort_lib }}" | Select-Object -First 1
+          Write-Host "Found ORT lib: $($lib.FullName)"
+          Copy-Item $lib.FullName "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}"
 
       - uses: actions/upload-artifact@v4.6.2
         with:
@@ -107,7 +165,7 @@ jobs:
 
       - uses: actions/setup-node@v4.4.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install vsce and deps
         working-directory: vscode-extension
