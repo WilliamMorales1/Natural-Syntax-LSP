@@ -65,7 +65,6 @@ function handleSemanticColors(params) {
 
 function getBundledServerPath(extensionPath) {
     const platform = process.platform;
-    const arch = process.arch;
     let platformKey;
     if (platform === 'win32') {
         platformKey = 'windows-x64';
