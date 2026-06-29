@@ -64,14 +64,19 @@ function Export-POSModel($modelName, $label, $onnxFile, $vocabFile, $labelsFile)
     }
 }
 
-function Export-EmbeddingModel {
-    $onnx = Join-Path $DATA_DIR "minilm_embed.onnx"
-    $vocab = Join-Path $DATA_DIR "minilm_vocab.txt"
+function Export-EmbeddingModel([string]$Variant = "minilm") {
+    $names = @{
+        "minilm" = @{ onnx = "minilm_embed.onnx"; vocab = "minilm_vocab.txt"; label = "all-MiniLM-L6-v2 (~22 MB)" }
+        "mpnet"  = @{ onnx = "mpnet_embed.onnx";  vocab = "mpnet_vocab.txt";  label = "all-mpnet-base-v2 (~110 MB)" }
+    }
+    $n = $names[$Variant]
+    $onnx  = Join-Path $DATA_DIR $n.onnx
+    $vocab = Join-Path $DATA_DIR $n.vocab
     if ((Test-Path $onnx) -and (Test-Path $vocab)) {
-        Ok "minilm_embed.onnx and minilm_vocab.txt already exist, skipping export."
+        Ok "$($n.onnx) and $($n.vocab) already exist, skipping export."
     } else {
-        Step "Exporting all-MiniLM-L6-v2 embedding model (~22 MB)"
-        & $PYTHON (Join-Path $ROOT "scripts\export_embedding_model.py") $DATA_DIR
+        Step "Exporting $($n.label) embedding model"
+        & $PYTHON (Join-Path $ROOT "scripts\export_embedding_model.py") --variant $Variant $DATA_DIR
         if ($LASTEXITCODE -ne 0) { Fail "Embedding model export failed." }
         Ok "Embedding model exported."
     }

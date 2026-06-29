@@ -21,44 +21,46 @@ func setSemanticColorParams(l, c float64) {
 	semanticColorParamsPtr.Store(p)
 }
 
-// Two fixed orthogonal unit vectors in embHiddenSize-space.
-// Projecting a normalized embedding onto these gives (x,y); atan2(y,x) is the hue.
-// Similar embeddings → nearby (x,y) → similar hue → similar color.
+// Two fixed orthogonal unit vectors used to project embeddings to a 2D hue plane.
+// Seeded deterministically so colors are stable across restarts.
 var (
-	colorProjX [embHiddenSize]float32
-	colorProjY [embHiddenSize]float32
+	colorProjX []float32
+	colorProjY []float32
 )
 
-func init() {
+// initColorProjections builds the two projection vectors for the given hidden dim.
+// Must be called once before any embeddingToColor call.
+func initColorProjections(dim int) {
 	rng := rand.New(rand.NewSource(0xC0105500))
 
-	// First random unit vector.
+	colorProjX = make([]float32, dim)
+	colorProjY = make([]float32, dim)
+
 	var norm float32
-	for j := range embHiddenSize {
+	for j := range dim {
 		x := float32(rng.NormFloat64())
 		colorProjX[j] = x
 		norm += x * x
 	}
 	norm = float32(math.Sqrt(float64(norm)))
-	for j := range embHiddenSize {
+	for j := range dim {
 		colorProjX[j] /= norm
 	}
 
-	// Second random vector, Gram-Schmidt orthogonalized against the first.
 	var dot float32
-	for j := range embHiddenSize {
+	for j := range dim {
 		colorProjY[j] = float32(rng.NormFloat64())
 	}
-	for j := range embHiddenSize {
+	for j := range dim {
 		dot += colorProjX[j] * colorProjY[j]
 	}
 	norm = 0
-	for j := range embHiddenSize {
+	for j := range dim {
 		colorProjY[j] -= dot * colorProjX[j]
 		norm += colorProjY[j] * colorProjY[j]
 	}
 	norm = float32(math.Sqrt(float64(norm)))
-	for j := range embHiddenSize {
+	for j := range dim {
 		colorProjY[j] /= norm
 	}
 }

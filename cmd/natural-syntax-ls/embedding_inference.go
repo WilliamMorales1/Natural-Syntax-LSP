@@ -7,22 +7,20 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 )
 
-// embHiddenSize matches all-MiniLM-L6-v2's hidden dimension.
-const embHiddenSize = 384
-
-// EmbeddingModel runs all-MiniLM-L6-v2 via ONNX, extracts per-word contextual
-// embeddings (mean-pooled over subwords), and hashes them to semantic color
-// buckets via locality-sensitive hashing (embeddingBucket).
+// EmbeddingModel runs a sentence-transformer model via ONNX, extracts per-word
+// contextual embeddings (attention-mask-weighted pool over subwords), and maps
+// them to semantic colors via OKLCH projection.
 type EmbeddingModel struct {
 	session    *ort.AdvancedSession
 	tokenizer  *BERTTokenizer
 	inputIDs   *ort.Tensor[int64]
 	attMask    *ort.Tensor[int64]
 	tokTypeIDs *ort.Tensor[int64]
-	output     *ort.Tensor[float32] // shape [1, maxSeqLen, embHiddenSize]
+	output     *ort.Tensor[float32] // shape [1, maxSeqLen, hiddenSize]
+	hiddenSize int
 }
 
-func newEmbeddingModel(modelPath, vocabPath string) (*EmbeddingModel, error) {
+func newEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingModel, error) {
 	if err := ort.InitializeEnvironment(ort.WithLogLevelError()); err != nil {
 		return nil, fmt.Errorf("init ort env: %w", err)
 	}
@@ -33,7 +31,7 @@ func newEmbeddingModel(modelPath, vocabPath string) (*EmbeddingModel, error) {
 	}
 
 	shape2 := ort.NewShape(1, maxSeqLen)
-	shape3 := ort.NewShape(1, maxSeqLen, embHiddenSize)
+	shape3 := ort.NewShape(1, maxSeqLen, int64(hiddenSize))
 
 	inputIDs, err := ort.NewTensor(shape2, make([]int64, maxSeqLen))
 	if err != nil {
@@ -85,6 +83,7 @@ func newEmbeddingModel(modelPath, vocabPath string) (*EmbeddingModel, error) {
 		attMask:    attMask,
 		tokTypeIDs: tokTypeIDs,
 		output:     output,
+		hiddenSize: hiddenSize,
 	}, nil
 }
 
@@ -156,38 +155,43 @@ func (m *EmbeddingModel) embedChunk(words []wordSpan) ([][]float32, error) {
 		return nil, fmt.Errorf("ort run: %w", err)
 	}
 
-	hidden := m.output.GetData() // flat [1 * maxSeqLen * embHiddenSize]
+	hidden := m.output.GetData() // flat [1 * maxSeqLen * hiddenSize]
+	hs := m.hiddenSize
 
-	// Mean-pool subword vectors per word for a more faithful word embedding.
+	// Attention-mask-weighted pool: subwords with mask=0 (padding) contribute nothing.
 	sums := make([][]float32, len(words))
-	counts := make([]int, len(words))
+	weights := make([]float32, len(words))
 	for i := range sums {
-		sums[i] = make([]float32, embHiddenSize)
+		sums[i] = make([]float32, hs)
 	}
 	for si := range seqLen {
 		wi := swWordIdx[si]
 		if wi < 0 {
 			continue
 		}
-		base := si * embHiddenSize
-		if base+embHiddenSize > len(hidden) {
+		w := float32(maskBuf[si])
+		if w == 0 {
+			continue
+		}
+		base := si * hs
+		if base+hs > len(hidden) {
 			break
 		}
-		for d := range embHiddenSize {
-			sums[wi][d] += hidden[base+d]
+		for d := range hs {
+			sums[wi][d] += w * hidden[base+d]
 		}
-		counts[wi]++
+		weights[wi] += w
 	}
 	embeddings := make([][]float32, len(words))
 	for i := range words {
-		if counts[i] > 0 {
-			vec := make([]float32, embHiddenSize)
-			for d := range embHiddenSize {
-				vec[d] = sums[i][d] / float32(counts[i])
+		if weights[i] > 0 {
+			vec := make([]float32, hs)
+			for d := range hs {
+				vec[d] = sums[i][d] / weights[i]
 			}
 			embeddings[i] = vec
 		} else {
-			embeddings[i] = make([]float32, embHiddenSize)
+			embeddings[i] = make([]float32, hs)
 		}
 	}
 	return embeddings, nil

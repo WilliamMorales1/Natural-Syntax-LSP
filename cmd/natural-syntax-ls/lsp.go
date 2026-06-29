@@ -30,10 +30,11 @@ type rpcError struct {
 }
 
 type lspConfig struct {
-	modelPath string
-	vocabPath string
-	mode      string // "pos" or "semantic"
-	embedPath string // path to embedding ONNX (semantic mode)
+	modelPath      string
+	vocabPath      string
+	mode           string // "pos" or "semantic"
+	embedPath      string // path to embedding ONNX (semantic mode)
+	embedHiddenSize int   // hidden dimension of embedding model (384 or 768)
 }
 
 func runLSP(cfg lspConfig) error {
@@ -159,7 +160,7 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 		var predictor Predictor
 		var err error
 		if s.cfg.mode == "semantic" {
-			predictor, err = newEmbeddingModel(s.cfg.embedPath, s.cfg.vocabPath)
+			predictor, err = newEmbeddingModel(s.cfg.embedPath, s.cfg.vocabPath, s.cfg.embedHiddenSize)
 		} else {
 			predictor, err = newPOSModel(s.cfg.modelPath, s.cfg.vocabPath)
 		}

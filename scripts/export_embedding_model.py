@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 """
-Export sentence-transformers/all-MiniLM-L6-v2 as an ONNX embedding extractor
-for semantic mode.
+Export a sentence-transformer model as an ONNX embedding extractor for semantic mode.
 
-This model is 22 MB and was trained with contrastive learning specifically for
-semantic similarity — far better than raw BERT hidden states for clustering.
-It outputs last_hidden_state ([batch, seq, 384]); the Go server mean-pools
-subword vectors per word and runs k-means to assign semantic colours.
+Variants:
+  minilm  sentence-transformers/all-MiniLM-L6-v2   22 MB, 384-dim, 6-layer
+  mpnet   sentence-transformers/all-mpnet-base-v2  110 MB, 768-dim, 12-layer MPNet
+          (comparable to BERT-base; top of SBERT benchmarks at that scale)
 
 Usage:
-    python export_embedding_model.py [output_dir]
+    python export_embedding_model.py [--variant minilm|mpnet] [output_dir]
 """
 import sys
 import os
@@ -29,23 +28,59 @@ except ImportError as e:
     print("pip install transformers torch onnx onnxscript requests")
     sys.exit(1)
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+VARIANTS = {
+    "minilm": {
+        "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+        "size_note": "~22 MB",
+        "onnx_name": "minilm_embed.onnx",
+        "vocab_name": "minilm_vocab.txt",
+    },
+    "mpnet": {
+        "model_id": "sentence-transformers/all-mpnet-base-v2",
+        "size_note": "~110 MB",
+        "onnx_name": "mpnet_embed.onnx",
+        "vocab_name": "mpnet_vocab.txt",
+    },
+}
+
+def default_data_dir():
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
+    elif sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "natural-syntax-ls")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("out_dir", nargs="?", default=os.path.dirname(os.path.abspath(__file__)))
+parser.add_argument("--variant", choices=list(VARIANTS), default="minilm",
+                    help="Which model to export (default: minilm)")
+parser.add_argument("out_dir", nargs="?", default=None,
+                    help="Output directory (default: platform config dir for natural-syntax-ls)")
 args = parser.parse_args()
-out_dir = args.out_dir
 
-print(f"Loading {MODEL_ID} (~22 MB)...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModel.from_pretrained(MODEL_ID)
+v = VARIANTS[args.variant]
+out_dir = args.out_dir or default_data_dir()
+os.makedirs(out_dir, exist_ok=True)
+
+print(f"Loading {v['model_id']} ({v['size_note']})...")
+tokenizer = AutoTokenizer.from_pretrained(v["model_id"])
+model = AutoModel.from_pretrained(v["model_id"])
 model.eval()
 
 dummy_ids  = torch.zeros(1, 16, dtype=torch.long)
 dummy_mask = torch.ones(1, 16, dtype=torch.long)
 dummy_tti  = torch.zeros(1, 16, dtype=torch.long)
 
-onnx_path = os.path.join(out_dir, "minilm_embed.onnx")
+batch = torch.export.Dim("batch")
+seq   = torch.export.Dim("seq", min=1, max=512)
+dynamic_shapes = {
+    "input_ids":      {0: batch, 1: seq},
+    "attention_mask": {0: batch, 1: seq},
+    "token_type_ids": {0: batch, 1: seq},
+}
+
+onnx_path = os.path.join(out_dir, v["onnx_name"])
 print(f"Exporting ONNX to {onnx_path} ...")
 torch.onnx.export(
     model,
@@ -53,19 +88,13 @@ torch.onnx.export(
     onnx_path,
     input_names=["input_ids", "attention_mask", "token_type_ids"],
     output_names=["last_hidden_state"],
-    dynamic_axes={
-        "input_ids":         {0: "batch", 1: "seq"},
-        "attention_mask":    {0: "batch", 1: "seq"},
-        "token_type_ids":    {0: "batch", 1: "seq"},
-        "last_hidden_state": {0: "batch", 1: "seq"},
-    },
-    opset_version=14,
+    dynamic_shapes=dynamic_shapes,
+    opset_version=18,
 )
 print("ONNX export done.")
 
-# all-MiniLM-L6-v2 uses the bert-base-uncased WordPiece vocab (30522 tokens).
-vocab_path = os.path.join(out_dir, "minilm_vocab.txt")
-vocab_url  = f"https://huggingface.co/{MODEL_ID}/resolve/main/vocab.txt"
+vocab_path = os.path.join(out_dir, v["vocab_name"])
+vocab_url  = f"https://huggingface.co/{v['model_id']}/resolve/main/vocab.txt"
 print("Downloading vocab.txt ...")
 r = requests.get(vocab_url)
 r.raise_for_status()
@@ -75,4 +104,4 @@ print(f"vocab saved to {vocab_path}")
 
 print(f"\nDone. Files: {onnx_path}, {vocab_path}")
 print("\nUsage:")
-print(f"  natural-syntax-ls --mode semantic --embed-model {onnx_path} --vocab {vocab_path}")
+print(f"  natural-syntax-ls --mode semantic --embed-variant {args.variant} --embed-model {onnx_path} --vocab {vocab_path}")
