@@ -29,14 +29,6 @@ jobs:
             ort_archive: onnxruntime-win-x64
             ort_lib_glob: "onnxruntime.dll"
             ort_dest: onnxruntime.dll
-          - os: macos-13
-            goos: darwin
-            goarch: amd64
-            platform: darwin-x64
-            binary: natural-syntax-ls
-            ort_archive: onnxruntime-osx-x86_64
-            ort_lib_glob: "libonnxruntime*.dylib"
-            ort_dest: libonnxruntime.dylib
           - os: macos-latest
             goos: darwin
             goarch: arm64
@@ -126,7 +118,7 @@ jobs:
       - name: Flatten artifact dirs
         shell: bash
         run: |
-          for platform in linux-x64 windows-x64 darwin-x64 darwin-arm64; do
+          for platform in linux-x64 windows-x64 darwin-arm64; do
             mkdir -p vscode-extension/bin/$platform
             if [ -d "vscode-extension/bin/bin-$platform" ]; then
               mv vscode-extension/bin/bin-$platform/* vscode-extension/bin/$platform/
@@ -134,7 +126,6 @@ jobs:
             fi
           done
           chmod +x vscode-extension/bin/linux-x64/natural-syntax-ls \
-                   vscode-extension/bin/darwin-x64/natural-syntax-ls \
                    vscode-extension/bin/darwin-arm64/natural-syntax-ls
 
       - uses: actions/setup-node@v4.4.0

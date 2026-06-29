@@ -70,7 +70,7 @@ function getBundledServerPath(extensionPath) {
     if (platform === 'win32') {
         platformKey = 'windows-x64';
     } else if (platform === 'darwin') {
-        platformKey = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+        platformKey = 'darwin-arm64';
     } else {
         platformKey = 'linux-x64';
     }
