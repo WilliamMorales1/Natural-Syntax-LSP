@@ -1,0 +1,37 @@
+1. 	acl  		 Clausal modifier of noun (adjectival clause)  the man who I saw
+2. 	advcl		 Adverbial clause modifier                     I left because she arrived
+3. 	advmod		 Adverbial modifier                            she left quickly
+4. 	amod 		 Adjectival modifier                           the big house
+5. 	appos		 Appositional modifier                         my sister, a doctor, ...
+6. 	aux  		 Auxiliary                                     she is running
+7. 	case 		 Case marking                                  the office of the president
+8. 	cc   		 Coordinating conjunction                      you and me
+9. 	ccomp		 Clausal complement                            he says that you like him
+10. clf  		 Classifier                                    three cup tea
+11. compound	 Compound                                      phone book
+12. conj 		 Conjunct                                      Sam and Bob
+13. cop  		 Copula                                        Bill is honest
+14. csubj		 Clausal subject                               what she said makes sense
+15. dep  		 Unspecified dependency                        (fallback relation)
+16. det  		 Determiner                                    the man
+17. discourse	 Discourse element                             Bob, hi!
+18. dislocated	 Dislocated elements                           Bob, he was such a nice guy
+19. expl 		 Expletive                                     it is raining
+20. fixed		 Fixed multiword expression                    as well as
+21. flat 		 Flat multiword expression                     Boston University
+22. goeswith	 Goes with (word fragment)                     more over ("moreover")
+23. iobj 		 Indirect object                               she gave me a raise
+24. list 		 List                                          Tom, Dick, Harry
+25. mark 		 Marker (subordinating conjunction)            she said that he was fine
+26. nmod 		 Nominal modifier                              the office of the president
+27. nsubj		 Nominal subject                               she runs
+28. nummod		 Numeric modifier                              I have four cats
+29. obj  		 Direct object                                 she gave me a raise
+30. obl  		 Oblique nominal                               she gave me a raise on Tuesday
+31. orphan		 Orphan (in gapping)                           Fred bought apples, Bob oranges
+32. parataxis	 Parataxis                                     the guy, John said, left early
+33. punct		 Punctuation                                   Done!
+34. reparandum	 Overridden disfluency                         she was, she went to school
+35. root 		 Root                                          (the sentence's main predicate)
+36. vocative	 Vocative                                      Bill, are you OK?
+37. xcomp		 Open clausal complement                       she wants to leave

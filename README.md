@@ -1,11 +1,12 @@
 # Natural Syntax LSP
 
-Parts-of-speech or semantic-embedding highlighting for VS Code via a local Go LSP server running ONNX inference. Hover over any word to see its tag and a Wiktionary definition.
+Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Code via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its head/dependents) plus a Wiktionary definition.
 
-Two modes:
+Three modes:
 
 - **POS mode** (default) — BERT/MobileBERT classifies each word's part of speech and maps it to a VS Code semantic token type (color determined by your theme).
 - **Semantic mode** — `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2` embeds each word into a high-dimensional vector, projects it onto a 2D plane, and maps the angle to a continuous OKLCH color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
+- **Dependency mode** — a biaffine Universal Dependencies parser ([diaparser](https://github.com/Unipisa/diaparser), default checkpoint `en_ewt.electra-base`) assigns each word a syntactic head and UD relation label (`nsubj`, `obj`, `amod`, …). Words are colored by relation category, and hovering a word shows its head/dependents as a small rendered tree (via the bundled `nlsdep` grammar in `vscode-extension/syntaxes/`).
 
 ## Installation
 
@@ -17,7 +18,7 @@ Download the `.vsix` from the [latest release](../../releases/latest) and instal
 code --install-extension natural-syntax-ls-*.vsix
 ```
 
-The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for your platform (Windows x64, Linux x64, macOS x64, macOS arm64), so no Go toolchain is needed.
+The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for your platform (Windows x64, Linux x64, macOS arm64), so no Go toolchain is needed.
 
 You still need to export the ONNX model files (Python + pip):
 
@@ -26,8 +27,11 @@ scripts/setup.sh             # BERT-base POS model (~400 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~100 MB)
 scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~110 MB)
 scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~22 MB)
+scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser
 scripts/setup.sh --model all         # all models
 ```
+
+(`scripts/setup.ps1 -Model <...>` on Windows, same values.)
 
 Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
 
@@ -58,21 +62,21 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 | `mobilebert` | ~100 MB | POS | Faster startup |
 | `all-mpnet-base-v2` (default) | ~110 MB | Semantic | 768-dim, BERT-base scale, best quality |
 | `all-MiniLM-L6-v2` | ~22 MB | Semantic | 384-dim, faster, lower quality |
+| `en_ewt.electra-base` (default) | ~50 MB | Dependency | diaparser biaffine UD parser; pass `--model <diaparser-catalog-name>` to `export_model.py` for other languages/corpora |
 
-Switch POS model via `naturalSyntaxLs.model`. Switch semantic model via `naturalSyntaxLs.semanticModel`. Switch between modes via `naturalSyntaxLs.mode`.
+One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active — its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model file names on disk (`{slug}.onnx` / `{slug}_vocab.txt`, or `{slug}_dependency.onnx` / `{slug}_dependency_vocab.txt`) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported.
 
 ## Settings
 
 | Setting | Default | Description |
 |---|---|---|
 | `naturalSyntaxLs.serverPath` | `natural-syntax-ls` | Path to the Go binary |
-| `naturalSyntaxLs.mode` | `pos` | `pos` or `semantic` |
-| `naturalSyntaxLs.model` | `bert-base` | `bert-base` or `mobilebert` (POS mode only) |
+| `naturalSyntaxLs.mode` | `pos` | `pos`, `semantic`, or `dependency` |
+| `naturalSyntaxLs.model` | `bert-base` | Model name; meaning depends on `mode` (see above) |
 | `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate on |
 | `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight (POS mode) |
 | `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover |
-| `naturalSyntaxLs.semanticModel` | `mpnet` | `mpnet` (110 MB, 768-dim) or `minilm` (22 MB, 384-dim) — semantic mode only |
 | `naturalSyntaxLs.semanticLightness` | `0.75` | OKLCH lightness for semantic colors (0–1); increase for light themes |
 | `naturalSyntaxLs.semanticChroma` | `0.14` | OKLCH chroma (color intensity) for semantic colors |
 
@@ -104,6 +108,31 @@ Each word is embedded by `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2`, pr
 Default: OKLCH(0.75, 0.14, hue). Adjust `semanticLightness` and `semanticChroma` for your theme.
 
 Hover shows the hex color code and a Wiktionary definition (when available).
+
+## Dependency Mode Colors
+
+Each word is colored by its Universal Dependencies relation category (theme token type, like POS mode — not literal hex colors):
+
+| Relations | Meaning | Token Type |
+|---|---|---|
+| nsubj, csubj | Subjects | `variable` (declaration) |
+| obj, iobj | Objects | `variable` |
+| ccomp, xcomp | Clausal complements | `function` |
+| advcl, acl | Adverbial / adnominal clauses | `function` (modification) |
+| amod | Adjectival modifier | `type` |
+| advmod | Adverbial modifier | `type` (modification) |
+| nmod, appos, nummod | Nominal dependents | `property` |
+| aux, cop | Auxiliaries / copula | `keyword` |
+| mark, case | Subordinators / adpositions | `operator` |
+| det | Determiners | `macro` |
+| cc, conj | Coordination | `operator` (static) |
+| compound, fixed, flat, goeswith | Multiword units | `namespace` |
+| discourse, vocative, expl | Discourse elements | `string` |
+| root | Sentence root | `class` (declaration) |
+| punct | Punctuation | `comment` (deprecated) |
+| everything else (dep, clf, list, orphan, parataxis, reparandum, dislocated) | Uncommon relations | `modifier` |
+
+Hover a word to see its head and dependents rendered as a small tree, plus a Wiktionary definition (when available).
 
 ## Test
 

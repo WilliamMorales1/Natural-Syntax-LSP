@@ -8,7 +8,24 @@
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./extension.js",
+  "scripts": {
+    "test": "node arc-layout.test.js"
+  },
   "contributes": {
+    "languages": [
+      {
+        "id": "nlsdep",
+        "aliases": ["NLS Dependency Hover"],
+        "extensions": []
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nlsdep",
+        "scopeName": "source.nlsdep",
+        "path": "./syntaxes/nlsdep.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "Natural Syntax LS",
       "properties": {
@@ -25,9 +42,8 @@
         },
         "naturalSyntaxLs.model": {
           "type": "string",
-          "enum": ["mobilebert", "bert-base"],
           "default": "bert-base",
-          "description": "Which POS model to use. bert-base is more accurate but slower. Run setup.ps1 --Model bert-base to export it first."
+          "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. pos: 'bert-base' (default, more accurate) or 'mobilebert' (faster). semantic: 'mpnet' (default, 768-dim) or 'minilm' (faster, 384-dim). dependency: a diaparser catalog name, e.g. 'en_ewt.electra-base' (default). Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
         },
         "naturalSyntaxLs.tokenMapUpdate": {
           "type": "object",
@@ -60,19 +76,9 @@
         },
         "naturalSyntaxLs.mode": {
           "type": "string",
-          "enum": ["pos", "semantic"],
+          "enum": ["pos", "semantic", "dependency"],
           "default": "pos",
-          "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning — run scripts/export_embedding_model.py first."
-        },
-        "naturalSyntaxLs.semanticModel": {
-          "type": "string",
-          "enum": ["minilm", "mpnet"],
-          "enumDescriptions": [
-            "all-MiniLM-L6-v2 — 22 MB, 384-dim, fast. Good for most use cases.",
-            "all-mpnet-base-v2 — 110 MB, 768-dim, BERT-base scale. Higher quality semantic similarity."
-          ],
-          "default": "mpnet",
-          "description": "Which embedding model to use in semantic mode. Run scripts/export_embedding_model.py --variant <model> to export it first."
+          "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning — run scripts/export_model.py --model <mpnet|minilm> first. 'dependency' colours by Universal Dependencies relation and draws head/dependent arcs — run scripts/export_model.py --model <diaparser-catalog-name> first (e.g. en_ewt.electra-base)."
         }
       }
     }

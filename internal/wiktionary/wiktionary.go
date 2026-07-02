@@ -1,4 +1,5 @@
-package main
+// Package wiktionary fetches and formats word definitions from the Wiktionary REST API.
+package wiktionary
 
 import (
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"natural-syntax-ls/internal/postag"
 )
 
 var wiktionaryClient = &http.Client{Timeout: 8 * time.Second}
@@ -49,24 +52,22 @@ func wiktFetch(word string) (map[string][]wiktDef, error) {
 	return payload, nil
 }
 
-// fetchWiktionaryDef returns (definition, wiktionary URL, ok).
-// Tries to match the word's POS; falls back to first available definition.
-// Tries exact case first, then lowercase.
-func fetchWiktionaryDef(word string, pos PartOfSpeech) (string, string, bool) {
+// FetchDef returns (definition, wiktionary URL, ok), matching the word's POS if possible, trying exact case then lowercase.
+func FetchDef(word string, pos postag.PartOfSpeech) (string, string, bool) {
 	lower := strings.ToLower(word)
 	cacheKey := lower + ":" + pos.String()
 	if v, ok := wiktCache.Load(cacheKey); ok {
 		e := v.(wiktCacheEntry)
 		return e.def, e.url, e.ok
 	}
-	def, url, ok := fetchWiktionaryDefUncached(word, pos)
+	def, url, ok := fetchDefUncached(word, pos)
 	if ok {
 		wiktCache.Store(cacheKey, wiktCacheEntry{def, url, true})
 	}
 	return def, url, ok
 }
 
-func fetchWiktionaryDefUncached(word string, pos PartOfSpeech) (string, string, bool) {
+func fetchDefUncached(word string, pos postag.PartOfSpeech) (string, string, bool) {
 	lower := strings.ToLower(word)
 
 	resolved := word
@@ -88,7 +89,7 @@ func fetchWiktionaryDefUncached(word string, pos PartOfSpeech) (string, string, 
 	}
 
 	target := posToWiktCategory(pos)
-	numeralGlyph := (pos == POS_CD || pos == POS_LS) && isNumeralGlyph(lower)
+	numeralGlyph := (pos == postag.POS_CD || pos == postag.POS_LS) && isNumeralGlyph(lower)
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}
@@ -128,8 +129,7 @@ func fetchWiktionaryDefUncached(word string, pos PartOfSpeech) (string, string, 
 		}
 	}
 
-	// For numeral glyphs: Translingual before English in every tier.
-	// For words: English before Translingual.
+	// Numeral glyphs: Translingual before English in every tier; words: reverse.
 	ordered := func(b bucket) []*wiktDef {
 		if numeralGlyph {
 			return append(b.trans, b.main...)
@@ -178,29 +178,29 @@ func isNumeralGlyph(word string) bool {
 	return true
 }
 
-func posToWiktCategory(pos PartOfSpeech) string {
+func posToWiktCategory(pos postag.PartOfSpeech) string {
 	switch pos {
-	case POS_NN, POS_NNS, POS_NNP, POS_NNPS:
+	case postag.POS_NN, postag.POS_NNS, postag.POS_NNP, postag.POS_NNPS:
 		return "Noun"
-	case POS_CD:
+	case postag.POS_CD:
 		return "Numeral"
-	case POS_VB, POS_VBD, POS_VBG, POS_VBN, POS_VBP, POS_VBZ, POS_MD:
+	case postag.POS_VB, postag.POS_VBD, postag.POS_VBG, postag.POS_VBN, postag.POS_VBP, postag.POS_VBZ, postag.POS_MD:
 		return "Verb"
-	case POS_JJ, POS_JJR, POS_JJS:
+	case postag.POS_JJ, postag.POS_JJR, postag.POS_JJS:
 		return "Adjective"
-	case POS_RB, POS_RBR, POS_RBS:
+	case postag.POS_RB, postag.POS_RBR, postag.POS_RBS:
 		return "Adverb"
-	case POS_IN, POS_TO:
+	case postag.POS_IN, postag.POS_TO:
 		return "Preposition"
-	case POS_DT, POS_PDT, POS_WDT:
+	case postag.POS_DT, postag.POS_PDT, postag.POS_WDT:
 		return "Article"
-	case POS_PRP, POS_WP:
+	case postag.POS_PRP, postag.POS_WP:
 		return "Pronoun"
-	case POS_CC:
+	case postag.POS_CC:
 		return "Conjunction"
-	case POS_UH:
+	case postag.POS_UH:
 		return "Interjection"
-	case POS_RP:
+	case postag.POS_RP:
 		return "Particle"
 	default:
 		return ""

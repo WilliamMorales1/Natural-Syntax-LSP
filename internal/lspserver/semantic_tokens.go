@@ -1,18 +1,10 @@
-package main
+package lspserver
 
-// encodeSemanticTokens encodes filtered tokens as LSP semantic token deltas.
-// Output is a flat []uint32 of 5-tuples: deltaLine, deltaStart, length, tokenType, modifiers.
-func encodeSemanticTokens(doc *document, tm *TokenMap) []uint32 {
-	runes := []rune(doc.text)
-	n := len(runes)
+import "natural-syntax-ls/internal/tokenmap"
 
-	// Build line start table (char offsets).
-	lineStarts := []int{0}
-	for i, r := range runes {
-		if r == '\n' && i+1 < n {
-			lineStarts = append(lineStarts, i+1)
-		}
-	}
+// encodeSemanticTokens encodes filtered tokens as a flat []uint32 of LSP semantic-token 5-tuples: deltaLine, deltaStart, length, tokenType, modifiers.
+func encodeSemanticTokens(doc *document, tm *tokenmap.Map, useDeprel bool) []uint32 {
+	lineStarts := buildLineStarts([]rune(doc.text))
 
 	result := make([]uint32, 0, len(doc.tokens)*5)
 
@@ -20,7 +12,13 @@ func encodeSemanticTokens(doc *document, tm *TokenMap) []uint32 {
 	prevStart := 0
 
 	for _, tok := range doc.tokens {
-		bits := tm.get(tok.Tag)
+		var bits *tokenmap.Bits
+		if useDeprel {
+			b := tokenmap.DeprelBits(tok.Deprel)
+			bits = &b
+		} else {
+			bits = tm.Get(tok.Tag)
+		}
 		if bits == nil {
 			continue
 		}
@@ -48,6 +46,18 @@ func encodeSemanticTokens(doc *document, tm *TokenMap) []uint32 {
 		)
 	}
 	return result
+}
+
+// buildLineStarts returns the char offset (within runes) of the start of each line.
+func buildLineStarts(runes []rune) []int {
+	n := len(runes)
+	lineStarts := []int{0}
+	for i, r := range runes {
+		if r == '\n' && i+1 < n {
+			lineStarts = append(lineStarts, i+1)
+		}
+	}
+	return lineStarts
 }
 
 func charOffsetToLine(lineStarts []int, offset int) int {

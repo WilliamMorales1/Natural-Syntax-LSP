@@ -1,4 +1,5 @@
-package main
+// Package postag holds the linguistic tag types (POS, UD deprel) shared across inference, token-mapping, and LSP layers.
+package postag
 
 import (
 	"encoding/json"
@@ -49,7 +50,7 @@ const (
 	N_PART_OF_SPEECH = 37
 )
 
-var posFromString = map[string]PartOfSpeech{
+var FromString = map[string]PartOfSpeech{
 	"CC": POS_CC, "CD": POS_CD, "DT": POS_DT, "EX": POS_EX,
 	"FW": POS_FW, "IN": POS_IN, "JJ": POS_JJ, "JJR": POS_JJR,
 	"JJS": POS_JJS, "LS": POS_LS, "MD": POS_MD, "NN": POS_NN,
@@ -86,7 +87,7 @@ func (p *PartOfSpeech) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	v, ok := posFromString[s]
+	v, ok := FromString[s]
 	if !ok {
 		return fmt.Errorf("unknown POS tag: %s", s)
 	}
@@ -94,7 +95,8 @@ func (p *PartOfSpeech) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func posDescription(pos PartOfSpeech) string {
+// Description returns a human-readable label for pos, used in hover text.
+func Description(pos PartOfSpeech) string {
 	switch pos {
 	case POS_CC:
 		return "Coordinating conjunction"
@@ -173,35 +175,4 @@ func posDescription(pos PartOfSpeech) string {
 	default:
 		return "Unknown"
 	}
-}
-
-type POSToken struct {
-	Word        string
-	Score       float64
-	Tag         PartOfSpeech
-	OffsetBegin uint32
-	OffsetEnd   uint32
-	// Description overrides the POS label in hover text.
-	Description string
-	// Color is a "#RRGGBB" hex color set by semantic mode; empty in POS mode.
-	Color string
-}
-
-func filterToken(t POSToken, threshold float64) bool {
-	if t.Score <= threshold {
-		return false
-	}
-	for _, ch := range t.Word {
-		if !isASCIIPunct(ch) {
-			return true
-		}
-	}
-	return false
-}
-
-func isASCIIPunct(r rune) bool {
-	return r >= '!' && r <= '/' ||
-		r >= ':' && r <= '@' ||
-		r >= '[' && r <= '`' ||
-		r >= '{' && r <= '~'
 }

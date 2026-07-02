@@ -1,7 +1,10 @@
-package main
+package lspserver
 
 import (
-	"sync"
+	"natural-syntax-ls/internal/inference"
+	"natural-syntax-ls/internal/postag"
+	"natural-syntax-ls/internal/tokenizer"
+	"natural-syntax-ls/internal/tokenmap"
 )
 
 const defaultScoreThreshold = 1.0 / 3.0
@@ -45,29 +48,43 @@ func (tw *two[T]) takeNewerAndClear() *T {
 	return v
 }
 
+// takeQueuedOrLatest returns the older queued reply if one is pending, otherwise takes and clears the single/latest reply.
+func (tw *two[T]) takeQueuedOrLatest(queued bool) *T {
+	if queued {
+		return tw.takeOlder()
+	}
+	return tw.takeNewerAndClear()
+}
+
 // document holds a processed document.
 type document struct {
 	text    string
-	tokens  []POSToken
+	tokens  []postag.POSToken
 	version int32
 }
 
 type hoverRequest struct {
 	line, char uint32
-	reply      chan *POSToken
+	reply      chan *hoverQueryResult
+}
+
+// hoverQueryResult is the hovered token plus (in dependency mode) the tokens whose head is this token.
+type hoverQueryResult struct {
+	tok        *postag.POSToken
+	dependents []postag.POSToken
 }
 
 // chunkResult holds per-chunk prediction results and the word spans used.
 type chunkResult struct {
-	wordTexts []string   // word texts for dirty detection
-	words     []wordSpan // full spans for offset patching
-	tokens    []POSToken
+	wordTexts []string             // word texts for dirty detection
+	words     []tokenizer.WordSpan // full spans for offset patching
+	tokens    []postag.POSToken
 }
 
 // documentStore tracks per-URI state.
 type documentStore struct {
 	queued         *textItem
-	queuedWords    []wordSpan
+	queuedWords    []tokenizer.WordSpan
 	processing     bool
 	doc            *document
 	pendingReplies two[chan []uint32]
@@ -78,8 +95,6 @@ type documentStore struct {
 	processingText    string
 	processingVersion int32
 	chunkResults      []*chunkResult
-	chunksTotal       int
-	chunksDone        int
 }
 
 // textItem is a document text from the client.
@@ -108,35 +123,37 @@ type registryMsg struct {
 	item      *textItem
 	uri       string
 	doc       *document
-	mapUpdate map[PartOfSpeech]*TokenTypeNModifiers
+	mapUpdate map[postag.PartOfSpeech]*tokenmap.Override
 	threshold float64
 	// for semanticTokens call
 	semReply chan []uint32
 	// for hover
 	hoverLine      uint32
 	hoverCharacter uint32
-	hoverReply     chan *POSToken
+	hoverReply     chan *hoverQueryResult
 	// for msgPartialPredicted
 	chunkIdx int
 	chunk    *chunkResult
 }
 
-// DocumentRegistry serialises all document state on a single goroutine.
-type DocumentRegistry struct {
-	ch           chan registryMsg
-	model        Predictor
-	tokenMap     TokenMap
-	threshold    float64
-	stores       map[string]*documentStore
-	mu           sync.Mutex // protects nothing — registry is single-goroutine; mu for Send
-	onDocReady   func(uri string, doc *document) // called after each chunk and on completion
+// documentRegistry serialises all document state on a single goroutine.
+type documentRegistry struct {
+	ch         chan registryMsg
+	model      inference.Predictor
+	tokenMap   tokenmap.Map
+	useDeprel  bool // true when model is *inference.DependencyModel: color tokens by deprel category, not POS tag
+	threshold  float64
+	stores     map[string]*documentStore
+	onDocReady func(uri string, doc *document) // called after each chunk and on completion
 }
 
-func newDocumentRegistry(model Predictor) *DocumentRegistry {
-	dr := &DocumentRegistry{
+func newDocumentRegistry(model inference.Predictor) *documentRegistry {
+	_, isDependency := model.(*inference.DependencyModel)
+	dr := &documentRegistry{
 		ch:        make(chan registryMsg, 64),
 		model:     model,
-		tokenMap:  defaultTokenMap(),
+		tokenMap:  tokenmap.NewDefault(),
+		useDeprel: isDependency,
 		threshold: defaultScoreThreshold,
 		stores:    make(map[string]*documentStore),
 	}
@@ -144,11 +161,11 @@ func newDocumentRegistry(model Predictor) *DocumentRegistry {
 	return dr
 }
 
-func (dr *DocumentRegistry) send(m registryMsg) {
+func (dr *documentRegistry) send(m registryMsg) {
 	dr.ch <- m
 }
 
-func (dr *DocumentRegistry) loop() {
+func (dr *documentRegistry) loop() {
 	for m := range dr.ch {
 		switch m.kind {
 		case msgItem:
@@ -160,7 +177,7 @@ func (dr *DocumentRegistry) loop() {
 		case msgDiscard:
 			delete(dr.stores, m.uri)
 		case msgTokenMapUpdate:
-			dr.tokenMap.extend(m.mapUpdate)
+			dr.tokenMap.Extend(m.mapUpdate)
 		case msgScoreThreshold:
 			dr.threshold = m.threshold
 		case msgSemanticTokensCall:
@@ -171,23 +188,22 @@ func (dr *DocumentRegistry) loop() {
 	}
 }
 
-func (dr *DocumentRegistry) handleItem(item *textItem) {
+func (dr *documentRegistry) handleItem(item *textItem) {
 	store := dr.storeFor(item.uri)
 	if store.latestVersion >= item.version {
 		return
 	}
 	store.latestVersion = item.version
-	words := basicTokenize(item.text)
+	words := tokenizer.BasicTokenize(item.text)
 	dr.scheduleProcessing(item, words, store)
 }
 
-func (dr *DocumentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr *chunkResult) {
+func (dr *documentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr *chunkResult) {
 	store, ok := dr.stores[uri]
 	if !ok || !store.processing {
 		return
 	}
 	store.chunkResults[chunkIdx] = cr
-	store.chunksDone++
 
 	// Update doc so hover sees the latest partial data.
 	partialDoc := &document{
@@ -202,7 +218,7 @@ func (dr *DocumentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr 
 	}
 }
 
-func (dr *DocumentRegistry) handlePredicted(uri string) {
+func (dr *documentRegistry) handlePredicted(uri string) {
 	store, ok := dr.stores[uri]
 	if !ok || !store.processing {
 		return
@@ -216,14 +232,9 @@ func (dr *DocumentRegistry) handlePredicted(uri string) {
 	}
 	store.doc = doc
 
-	var reply *chan []uint32
-	if store.queued != nil {
-		reply = store.pendingReplies.takeOlder()
-	} else {
-		reply = store.pendingReplies.takeNewerAndClear()
-	}
+	reply := store.pendingReplies.takeQueuedOrLatest(store.queued != nil)
 	if reply != nil {
-		tokens := encodeSemanticTokens(doc, &dr.tokenMap)
+		tokens := encodeSemanticTokens(doc, &dr.tokenMap, dr.useDeprel)
 		*reply <- tokens
 	}
 	if ph := store.pendingHover; ph != nil {
@@ -242,10 +253,10 @@ func (dr *DocumentRegistry) handlePredicted(uri string) {
 	}
 }
 
-func (dr *DocumentRegistry) handleSemanticTokensCall(uri string, reply chan []uint32) {
+func (dr *documentRegistry) handleSemanticTokensCall(uri string, reply chan []uint32) {
 	store := dr.storeFor(uri)
 	if !store.processing && store.doc != nil {
-		tokens := encodeSemanticTokens(store.doc, &dr.tokenMap)
+		tokens := encodeSemanticTokens(store.doc, &dr.tokenMap, dr.useDeprel)
 		reply <- tokens
 		return
 	}
@@ -255,7 +266,7 @@ func (dr *DocumentRegistry) handleSemanticTokensCall(uri string, reply chan []ui
 	}
 }
 
-func (dr *DocumentRegistry) handleHoverQuery(uri string, line, character uint32, reply chan *POSToken) {
+func (dr *documentRegistry) handleHoverQuery(uri string, line, character uint32, reply chan *hoverQueryResult) {
 	store, ok := dr.stores[uri]
 	if !ok || store.doc == nil {
 		if ok && store.processing {
@@ -279,14 +290,20 @@ func (dr *DocumentRegistry) handleHoverQuery(uri string, line, character uint32,
 		t := &doc.tokens[i]
 		if t.OffsetBegin <= charOffset && charOffset < t.OffsetEnd {
 			cp := *t
-			reply <- &cp
+			var dependents []postag.POSToken
+			for _, d := range doc.tokens {
+				if d.HasHead && d.HeadOffsetBegin == t.OffsetBegin {
+					dependents = append(dependents, d)
+				}
+			}
+			reply <- &hoverQueryResult{tok: &cp, dependents: dependents}
 			return
 		}
 	}
 	reply <- nil
 }
 
-func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan, store *documentStore) {
+func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer.WordSpan, store *documentStore) {
 	if store.processing {
 		store.queued = item
 		store.queuedWords = words
@@ -298,7 +315,7 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 	store.processingText = item.text
 	store.processingVersion = item.version
 
-	numChunks := (len(words) + chunkSize - 1) / chunkSize
+	numChunks := (len(words) + inference.ChunkSize - 1) / inference.ChunkSize
 	if len(words) == 0 {
 		numChunks = 0
 	}
@@ -309,8 +326,8 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 
 	if len(store.chunkResults) == numChunks {
 		for i := range numChunks {
-			start := i * chunkSize
-			end := min(start+chunkSize, len(words))
+			start := i * inference.ChunkSize
+			end := min(start+inference.ChunkSize, len(words))
 			if old := store.chunkResults[i]; old != nil && chunksEqual(old.wordTexts, words[start:end]) {
 				newChunkResults[i] = patchChunkOffsets(old, words[start:end])
 			} else {
@@ -331,8 +348,6 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 	}
 
 	store.chunkResults = newChunkResults
-	store.chunksTotal = numChunks
-	store.chunksDone = cleanCount
 
 	// Immediately push colors for clean chunks.
 	if cleanCount > 0 && dr.onDocReady != nil {
@@ -363,7 +378,7 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 			reply = store.pendingReplies.takeNewerAndClear()
 		}
 		if reply != nil {
-			tokens := encodeSemanticTokens(doc, &dr.tokenMap)
+			tokens := encodeSemanticTokens(doc, &dr.tokenMap, dr.useDeprel)
 			*reply <- tokens
 		}
 		if ph := store.pendingHover; ph != nil {
@@ -383,22 +398,28 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 			if !dirty[i] {
 				continue
 			}
-			start := i * chunkSize
-			end := min(start+chunkSize, len(words))
+			start := i * inference.ChunkSize
+			end := min(start+inference.ChunkSize, len(words))
 			chunkWords := words[start:end]
 			tokens, err := dr.model.PredictChunk(chunkWords)
 			if err != nil {
 				tokens = nil
 			}
-			filtered := tokens[:0]
-			for _, t := range tokens {
-				if filterToken(t, threshold) {
-					filtered = append(filtered, t)
+			var filtered []postag.POSToken
+			if _, isDependency := dr.model.(*inference.DependencyModel); isDependency {
+				// Dependency mode's Score is arc-softmax confidence, not a classification-confidence gate; thresholding it would hide valid roots/arcs.
+				filtered = tokens
+			} else {
+				filtered = tokens[:0]
+				for _, t := range tokens {
+					if postag.FilterToken(t, threshold) {
+						filtered = append(filtered, t)
+					}
 				}
 			}
 			wordTexts := make([]string, len(chunkWords))
 			for j, w := range chunkWords {
-				wordTexts[j] = w.text
+				wordTexts[j] = w.Text
 			}
 			cr := &chunkResult{wordTexts: wordTexts, words: chunkWords, tokens: filtered}
 			dr.send(registryMsg{kind: msgPartialPredicted, uri: uri, chunkIdx: i, chunk: cr})
@@ -407,7 +428,7 @@ func (dr *DocumentRegistry) scheduleProcessing(item *textItem, words []wordSpan,
 	}()
 }
 
-func (dr *DocumentRegistry) storeFor(uri string) *documentStore {
+func (dr *documentRegistry) storeFor(uri string) *documentStore {
 	s, ok := dr.stores[uri]
 	if !ok {
 		s = &documentStore{latestVersion: -1 << 31}
@@ -417,47 +438,50 @@ func (dr *DocumentRegistry) storeFor(uri string) *documentStore {
 }
 
 // chunksEqual reports whether old word texts match the new word spans.
-func chunksEqual(oldTexts []string, newWords []wordSpan) bool {
+func chunksEqual(oldTexts []string, newWords []tokenizer.WordSpan) bool {
 	if len(oldTexts) != len(newWords) {
 		return false
 	}
 	for i, w := range newWords {
-		if oldTexts[i] != w.text {
+		if oldTexts[i] != w.Text {
 			return false
 		}
 	}
 	return true
 }
 
-// patchChunkOffsets returns a new chunkResult with offsets updated from newWords.
-// Word texts are assumed equal (same order), so position j in old maps to j in new.
-func patchChunkOffsets(old *chunkResult, newWords []wordSpan) *chunkResult {
+// patchChunkOffsets returns a new chunkResult with offsets updated from newWords (assumed same order/texts as old).
+func patchChunkOffsets(old *chunkResult, newWords []tokenizer.WordSpan) *chunkResult {
 	// Map old begin offset → word index within chunk.
 	oldBeginToIdx := make(map[uint32]int, len(old.words))
 	for j, w := range old.words {
-		oldBeginToIdx[w.begin] = j
+		oldBeginToIdx[w.Begin] = j
 	}
 
-	patched := make([]POSToken, len(old.tokens))
+	patched := make([]postag.POSToken, len(old.tokens))
 	for i, t := range old.tokens {
 		patched[i] = t
 		if j, ok := oldBeginToIdx[t.OffsetBegin]; ok && j < len(newWords) {
-			patched[i].OffsetBegin = newWords[j].begin
-			patched[i].OffsetEnd = newWords[j].end
+			patched[i].OffsetBegin = newWords[j].Begin
+			patched[i].OffsetEnd = newWords[j].End
+		}
+		if t.HasHead {
+			if j, ok := oldBeginToIdx[t.HeadOffsetBegin]; ok && j < len(newWords) {
+				patched[i].HeadOffsetBegin = newWords[j].Begin
+			}
 		}
 	}
 
 	wordTexts := make([]string, len(newWords))
 	for j, w := range newWords {
-		wordTexts[j] = w.text
+		wordTexts[j] = w.Text
 	}
 	return &chunkResult{wordTexts: wordTexts, words: newWords, tokens: patched}
 }
 
-// mergeChunkTokens concatenates chunk token slices in order.
-// Chunks are contiguous document regions so no sort is needed.
-func mergeChunkTokens(results []*chunkResult) []POSToken {
-	var tokens []POSToken
+// mergeChunkTokens concatenates chunk token slices in order (chunks are contiguous, so no sort is needed).
+func mergeChunkTokens(results []*chunkResult) []postag.POSToken {
+	var tokens []postag.POSToken
 	for _, cr := range results {
 		if cr != nil {
 			tokens = append(tokens, cr.tokens...)
@@ -466,8 +490,7 @@ func mergeChunkTokens(results []*chunkResult) []POSToken {
 	return tokens
 }
 
-// lineToCharOffset returns the unicode char index of the start of the given line
-// (0-indexed). Returns -1 if line is out of range.
+// lineToCharOffset returns the unicode char index of the start of line (0-indexed), or -1 if out of range.
 func lineToCharOffset(text string, line int) int {
 	cur := 0
 	runes := []rune(text)

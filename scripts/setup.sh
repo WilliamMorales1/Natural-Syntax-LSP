@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|all]
-#   --model  Which POS model to export (default: bert-base)
+# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|minilm|mpnet|dependency|all]
+#   --model  Which model to export (default: bert-base)
 
 set -euo pipefail
 
@@ -18,8 +18,8 @@ done
 
 # Validate early.
 case "$MODEL" in
-    bert-base|mobilebert|all|minilm|mpnet) ;;
-    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, all, minilm, or mpnet." >&2; exit 1 ;;
+    bert-base|mobilebert|all|minilm|mpnet|dependency) ;;
+    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, minilm, mpnet, dependency, or all." >&2; exit 1 ;;
 esac
 
 step() { echo; echo "==> $1"; }
@@ -60,6 +60,9 @@ ok "Data directory: $DATA_DIR"
 
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
 "$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests
+if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
+    "$PYTHON" -m pip install --quiet diaparser
+fi
 ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
@@ -71,7 +74,7 @@ export_pos_model() {
         ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" --mode pos
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
         ok "$label exported."
     fi
 }
@@ -83,21 +86,29 @@ export_semantic_model() {
         ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" --mode semantic
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
         ok "$label exported."
     fi
 }
 
+export_dependency_model() {
+    step "Exporting en_ewt.electra-base dependency parser to ONNX"
+    "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model en_ewt.electra-base
+    ok "Dependency model exported."
+}
+
 case "$MODEL" in
-    bert-base)  export_pos_model  bert-base  "BERT-base POS (~400 MB)" ;;
-    mobilebert) export_pos_model  mobilebert "MobileBERT POS (~100 MB)" ;;
-    minilm)     export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)" ;;
-    mpnet)      export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)" ;;
+    bert-base)   export_pos_model  bert-base  "BERT-base POS (~400 MB)" ;;
+    mobilebert)  export_pos_model  mobilebert "MobileBERT POS (~100 MB)" ;;
+    minilm)      export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)" ;;
+    mpnet)       export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)" ;;
+    dependency)  export_dependency_model ;;
     all)
         export_pos_model  bert-base  "BERT-base POS (~400 MB)"
         export_pos_model  mobilebert "MobileBERT POS (~100 MB)"
         export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)"
         export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)"
+        export_dependency_model
         ;;
 esac
 

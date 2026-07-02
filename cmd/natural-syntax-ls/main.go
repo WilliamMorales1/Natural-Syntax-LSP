@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"natural-syntax-ls/internal/inference"
+	"natural-syntax-ls/internal/lspserver"
 )
 
 func main() {
-	// supported models: mpnet, minilm, mobilebert, bert_base
-	modelPath    := flag.String("model", "", "Path to a .onnx model file")
-	vocabPath    := flag.String("vocab", "", "Path to a _vocab.txt file")
-	mode         := flag.String("mode", "pos", "Highlighting mode: pos or semantic")
+	// supported models: mpnet, minilm, mobilebert, bert_base, en_ewt.electra-base
+	modelPath := flag.String("model", "", "Path to a .onnx model file")
+	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt file (the model's own vocab, whatever mode)")
+	mode := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
@@ -55,7 +59,13 @@ func main() {
 	}
 
 	if *mode == "semantic" {
-		initSemantic(embedHiddenSize)
+		inference.InitSemantic(embedHiddenSize)
+	}
+
+	if *mode == "dependency" && *vocabPath == "" && *modelPath != "" {
+		*vocabPath = findFile([]string{
+			strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt",
+		})
 	}
 
 	if *modelPath == "" || *vocabPath == "" {
@@ -74,16 +84,16 @@ func main() {
 		filepath.Join(exeDir, "libonnxruntime.dylib"),
 	})
 	if ortLib != "" {
-		setORTLibPath(ortLib)
+		inference.SetORTLibPath(ortLib)
 	}
 
-	cfg := lspConfig{
-		modelPath:       *modelPath,
-		vocabPath:       *vocabPath,
-		mode:            *mode,
-		embedHiddenSize: embedHiddenSize,
+	cfg := lspserver.Config{
+		ModelPath:       *modelPath,
+		VocabPath:       *vocabPath,
+		Mode:            *mode,
+		EmbedHiddenSize: embedHiddenSize,
 	}
-	if err := runLSP(cfg); err != nil {
+	if err := lspserver.Run(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "natural-syntax-ls: lsp: %v\n", err)
 		os.Exit(1)
 	}

@@ -63,6 +63,14 @@ function handleSemanticColors(params) {
     }
 }
 
+/**
+ * Mirrors scripts/export_model.py's slug rule: dashes, slashes, and dots all
+ * become underscores (e.g. "en_ewt.electra-base" -> "en_ewt_electra_base").
+ */
+function slugify(modelName) {
+    return modelName.replace(/[-./]/g, '_');
+}
+
 function getBundledServerPath(extensionPath) {
     const platform = process.platform;
     let platformKey;
@@ -86,31 +94,26 @@ async function activate(context) {
     const wiktionaryDefinitions = config.get('wiktionaryDefinitions', true);
     const semanticLightness = config.get('semanticLightness', 0.75);
     const semanticChroma = config.get('semanticChroma', 0.14);
-    const modelChoice = config.get('model', 'bert-base');
     const mode = config.get('mode', 'pos');
+    const modelName = config.get('model', 'bert-base');
 
-    console.log('[nls] activating, mode =', mode);
+    console.log('[nls] activating, mode =', mode, 'model =', modelName);
 
     const dataDir = process.platform === 'win32'
         ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
         : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
 
-    const semanticModel = config.get('semanticModel', 'mpnet');
+    // Filenames follow scripts/export_model.py's own naming convention, so no
+    // per-mode setting is needed: {slug}.onnx / {slug}_vocab.txt for pos and
+    // semantic modes, {slug}_dependency.onnx / {slug}_dependency_vocab.txt
+    // for dependency mode (slug = modelName with -, ., / turned into _).
+    const slug = slugify(modelName);
+    const suffix = mode === 'dependency' ? '_dependency' : '';
+    const modelFile = path.join(dataDir, `${slug}${suffix}.onnx`);
+    const vocabFile = path.join(dataDir, `${slug}${suffix}_vocab.txt`);
+    console.log('[nls] model =', modelFile);
 
-    let serverArgs;
-    if (mode === 'semantic') {
-        const prefix = semanticModel === 'mpnet' ? 'mpnet' : 'minilm';
-        const embedFile = path.join(dataDir, `${prefix}.onnx`);
-        const vocabFile = path.join(dataDir, `${prefix}_vocab.txt`);
-        console.log('[nls] embed =', embedFile);
-        serverArgs = ['--mode', 'semantic', '--model', embedFile, '--vocab', vocabFile];
-    } else {
-        const slug = modelChoice === 'bert-base' ? 'bert_base' : 'mobilebert';
-        serverArgs = [
-            '--model', path.join(dataDir, `${slug}.onnx`),
-            '--vocab', path.join(dataDir, `${slug}_vocab.txt`),
-        ];
-    }
+    const serverArgs = ['--mode', mode, '--model', modelFile, '--vocab', vocabFile];
 
     const serverOptions = {
         command: serverPath,

@@ -3,10 +3,10 @@
 .SYNOPSIS
     Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 .PARAMETER Model
-    Which model to export: bert-base (default), mobilebert, all, or semantic.
+    Which model to export: bert-base (default), mobilebert, minilm, mpnet, dependency, or all.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","all","semantic")]
+    [ValidateSet("bert-base","mobilebert","minilm","mpnet","dependency","all")]
     [string]$Model = "bert-base"
 )
 
@@ -43,19 +43,24 @@ Ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ────────────────────────────────────────────────────────────
 
-Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
+Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests, diaparser)"
 & $PYTHON -m pip install --quiet transformers torch onnx onnxscript requests
 if ($LASTEXITCODE -ne 0) { Fail "pip install failed." }
+if ($Model -eq "dependency" -or $Model -eq "all") {
+    & $PYTHON -m pip install --quiet diaparser
+    if ($LASTEXITCODE -ne 0) { Fail "pip install diaparser failed." }
+}
 Ok "Python deps ready."
 
-# ── 4. Export ONNX model(s) ───────────────────────────────────────────────────
+# ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────────
 
-function Export-POSModel($modelName, $label, $onnxFile, $vocabFile, $labelsFile) {
-    $o = Join-Path $DATA_DIR $onnxFile
-    $v = Join-Path $DATA_DIR $vocabFile
-    $l = Join-Path $DATA_DIR $labelsFile
+function Export-POSModel($modelName, $label) {
+    $slug = $modelName -replace "-", "_"
+    $o = Join-Path $DATA_DIR "$slug.onnx"
+    $v = Join-Path $DATA_DIR "${slug}_vocab.txt"
+    $l = Join-Path $DATA_DIR "${slug}_labels.json"
     if ((Test-Path $o) -and (Test-Path $v) -and (Test-Path $l)) {
-        Ok "$onnxFile, $vocabFile, and $labelsFile already exist, skipping export."
+        Ok "$slug.onnx already exists, skipping export."
     } else {
         Step "Exporting $label to ONNX"
         & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName
@@ -64,32 +69,39 @@ function Export-POSModel($modelName, $label, $onnxFile, $vocabFile, $labelsFile)
     }
 }
 
-function Export-EmbeddingModel([string]$Variant = "minilm") {
-    $names = @{
-        "minilm" = @{ onnx = "minilm_embed.onnx"; vocab = "minilm_vocab.txt"; label = "all-MiniLM-L6-v2 (~22 MB)" }
-        "mpnet"  = @{ onnx = "mpnet_embed.onnx";  vocab = "mpnet_vocab.txt";  label = "all-mpnet-base-v2 (~110 MB)" }
-    }
-    $n = $names[$Variant]
-    $onnx  = Join-Path $DATA_DIR $n.onnx
-    $vocab = Join-Path $DATA_DIR $n.vocab
-    if ((Test-Path $onnx) -and (Test-Path $vocab)) {
-        Ok "$($n.onnx) and $($n.vocab) already exist, skipping export."
+function Export-SemanticModel($modelName, $label) {
+    $slug = $modelName -replace "-", "_"
+    $o = Join-Path $DATA_DIR "$slug.onnx"
+    $v = Join-Path $DATA_DIR "${slug}_vocab.txt"
+    if ((Test-Path $o) -and (Test-Path $v)) {
+        Ok "$slug.onnx already exists, skipping export."
     } else {
-        Step "Exporting $($n.label) embedding model"
-        & $PYTHON (Join-Path $ROOT "scripts\export_embedding_model.py") --variant $Variant $DATA_DIR
-        if ($LASTEXITCODE -ne 0) { Fail "Embedding model export failed." }
-        Ok "Embedding model exported."
+        Step "Exporting $label to ONNX"
+        & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName
+        if ($LASTEXITCODE -ne 0) { Fail "Export failed for $label." }
+        Ok "$label exported."
     }
 }
 
+function Export-DependencyModel {
+    Step "Exporting en_ewt.electra-base dependency parser to ONNX"
+    & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model en_ewt.electra-base
+    if ($LASTEXITCODE -ne 0) { Fail "Dependency model export failed." }
+    Ok "Dependency model exported."
+}
+
 switch ($Model) {
-    "bert-base"  { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"  "bert_base_pos.onnx"  "bert_base_vocab.txt"  "bert_base_labels.json" }
-    "mobilebert" { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" "mobilebert_pos.onnx" "mobilebert_vocab.txt" "mobilebert_labels.json" }
-    "semantic"   { Export-EmbeddingModel }
+    "bert-base"  { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)" }
+    "mobilebert" { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" }
+    "minilm"     { Export-SemanticModel "minilm" "all-MiniLM-L6-v2 (~22 MB)" }
+    "mpnet"      { Export-SemanticModel "mpnet"  "all-mpnet-base-v2 (~110 MB)" }
+    "dependency" { Export-DependencyModel }
     "all"        {
-        Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"  "bert_base_pos.onnx"  "bert_base_vocab.txt"  "bert_base_labels.json"
-        Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" "mobilebert_pos.onnx" "mobilebert_vocab.txt" "mobilebert_labels.json"
-        Export-EmbeddingModel
+        Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"
+        Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)"
+        Export-SemanticModel "minilm" "all-MiniLM-L6-v2 (~22 MB)"
+        Export-SemanticModel "mpnet"  "all-mpnet-base-v2 (~110 MB)"
+        Export-DependencyModel
     }
 }
 
@@ -118,10 +130,10 @@ if (Test-Path $ORT_DEST) {
 # ── 6. Build Go binary ────────────────────────────────────────────────────────
 
 Step "Building natural-syntax-ls"
-$exePath = Join-Path $ROOT "natural-syntax-ls.exe"
-Remove-Item "$exePath","${exePath}~" -ErrorAction SilentlyContinue
+$exePath = Join-Path $ROOT "bin\natural-syntax-ls.exe"
+Remove-Item $exePath,"${exePath}~" -ErrorAction SilentlyContinue
 Push-Location $ROOT
-go build -o natural-syntax-ls.exe ./cmd/natural-syntax-ls/
+go build -o $exePath ./cmd/natural-syntax-ls/
 if ($LASTEXITCODE -ne 0) { Fail "go build failed." }
 Pop-Location
 Ok "Built: $exePath"

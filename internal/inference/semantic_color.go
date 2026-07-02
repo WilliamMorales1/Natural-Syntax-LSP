@@ -1,4 +1,4 @@
-package main
+package inference
 
 import (
 	"fmt"
@@ -16,21 +16,26 @@ func init() {
 	semanticColorParamsPtr.Store(p)
 }
 
-func setSemanticColorParams(l, c float64) {
+// SetSemanticColorParams sets the OKLCH lightness/chroma used by EmbeddingToColor.
+func SetSemanticColorParams(l, c float64) {
 	p := &semanticColorParams{L: l, C: c}
 	semanticColorParamsPtr.Store(p)
 }
 
-// Two fixed orthogonal unit vectors used to project embeddings to a 2D hue plane.
-// Seeded deterministically so colors are stable across restarts.
+// SemanticColorParams returns the current OKLCH lightness/chroma.
+func SemanticColorParams() (l, c float64) {
+	p := semanticColorParamsPtr.Load()
+	return p.L, p.C
+}
+
+// Two fixed orthogonal unit vectors, seeded deterministically, used to project embeddings to a 2D hue plane.
 var (
 	colorProjX []float32
 	colorProjY []float32
 )
 
-// initSemantic builds the two projection vectors for the given hidden dim.
-// Must be called once before any embeddingToColor call.
-func initSemantic(dim int) {
+// InitSemantic builds the two projection vectors for the given hidden dim; must be called once before any EmbeddingToColor call.
+func InitSemantic(dim int) {
 	rng := rand.New(rand.NewSource(0xC0105500))
 
 	colorProjX = make([]float32, dim)
@@ -65,9 +70,8 @@ func initSemantic(dim int) {
 	}
 }
 
-// embeddingToColor maps a normalized embedding to a "#RRGGBB" hex color using OKLCH.
-// Projects onto a fixed 2D plane → angle → OKLCH hue → linear sRGB → gamma sRGB.
-func embeddingToColor(v []float32) string {
+// EmbeddingToColor maps a normalized embedding to a "#RRGGBB" hex color: project onto a fixed 2D plane → angle → OKLCH hue → sRGB.
+func EmbeddingToColor(v []float32) string {
 	var px, py float32
 	for j, vj := range v {
 		px += vj * colorProjX[j]
