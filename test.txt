@@ -5,20 +5,3 @@ and at last the North Wind gave up the attempt. Then the Sun shined out warmly, 
 And so the North Wind was obliged to confess that the Sun was the stronger of the two.
 
 The quick brown fox jumped over the lazy dog.
-
---- in progress
-
-Here is a sentence to demonstrate.
-"The little girl quickly left him a note. She loves him. It is for him"
-
-// hovering "barks" (root, takes arguments, has a subject):
-root (girl nsubj) left(quickly advmod) (note obj, him iobj)
-
-// hovering "girl" (has a head AND its own dependents):
-head girl nsubj {
-    The det
-    little amod
-}
-
-// hovering "little" (has a head, no dependents = leaf):
-dep little amod
