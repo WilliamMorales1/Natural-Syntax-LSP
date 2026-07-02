@@ -82,7 +82,7 @@ One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is acti
 
 ## POS Tag Colors (POS mode)
 
-Tags map to VS Code semantic token types; color comes from your theme. Full list: [posList.md](posList.md).
+Tags map to VS Code semantic token types; color comes from your theme. Full list: [posList.md](docs/posList.md).
 
 Hover shows the Part of Speech and a Wiktionary definition (when available).
 
@@ -96,14 +96,14 @@ Hover shows the hex color code and a Wiktionary definition (when available).
 
 ## Dependency Mode Colors
 
-Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](deprelList.md).
+Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](docs/deprelList.md).
 
 Hover a word to see its head and dependents rendered as a small tree, plus a Wiktionary definition (when available).
 
 ## Test
 
-Open [test.txt](test.txt) in VS Code after installation.
+Open [test.txt](docs/test.txt) in VS Code after installation.
 
 Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (dependency). Hover any word to see its tag and Wiktionary definition.
 
-![screenshot showing color highlighting and hover](screenshotExample.png)
+![screenshot showing color highlighting and hover](docs/screenshotExample.png)
