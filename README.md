@@ -23,7 +23,7 @@ The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for 
 You still need to export the ONNX model files (Python + pip):
 
 ```bash
-scripts/setup.sh                     # BERT-base POS model (~710 MB)
+scripts/setup.sh                     # BERT-base POS model (~430 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
 scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~440 MB)
 scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~92 MB)
@@ -58,7 +58,7 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 
 | Model | Size | Mode | Notes |
 |---|---|---|---|
-| `bert-base` (default) | ~710 MB | POS | Higher accuracy (multilingual vocab inflates size) |
+| `bert-base-cased` (default) | ~430 MB | POS | Higher accuracy (multilingual vocab inflates size) |
 | `mobilebert` | ~105 MB | POS | Faster startup |
 | `all-mpnet-base-v2` (default) | ~440 MB | Semantic | 768-dim, 110M params, best quality |
 | `all-MiniLM-L6-v2` | ~92 MB | Semantic | 384-dim, 22M params, faster, lower quality |
