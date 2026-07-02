@@ -23,11 +23,11 @@ The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for 
 You still need to export the ONNX model files (Python + pip):
 
 ```bash
-scripts/setup.sh             # BERT-base POS model (~400 MB)
-scripts/setup.sh --model mobilebert  # lighter POS model (~100 MB)
-scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~110 MB)
-scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~22 MB)
-scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser
+scripts/setup.sh             # BERT-base POS model (~710 MB)
+scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
+scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~440 MB)
+scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~92 MB)
+scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
 scripts/setup.sh --model all         # all models
 ```
 
@@ -58,11 +58,11 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 
 | Model | Size | Mode | Notes |
 |---|---|---|---|
-| `bert-base` (default) | ~400 MB | POS | Higher accuracy |
-| `mobilebert` | ~100 MB | POS | Faster startup |
-| `all-mpnet-base-v2` (default) | ~110 MB | Semantic | 768-dim, BERT-base scale, best quality |
-| `all-MiniLM-L6-v2` | ~22 MB | Semantic | 384-dim, faster, lower quality |
-| `en_ewt.electra-base` (default) | ~50 MB | Dependency | diaparser biaffine UD parser; pass `--model <diaparser-catalog-name>` to `export_model.py` for other languages/corpora |
+| `bert-base` (default) | ~710 MB | POS | Higher accuracy (multilingual vocab inflates size) |
+| `mobilebert` | ~105 MB | POS | Faster startup |
+| `all-mpnet-base-v2` (default) | ~440 MB | Semantic | 768-dim, 110M params, best quality |
+| `all-MiniLM-L6-v2` | ~92 MB | Semantic | 384-dim, 22M params, faster, lower quality |
+| `en_ewt.electra-base` (default) | ~470 MB | Dependency | diaparser biaffine UD parser (ELECTRA-base encoder); pass `--model <diaparser-catalog-name>` to `export_model.py` for other languages/corpora |
 
 One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active — its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model file names on disk (`{slug}.onnx` / `{slug}_vocab.txt`, or `{slug}_dependency.onnx` / `{slug}_dependency_vocab.txt`) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported.
 
