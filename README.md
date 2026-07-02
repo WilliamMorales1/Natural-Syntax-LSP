@@ -23,7 +23,7 @@ The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for 
 You still need to export the ONNX model files (Python + pip):
 
 ```bash
-scripts/setup.sh             # BERT-base POS model (~710 MB)
+scripts/setup.sh                     # BERT-base POS model (~710 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
 scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~440 MB)
 scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~92 MB)
@@ -82,24 +82,9 @@ One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is acti
 
 ## POS Tag Colors (POS mode)
 
-Tags map to VS Code semantic token types; color comes from your theme.
+Tags map to VS Code semantic token types; color comes from your theme. Full list: [posList.md](posList.md).
 
-| Tag | Meaning | Token Type |
-|---|---|---|
-| VB, VBD, VBG, VBP | Verb | `function` |
-| VBN, VBZ | Verb (past participle / 3rd person) | `method` |
-| NN, NNS | Noun | `variable` |
-| NNP, NNPS | Proper noun | `namespace` / `typeParameter` |
-| JJ, JJR, JJS | Adjective | `type` / `struct` / `interface` |
-| PRP$, WP, WP$ | Possessive / wh-pronoun | `property` / `regexp` |
-| RB, RBR, RBS, WRB | Adverb / wh-adverb | `enumMember` |
-| IN, RP, SYM, POS | Preposition / particle / symbol | `operator` |
-| CC, EX, MD, PRP, TO | Conjunction / modal / pronoun | `keyword` / `modifier` |
-| DT, PDT, WDT | Determiner | `macro` |
-| CD | Cardinal number | `number` |
-| LS | List item marker | `decorator` |
-| FW, UH | Foreign word / interjection | `string` |
-| O | Other | `comment` |
+Hover shows the Part of Speech and a Wiktionary definition (when available).
 
 ## Semantic Mode Colors
 
@@ -111,39 +96,14 @@ Hover shows the hex color code and a Wiktionary definition (when available).
 
 ## Dependency Mode Colors
 
-Each word is colored by its Universal Dependencies relation category (theme token type, like POS mode — not literal hex colors):
-
-| Relations | Meaning | Token Type |
-|---|---|---|
-| nsubj, csubj | Subjects | `variable` (declaration) |
-| obj, iobj | Objects | `variable` |
-| ccomp, xcomp | Clausal complements | `function` |
-| advcl, acl | Adverbial / adnominal clauses | `function` (modification) |
-| amod | Adjectival modifier | `type` |
-| advmod | Adverbial modifier | `type` (modification) |
-| nmod, appos, nummod | Nominal dependents | `property` |
-| aux, cop | Auxiliaries / copula | `keyword` |
-| mark, case | Subordinators / adpositions | `operator` |
-| det | Determiners | `macro` |
-| cc, conj | Coordination | `operator` (static) |
-| compound, fixed, flat, goeswith | Multiword units | `namespace` |
-| discourse, vocative, expl | Discourse elements | `string` |
-| root | Sentence root | `class` (declaration) |
-| punct | Punctuation | `comment` (deprecated) |
-| everything else (dep, clf, list, orphan, parataxis, reparandum, dislocated) | Uncommon relations | `modifier` |
+Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](deprelList.md).
 
 Hover a word to see its head and dependents rendered as a small tree, plus a Wiktionary definition (when available).
 
 ## Test
 
-Open a plaintext file and paste:
+Open [test.txt](test.txt) in VS Code after installation.
 
-> The North Wind and the Sun were disputing which was the stronger, when a traveler came along wrapped in a warm cloak.
-> They agreed that the one who first succeeded in making the traveler take his cloak off should be considered stronger than the other.
-> Then the North Wind blew as hard as he could, but the more he blew the more closely did the traveler fold his cloak around him;
-> and at last the North Wind gave up the attempt. Then the Sun shined out warmly, and immediately the traveler took off his cloak.
-> And so the North Wind was obliged to confess that the Sun was the stronger of the two.
-
-Words color within ~10 seconds (POS) or ~5 seconds (semantic). Hover any word to see its tag and Wiktionary definition.
+Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (dependency). Hover any word to see its tag and Wiktionary definition.
 
 ![screenshot showing color highlighting and hover](screenshotExample.png)
