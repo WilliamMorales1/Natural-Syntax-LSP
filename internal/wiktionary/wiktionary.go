@@ -53,21 +53,22 @@ func wiktFetch(word string) (map[string][]wiktDef, error) {
 }
 
 // FetchDef returns (definition, wiktionary URL, ok), matching the word's POS if possible, trying exact case then lowercase.
-func FetchDef(word string, pos postag.PartOfSpeech) (string, string, bool) {
+// In dependency mode there is no POS tag (pos == postag.POS_O); deprel is used instead to guess the Wiktionary category.
+func FetchDef(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
 	lower := strings.ToLower(word)
-	cacheKey := lower + ":" + pos.String()
+	cacheKey := lower + ":" + pos.String() + ":" + deprel.String()
 	if v, ok := wiktCache.Load(cacheKey); ok {
 		e := v.(wiktCacheEntry)
 		return e.def, e.url, e.ok
 	}
-	def, url, ok := fetchDefUncached(word, pos)
+	def, url, ok := fetchDefUncached(word, pos, deprel)
 	if ok {
 		wiktCache.Store(cacheKey, wiktCacheEntry{def, url, true})
 	}
 	return def, url, ok
 }
 
-func fetchDefUncached(word string, pos postag.PartOfSpeech) (string, string, bool) {
+func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
 	lower := strings.ToLower(word)
 
 	resolved := word
@@ -89,6 +90,9 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech) (string, string, boo
 	}
 
 	target := posToWiktCategory(pos)
+	if pos == postag.POS_O {
+		target = deprelToWiktCategory(deprel)
+	}
 	numeralGlyph := (pos == postag.POS_CD || pos == postag.POS_LS) && isNumeralGlyph(lower)
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
@@ -202,6 +206,36 @@ func posToWiktCategory(pos postag.PartOfSpeech) string {
 		return "Interjection"
 	case postag.POS_RP:
 		return "Particle"
+	default:
+		return ""
+	}
+}
+
+// deprelToWiktCategory guesses a Wiktionary POS category from a UD dependency relation,
+// since dependency mode has no POS tag (deprels are not POS tags: e.g. nsubj can be a noun
+// or pronoun, root can be a verb or noun). Best-effort based on the relation's typical filler.
+func deprelToWiktCategory(rel postag.Deprel) string {
+	switch rel {
+	case postag.DEP_NSUBJ, postag.DEP_OBJ, postag.DEP_IOBJ, postag.DEP_OBL, postag.DEP_NMOD,
+		postag.DEP_APPOS, postag.DEP_COMPOUND, postag.DEP_FLAT, postag.DEP_LIST, postag.DEP_VOCATIVE,
+		postag.DEP_EXPL, postag.DEP_CLF, postag.DEP_CSUBJ:
+		return "Noun"
+	case postag.DEP_AMOD:
+		return "Adjective"
+	case postag.DEP_ADVMOD:
+		return "Adverb"
+	case postag.DEP_AUX, postag.DEP_COP, postag.DEP_XCOMP, postag.DEP_CCOMP, postag.DEP_ADVCL, postag.DEP_ACL:
+		return "Verb"
+	case postag.DEP_DET:
+		return "Article"
+	case postag.DEP_CASE, postag.DEP_MARK:
+		return "Preposition"
+	case postag.DEP_CC:
+		return "Conjunction"
+	case postag.DEP_NUMMOD:
+		return "Numeral"
+	case postag.DEP_DISCOURSE:
+		return "Interjection"
 	default:
 		return ""
 	}

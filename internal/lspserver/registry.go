@@ -72,6 +72,8 @@ type hoverRequest struct {
 type hoverQueryResult struct {
 	tok        *postag.POSToken
 	dependents []postag.POSToken
+	// dependentsHaveDeps[i] is true when dependents[i] itself has dependents (tokens headed on it).
+	dependentsHaveDeps []bool
 }
 
 // chunkResult holds per-chunk prediction results and the word spans used.
@@ -291,12 +293,21 @@ func (dr *documentRegistry) handleHoverQuery(uri string, line, character uint32,
 		if t.OffsetBegin <= charOffset && charOffset < t.OffsetEnd {
 			cp := *t
 			var dependents []postag.POSToken
+			var dependentsHaveDeps []bool
 			for _, d := range doc.tokens {
 				if d.HasHead && d.HeadOffsetBegin == t.OffsetBegin {
 					dependents = append(dependents, d)
+					hasSubdeps := false
+					for _, dd := range doc.tokens {
+						if dd.HasHead && dd.HeadOffsetBegin == d.OffsetBegin {
+							hasSubdeps = true
+							break
+						}
+					}
+					dependentsHaveDeps = append(dependentsHaveDeps, hasSubdeps)
 				}
 			}
-			reply <- &hoverQueryResult{tok: &cp, dependents: dependents}
+			reply <- &hoverQueryResult{tok: &cp, dependents: dependents, dependentsHaveDeps: dependentsHaveDeps}
 			return
 		}
 	}

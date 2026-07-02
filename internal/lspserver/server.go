@@ -388,7 +388,7 @@ type markupContent struct {
 	Value string `json:"value"`
 }
 
-func formatHoverContent(tok *postag.POSToken, dependents []postag.POSToken, wiktDef, wiktURL string) string {
+func formatHoverContent(tok *postag.POSToken, dependents []postag.POSToken, dependentsHaveDeps []bool, wiktDef, wiktURL string) string {
 	var header string
 	if tok.HasHead || len(dependents) > 0 {
 		// Rendered as an "nlsdep" fenced block using this extension's own grammar (syntaxes/nlsdep.tmLanguage.json), which colors by position not keyword matching.
@@ -397,8 +397,12 @@ func formatHoverContent(tok *postag.POSToken, dependents []postag.POSToken, wikt
 			lines = []string{fmt.Sprintf("head %s %s", tok.Word, tok.Deprel.String())}
 		} else {
 			lines = []string{fmt.Sprintf("head %s %s {", tok.Word, tok.Deprel.String())}
-			for _, d := range dependents {
-				lines = append(lines, fmt.Sprintf("    %s %s", d.Word, d.Deprel.String()))
+			for i, d := range dependents {
+				suffix := ""
+				if i < len(dependentsHaveDeps) && dependentsHaveDeps[i] {
+					suffix = "{}"
+				}
+				lines = append(lines, fmt.Sprintf("    %s %s%s", d.Word, d.Deprel.String(), suffix))
 			}
 			lines = append(lines, "}")
 		}
@@ -447,11 +451,11 @@ func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 	tok := res.tok
 	var wiktDef, wiktURL string
 	if s.wiktionary.Load() {
-		if def, url, ok := wiktionary.FetchDef(tok.Word, tok.Tag); ok {
+		if def, url, ok := wiktionary.FetchDef(tok.Word, tok.Tag, tok.Deprel); ok {
 			wiktDef, wiktURL = def, url
 		}
 	}
-	text := formatHoverContent(tok, res.dependents, wiktDef, wiktURL)
+	text := formatHoverContent(tok, res.dependents, res.dependentsHaveDeps, wiktDef, wiktURL)
 	return hoverResult{Contents: markupContent{Kind: "markdown", Value: text}}, nil
 }
 
