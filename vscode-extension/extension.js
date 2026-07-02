@@ -5,6 +5,12 @@ const vscode = require('vscode');
 const path = require('path');
 const os = require('os');
 
+function getDataDir() {
+    return process.platform === 'win32'
+        ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
+        : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
+}
+
 /** @type {LanguageClient | undefined} */
 let client;
 
@@ -99,9 +105,7 @@ async function activate(context) {
 
     console.log('[nls] activating, mode =', mode, 'model =', modelName);
 
-    const dataDir = process.platform === 'win32'
-        ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'natural-syntax-ls')
-        : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'natural-syntax-ls');
+    const dataDir = getDataDir();
 
     // Filenames follow scripts/export_model.py's own naming convention, so no
     // per-mode setting is needed: {slug}.onnx / {slug}_vocab.txt for pos and

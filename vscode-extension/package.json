@@ -42,8 +42,16 @@
         },
         "naturalSyntaxLs.model": {
           "type": "string",
+          "enum": ["bert-base", "mobilebert", "mpnet", "minilm", "en_ewt.electra-base"],
+          "enumDescriptions": [
+            "pos: more accurate (default for pos)",
+            "pos: faster",
+            "semantic: 768-dim (default for semantic)",
+            "semantic: faster, 384-dim",
+            "dependency: diaparser UD parser (default for dependency)"
+          ],
           "default": "bert-base",
-          "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. pos: 'bert-base' (default, more accurate) or 'mobilebert' (faster). semantic: 'mpnet' (default, 768-dim) or 'minilm' (faster, 384-dim). dependency: a diaparser catalog name, e.g. 'en_ewt.electra-base' (default). Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
+          "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
         },
         "naturalSyntaxLs.tokenMapUpdate": {
           "type": "object",
