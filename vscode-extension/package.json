@@ -2,7 +2,7 @@
   "name": "natural-syntax-ls",
   "displayName": "Natural Syntax Highlighting",
   "description": "Parts-of-speech semantic highlighting via natural-syntax-ls",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Other"],
