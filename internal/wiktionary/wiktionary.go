@@ -71,6 +71,11 @@ func FetchDef(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (strin
 func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
 	lower := strings.ToLower(word)
 
+	if pos == postag.POS_POS || (deprel == postag.DEP_CASE && lower == "'s") {
+		word = "-'s"
+		lower = "-'s"
+	}
+
 	resolved := word
 	payload, err := wiktFetch(word)
 	if err != nil || len(payload["en"]) == 0 {
@@ -93,7 +98,7 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 	if pos == postag.POS_O {
 		target = deprelToWiktCategory(deprel)
 	}
-	numeralGlyph := (pos == postag.POS_CD || pos == postag.POS_LS) && isNumeralGlyph(lower)
+	numeralGlyph := ((pos == postag.POS_CD || pos == postag.POS_LS) || (deprel == postag.DEP_NUMMOD)) && isNumeralGlyph(lower)
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}

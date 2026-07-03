@@ -40,7 +40,7 @@ func posBits(pos postag.PartOfSpeech) Bits {
 		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
 	case postag.POS_PDT: // predeterminer: all, both
 		return tb{uint32(TT_Macro), mod(TM_Definition)}
-	case postag.POS_POS: // possessive 's [doesn't work]
+	case postag.POS_POS: // possessive 's
 		return tb{uint32(TT_Operator), mod(TM_Definition)}
 	case postag.POS_PRP: // personal pronoun: I, he
 		return tb{uint32(TT_Keyword), mod(TM_Declaration)}
