@@ -70,7 +70,7 @@ One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is acti
 
 | Setting | Default | Description |
 |---|---|---|
-| `naturalSyntaxLs.serverPath` | `natural-syntax-ls` | Path to the Go binary |
+| `naturalSyntaxLs.serverPath` | `""` (bundled binary) | Path to the Go binary |
 | `naturalSyntaxLs.mode` | `pos` | `pos`, `semantic`, or `dependency` |
 | `naturalSyntaxLs.model` | `bert-base` | Model name; meaning depends on `mode` (see above) |
 | `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate on |
