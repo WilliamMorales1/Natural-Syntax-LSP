@@ -54,6 +54,31 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 "naturalSyntaxLs.serverPath": "/path/to/natural-syntax-ls"
 ```
 
+### Neovim
+
+The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client — no plugin needed beyond `nvim-lspconfig`. Semantic/dependency-mode color pushes (`$/nls/semanticColors`) are a VS Code-only decoration mechanism and won't render in Neovim, but POS-mode highlighting and hover work natively in all three modes.
+
+```lua
+-- lua/plugins/natural-syntax-ls.lua (LazyVim example)
+return {
+  "neovim/nvim-lspconfig",
+  opts = {
+    servers = {
+      natural_syntax_ls = {
+        mason = false,
+        cmd = { "/path/to/natural-syntax-ls" },
+        filetypes = { "text", "markdown" },
+        root_dir = function(bufnr, on_dir)
+          on_dir(vim.fn.getcwd())
+        end,
+      },
+    },
+  },
+}
+```
+
+To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI).
+
 ## Models
 
 | Model | Size | Mode | Notes |
@@ -99,6 +124,10 @@ Hover shows the hex color code and a Wiktionary definition (when available).
 Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](docs/deprelList.md).
 
 Hover a word to see its head and dependents rendered as a small tree, plus a Wiktionary definition (when available).
+
+## Troubleshooting
+
+If POS mode tags nearly every word as "Foreign word" or other nonsense tags with low confidence, the exported `bert_base.onnx` / `bert_base.onnx.data` pair is likely stale or corrupt. Re-export with `scripts/setup.sh --model bert-base` (or `scripts/setup.ps1 -Model bert-base`), or switch to `mobilebert` in the meantime.
 
 ## Test
 

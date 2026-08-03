@@ -27,11 +27,6 @@ func main() {
 	}
 	dataDir := filepath.Join(userDir, "natural-syntax-ls")
 
-	embedHiddenSize := 768
-	if *modelPath == "minilm.onnx" {
-		embedHiddenSize = 384
-	}
-
 	if *modelPath == "" {
 		*modelPath = findFile([]string{
 			filepath.Join(dataDir, "bert_base.onnx"),
@@ -43,6 +38,11 @@ func main() {
 			filepath.Join(exeDir, "mpnet.onnx"),
 			filepath.Join(exeDir, "minilm.onnx"),
 		})
+	}
+
+	embedHiddenSize := 768
+	if strings.HasPrefix(filepath.Base(*modelPath), "minilm") {
+		embedHiddenSize = 384
 	}
 
 	if *vocabPath == "" {
