@@ -2,7 +2,7 @@
   "name": "natural-syntax-ls",
   "displayName": "Natural Syntax Highlighting",
   "description": "Parts-of-speech semantic highlighting via natural-syntax-ls",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Other"],
@@ -31,8 +31,8 @@
       "properties": {
         "naturalSyntaxLs.serverPath": {
           "type": "string",
-          "default": "natural-syntax-ls",
-          "description": "Path to the natural-syntax-ls binary."
+          "default": "",
+          "description": "Path to the natural-syntax-ls binary. Leave empty to use the bundled binary for the current platform."
         },
         "naturalSyntaxLs.filetypes": {
           "type": "array",

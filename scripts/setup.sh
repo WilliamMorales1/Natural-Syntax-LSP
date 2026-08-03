@@ -63,21 +63,28 @@ ok "Data directory: $DATA_DIR"
 # Fedora, and other recent distros.
 
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
-VENV_DIR="$ROOT/.venv"
-if [[ ! -d "$VENV_DIR" ]]; then
-    "$PYTHON" -m venv "$VENV_DIR"
+
+install_deps() {
+    "$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests || return 1
+    if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
+        "$PYTHON" -m pip install --quiet diaparser || return 1
+    fi
+}
+
+if ! install_deps; then
+    step "System pip install failed (externally-managed-environment?), falling back to a venv"
+    VENV_DIR="$ROOT/.venv"
+    [[ -d "$VENV_DIR" ]] || "$PYTHON" -m venv "$VENV_DIR"
+    if [[ -x "$VENV_DIR/bin/python" ]]; then
+        PYTHON="$VENV_DIR/bin/python"
+    else
+        PYTHON="$VENV_DIR/Scripts/python.exe"
+    fi
+    ok "Using venv: $VENV_DIR"
+    "$PYTHON" -m pip --version &>/dev/null || "$PYTHON" -m ensurepip --upgrade
+    install_deps || fail "Failed to install Python dependencies even inside a venv."
 fi
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
-    PYTHON="$VENV_DIR/Scripts/python.exe"
-else
-    PYTHON="$VENV_DIR/bin/python"
-fi
-"$PYTHON" -m pip install --quiet --upgrade pip
-"$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests
-if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
-    "$PYTHON" -m pip install --quiet diaparser
-fi
-ok "Python deps ready (venv: $VENV_DIR)."
+ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
