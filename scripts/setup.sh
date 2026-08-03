@@ -57,13 +57,27 @@ mkdir -p "$DATA_DIR"
 ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ─────────────────────────────────────────────────────────
+#
+# Installed into a venv rather than system-wide: PEP 668 ("externally
+# managed environment") blocks plain `pip install` on Arch, Debian 12+,
+# Fedora, and other recent distros.
 
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
+VENV_DIR="$ROOT/.venv"
+if [[ ! -d "$VENV_DIR" ]]; then
+    "$PYTHON" -m venv "$VENV_DIR"
+fi
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
+    PYTHON="$VENV_DIR/Scripts/python.exe"
+else
+    PYTHON="$VENV_DIR/bin/python"
+fi
+"$PYTHON" -m pip install --quiet --upgrade pip
 "$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests
 if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
     "$PYTHON" -m pip install --quiet diaparser
 fi
-ok "Python deps ready."
+ok "Python deps ready (venv: $VENV_DIR)."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
@@ -112,22 +126,57 @@ case "$MODEL" in
         ;;
 esac
 
-# ── 5. Copy onnxruntime DLL/SO to data directory ──────────────────────────
+# ── 5. Copy onnxruntime DLL/SO/dylib to data directory ────────────────────
+#
+# The yalue/onnxruntime_go module only bundles Windows x64 and ARM64
+# Linux/macOS test binaries — Linux x64 and macOS x64 aren't in the module
+# cache at all, so those fall back to downloading the official prebuilt
+# release from Microsoft.
 
 GOPATH="$(go env GOPATH)"
+ARCH="$(uname -m)"
 
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
     ORT_DEST="$DATA_DIR/onnxruntime.dll"
     ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime.dll"
     ORT_NAME="onnxruntime.dll"
+    ORT_RELEASE_ARCHIVE=""
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    ORT_DEST="$DATA_DIR/libonnxruntime.dylib"
+    ORT_NAME="libonnxruntime.dylib"
+    if [[ "$ARCH" == "arm64" ]]; then
+        ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime_arm64.dylib"
+        ORT_RELEASE_ARCHIVE=""
+    else
+        ORT_GLOB=""
+        ORT_RELEASE_ARCHIVE="onnxruntime-osx-x86_64-1.26.0.tgz"
+    fi
 else
     ORT_DEST="$DATA_DIR/libonnxruntime.so"
-    ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/libonnxruntime.so"
     ORT_NAME="libonnxruntime.so"
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime_arm64.so"
+        ORT_RELEASE_ARCHIVE=""
+    else
+        ORT_GLOB=""
+        ORT_RELEASE_ARCHIVE="onnxruntime-linux-x64-1.26.0.tgz"
+    fi
 fi
 
 if [[ -f "$ORT_DEST" ]]; then
     ok "$ORT_NAME already present in data directory."
+elif [[ -n "$ORT_RELEASE_ARCHIVE" ]]; then
+    step "Downloading official ONNX Runtime release ($ORT_RELEASE_ARCHIVE)"
+    TMP_ORT="$(mktemp -d)"
+    curl -fL --progress-bar -o "$TMP_ORT/ort.tgz" \
+        "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/$ORT_RELEASE_ARCHIVE" \
+        || fail "Failed to download ONNX Runtime release. Download $ORT_RELEASE_ARCHIVE manually from https://github.com/microsoft/onnxruntime/releases and place the shared library at $ORT_DEST"
+    tar -xzf "$TMP_ORT/ort.tgz" -C "$TMP_ORT"
+    ORT_SRC="$(find "$TMP_ORT" -name "$ORT_NAME" -o -name "${ORT_NAME}.*" | head -1)"
+    [[ -n "$ORT_SRC" ]] || fail "Downloaded archive did not contain $ORT_NAME"
+    cp "$ORT_SRC" "$ORT_DEST"
+    rm -rf "$TMP_ORT"
+    ok "Downloaded and installed $ORT_NAME."
 else
     step "Locating $ORT_NAME in Go module cache"
     ORT_SRC="$(ls $ORT_GLOB 2>/dev/null | tail -1 || true)"
@@ -143,10 +192,16 @@ fi
 
 # ── 6. Build Go binary ─────────────────────────────────────────────────────
 
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
+    BIN_NAME="natural-syntax-ls.exe"
+else
+    BIN_NAME="natural-syntax-ls"
+fi
+
 step "Building natural-syntax-ls"
 rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~" "$ROOT/natural-syntax-ls"
-(cd "$ROOT" && go build -o bin/natural-syntax-ls.exe ./cmd/natural-syntax-ls/)
-ok "Built: $ROOT/bin/natural-syntax-ls.exe"
+(cd "$ROOT" && go build -o "bin/$BIN_NAME" ./cmd/natural-syntax-ls/)
+ok "Built: $ROOT/bin/$BIN_NAME"
 
 # ── Done ───────────────────────────────────────────────────────────────────
 
@@ -154,7 +209,7 @@ echo
 echo "Done!"
 echo
 echo "Set naturalSyntaxLs.serverPath in VS Code to:"
-echo "  $ROOT/bin/natural-syntax-ls.exe"
+echo "  $ROOT/bin/$BIN_NAME"
 echo
 echo "Model files are in: $DATA_DIR"
 echo "The extension finds them automatically."
