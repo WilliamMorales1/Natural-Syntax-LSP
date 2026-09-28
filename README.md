@@ -56,17 +56,52 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 
 ### Neovim
 
-The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client — no plugin needed beyond `nvim-lspconfig`. Semantic/dependency-mode color pushes (`$/nls/semanticColors`) are a VS Code-only decoration mechanism and won't render in Neovim, but POS-mode highlighting and hover work natively in all three modes.
+The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client. Semantic/dependency-mode color pushes (`$/nls/semanticColors`) are a VS Code-only decoration mechanism and won't render in Neovim, but POS-mode highlighting and hover work natively in all three modes.
+
+`scripts/setup.sh` installs the binary to `~/.local/bin` (`$XDG_BIN_HOME` if set); `scripts/setup.ps1` installs it to `%LOCALAPPDATA%\Programs\natural-syntax-ls` and adds that to your user `PATH`. With it on `PATH`, `cmd = { "natural-syntax-ls" }` is enough.
+
+**Plain Neovim 0.11+** (built-in `vim.lsp.config`, no plugins required), e.g. in `init.lua`:
 
 ```lua
--- lua/plugins/natural-syntax-ls.lua (LazyVim example)
+vim.lsp.config("natural_syntax_ls", {
+  cmd = { "natural-syntax-ls" },
+  filetypes = { "text", "markdown" },
+  root_dir = function(bufnr, on_dir)
+    on_dir(vim.fn.getcwd())
+  end,
+})
+vim.lsp.enable("natural_syntax_ls")
+```
+
+If you use `mason-lspconfig`, you still need the `vim.lsp.enable` call — its `automatic_enable` only covers servers Mason installed.
+
+**Neovim 0.10 with `nvim-lspconfig`:**
+
+```lua
+local configs = require("lspconfig.configs")
+if not configs.natural_syntax_ls then
+  configs.natural_syntax_ls = {
+    default_config = {
+      cmd = { "natural-syntax-ls" },
+      filetypes = { "text", "markdown" },
+      root_dir = function() return vim.fn.getcwd() end,
+    },
+  }
+end
+require("lspconfig").natural_syntax_ls.setup({})
+```
+
+**LazyVim:**
+
+```lua
+-- lua/plugins/natural-syntax-ls.lua
 return {
   "neovim/nvim-lspconfig",
   opts = {
     servers = {
       natural_syntax_ls = {
         mason = false,
-        cmd = { "/path/to/natural-syntax-ls" },
+        cmd = { "natural-syntax-ls" },
         filetypes = { "text", "markdown" },
         root_dir = function(bufnr, on_dir)
           on_dir(vim.fn.getcwd())
@@ -77,33 +112,35 @@ return {
 }
 ```
 
-To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI).
+To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI), e.g. `cmd = { "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/mpnet.onnx") }`.
+
+POS tags map to standard semantic token types, so colors come from your colorscheme's `@lsp.type.*` highlight groups. Link any that render plain, e.g. `vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })`.
 
 ## Models
 
-| Model | Size | Mode | Notes |
-|---|---|---|---|
-| `bert-base-cased` (default) | ~430 MB | POS | Higher accuracy (multilingual vocab inflates size) |
-| `mobilebert` | ~105 MB | POS | Faster startup |
-| `all-mpnet-base-v2` (default) | ~440 MB | Semantic | 768-dim, 110M params, best quality |
-| `all-MiniLM-L6-v2` | ~92 MB | Semantic | 384-dim, 22M params, faster, lower quality |
+| Model                           | Size    | Mode       | Notes                                                                                                                                         |
+| ------------------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bert-base-cased` (default)     | ~430 MB | POS        | Higher accuracy (multilingual vocab inflates size)                                                                                            |
+| `mobilebert`                    | ~105 MB | POS        | Faster startup                                                                                                                                |
+| `all-mpnet-base-v2` (default)   | ~440 MB | Semantic   | 768-dim, 110M params, best quality                                                                                                            |
+| `all-MiniLM-L6-v2`              | ~92 MB  | Semantic   | 384-dim, 22M params, faster, lower quality                                                                                                    |
 | `en_ewt.electra-base` (default) | ~470 MB | Dependency | diaparser biaffine UD parser (ELECTRA-base encoder); pass `--model <diaparser-catalog-name>` to `export_model.py` for other languages/corpora |
 
 One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active — its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model file names on disk (`{slug}.onnx` / `{slug}_vocab.txt`, or `{slug}_dependency.onnx` / `{slug}_dependency_vocab.txt`) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported.
 
 ## Settings
 
-| Setting | Default | Description |
-|---|---|---|
-| `naturalSyntaxLs.serverPath` | `""` (bundled binary) | Path to the Go binary |
-| `naturalSyntaxLs.mode` | `pos` | `pos`, `semantic`, or `dependency` |
-| `naturalSyntaxLs.model` | `bert-base` | Model name; meaning depends on `mode` (see above) |
-| `naturalSyntaxLs.filetypes` | `["plaintext", "markdown"]` | Language IDs to activate on |
-| `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum confidence to highlight (POS mode) |
-| `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS → token type mappings |
-| `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Show Wiktionary definitions in hover |
-| `naturalSyntaxLs.semanticLightness` | `0.75` | OKLCH lightness for semantic colors (0–1); increase for light themes |
-| `naturalSyntaxLs.semanticChroma` | `0.14` | OKLCH chroma (color intensity) for semantic colors |
+| Setting                                 | Default                     | Description                                                          |
+| --------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| `naturalSyntaxLs.serverPath`            | `""` (bundled binary)       | Path to the Go binary                                                |
+| `naturalSyntaxLs.mode`                  | `pos`                       | `pos`, `semantic`, or `dependency`                                   |
+| `naturalSyntaxLs.model`                 | `bert-base`                 | Model name; meaning depends on `mode` (see above)                    |
+| `naturalSyntaxLs.filetypes`             | `["plaintext", "markdown"]` | Language IDs to activate on                                          |
+| `naturalSyntaxLs.scoreThreshold`        | `null` (0.333)              | Minimum confidence to highlight (POS mode)                           |
+| `naturalSyntaxLs.tokenMapUpdate`        | `{}`                        | Override POS → token type mappings                                   |
+| `naturalSyntaxLs.wiktionaryDefinitions` | `true`                      | Show Wiktionary definitions in hover                                 |
+| `naturalSyntaxLs.semanticLightness`     | `0.75`                      | OKLCH lightness for semantic colors (0–1); increase for light themes |
+| `naturalSyntaxLs.semanticChroma`        | `0.14`                      | OKLCH chroma (color intensity) for semantic colors                   |
 
 ## POS Tag Colors (POS mode)
 

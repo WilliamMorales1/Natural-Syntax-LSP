@@ -210,13 +210,25 @@ rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~" "$ROOT/natura
 (cd "$ROOT" && go build -o "bin/$BIN_NAME" ./cmd/natural-syntax-ls/)
 ok "Built: $ROOT/bin/$BIN_NAME"
 
+# ── 7. Install binary to user bin directory ────────────────────────────────
+
+INSTALL_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+step "Installing to $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+cp "$ROOT/bin/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
+ok "Installed: $INSTALL_DIR/$BIN_NAME"
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *) echo "    WARNING: $INSTALL_DIR is not on your PATH. Add it to use 'natural-syntax-ls' by name." ;;
+esac
+
 # ── Done ───────────────────────────────────────────────────────────────────
 
 echo
 echo "Done!"
 echo
-echo "Set naturalSyntaxLs.serverPath in VS Code to:"
-echo "  $ROOT/bin/$BIN_NAME"
+echo "Server binary: $INSTALL_DIR/$BIN_NAME"
+echo "(Set naturalSyntaxLs.serverPath in VS Code to this to use it instead of the bundled one.)"
 echo
 echo "Model files are in: $DATA_DIR"
 echo "The extension finds them automatically."

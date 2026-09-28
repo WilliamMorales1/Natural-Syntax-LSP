@@ -138,13 +138,27 @@ if ($LASTEXITCODE -ne 0) { Fail "go build failed." }
 Pop-Location
 Ok "Built: $exePath"
 
+# ── 7. Install binary to user bin directory ───────────────────────────────────
+
+$installDir = Join-Path $env:LOCALAPPDATA "Programs\natural-syntax-ls"
+Step "Installing to $installDir"
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+$installedExe = Join-Path $installDir "natural-syntax-ls.exe"
+Copy-Item $exePath $installedExe -Force
+Ok "Installed: $installedExe"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ";") -notcontains $installDir) {
+    [Environment]::SetEnvironmentVariable("Path", ($userPath.TrimEnd(";") + ";" + $installDir).TrimStart(";"), "User")
+    Ok "Added $installDir to user PATH (restart your terminal/editor to pick it up)."
+}
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host
 Write-Host "Done!"
 Write-Host
-Write-Host "Set naturalSyntaxLs.serverPath in VS Code to:"
-Write-Host "  $exePath"
+Write-Host "Server binary: $installedExe"
+Write-Host "(Set naturalSyntaxLs.serverPath in VS Code to this to use it instead of the bundled one.)"
 Write-Host
 Write-Host "Model files are in: $DATA_DIR"
 Write-Host "The extension finds them automatically."
