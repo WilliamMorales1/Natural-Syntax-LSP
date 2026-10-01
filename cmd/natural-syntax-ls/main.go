@@ -46,27 +46,15 @@ func main() {
 		embedHiddenSize = 384
 	}
 
-	if *vocabPath == "" {
+	// The vocab must belong to the chosen model; any other vocab maps subwords to the wrong ids.
+	if *vocabPath == "" && *modelPath != "" {
 		*vocabPath = findFile([]string{
-			filepath.Join(dataDir, "mpnet_vocab.txt"),
-			filepath.Join(dataDir, "minilm_vocab.txt"),
-			filepath.Join(exeDir, "mpnet_vocab.txt"),
-			filepath.Join(exeDir, "minilm_vocab.txt"),
-			filepath.Join(dataDir, "bert_base_vocab.txt"),
-			filepath.Join(dataDir, "mobilebert_vocab.txt"),
-			filepath.Join(exeDir, "bert_base_vocab.txt"),
-			filepath.Join(exeDir, "mobilebert_vocab.txt"),
+			strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt",
 		})
 	}
 
 	if *mode == "semantic" {
 		inference.InitSemantic(embedHiddenSize)
-	}
-
-	if *mode == "dependency" && *vocabPath == "" && *modelPath != "" {
-		*vocabPath = findFile([]string{
-			strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt",
-		})
 	}
 
 	if *modelPath == "" || *vocabPath == "" {
