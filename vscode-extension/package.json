@@ -2,11 +2,17 @@
   "name": "natural-syntax-ls",
   "displayName": "Natural Syntax Highlighting",
   "description": "Parts-of-speech semantic highlighting via natural-syntax-ls",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "local",
-  "engines": { "vscode": "^1.75.0" },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./extension.js",
   "scripts": {
     "test": "node arc-layout.test.js"
@@ -15,7 +21,9 @@
     "languages": [
       {
         "id": "nlsdep",
-        "aliases": ["NLS Dependency Hover"],
+        "aliases": [
+          "NLS Dependency Hover"
+        ],
         "extensions": []
       }
     ],
@@ -36,13 +44,24 @@
         },
         "naturalSyntaxLs.filetypes": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["plaintext", "markdown"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "plaintext",
+            "markdown"
+          ],
           "description": "VSCode language IDs to activate natural-syntax-ls for."
         },
         "naturalSyntaxLs.model": {
           "type": "string",
-          "enum": ["bert-base", "mobilebert", "mpnet", "minilm", "en_ewt.electra-base"],
+          "enum": [
+            "bert-base",
+            "mobilebert",
+            "mpnet",
+            "minilm",
+            "en_ewt.electra-base"
+          ],
           "enumDescriptions": [
             "pos: more accurate (default for pos)",
             "pos: faster",
@@ -59,7 +78,10 @@
           "description": "POS tag overrides. Key = tag (e.g. CC), value = {type, modifiers} or null to disable."
         },
         "naturalSyntaxLs.scoreThreshold": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "default": null,
           "description": "Minimum confidence score (0–1) for a token to be highlighted. Defaults to 0.333 if unset."
         },
@@ -84,7 +106,11 @@
         },
         "naturalSyntaxLs.mode": {
           "type": "string",
-          "enum": ["pos", "semantic", "dependency"],
+          "enum": [
+            "pos",
+            "semantic",
+            "dependency"
+          ],
           "default": "pos",
           "description": "Highlighting mode. 'pos' colours by part-of-speech (default). 'semantic' clusters words by contextual meaning — run scripts/export_model.py --model <mpnet|minilm> first. 'dependency' colours by Universal Dependencies relation and draws head/dependent arcs — run scripts/export_model.py --model <diaparser-catalog-name> first (e.g. en_ewt.electra-base)."
         }
