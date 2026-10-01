@@ -52,10 +52,9 @@ func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
 		return nil, fmt.Errorf("load dependency rel labels: %w", err)
 	}
 
-	session, err := ort.NewDynamicAdvancedSession(modelPath,
+	session, err := newDynamicSession(modelPath,
 		[]string{"input_ids", "attention_mask", "pool_matrix"},
 		[]string{"arc_logits", "rel_logits"},
-		nil,
 	)
 	if err != nil {
 		ort.DestroyEnvironment()

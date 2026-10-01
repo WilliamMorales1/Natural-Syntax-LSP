@@ -13,14 +13,12 @@ const maxSeqLen = 512
 // ChunkSize is the max words per inference chunk, conservative to stay under maxSeqLen after subword splitting.
 const ChunkSize = 200
 
-// baseFixedModel holds the ONNX session/tensor plumbing shared by fixed-size [1, maxSeqLen] models (POSModel, EmbeddingModel).
-type baseFixedModel struct {
-	session    *ort.AdvancedSession
+// baseModel holds the ONNX session shared by BERT-style token models (POSModel, EmbeddingModel); inputs are sized to each chunk, never padded.
+type baseModel struct {
+	session    *ort.DynamicAdvancedSession
 	tokenizer  *tokenizer.BERTTokenizer
-	inputIDs   *ort.Tensor[int64]
-	attMask    *ort.Tensor[int64]
-	tokTypeIDs *ort.Tensor[int64]
-	output     *ort.Tensor[float32]
+	outputName string
+	lastDim    int64
 }
 
 // initEnvAndTokenizer inits the ORT env and loads the BERT tokenizer; callers must call ort.DestroyEnvironment() on later errors and on Close().
@@ -37,75 +35,55 @@ func initEnvAndTokenizer(vocabPath string) (*tokenizer.BERTTokenizer, error) {
 	return tok, nil
 }
 
-// newBaseFixedModel loads the tokenizer, allocates fixed-shape input/output tensors, and creates the ORT session.
-func newBaseFixedModel(modelPath, vocabPath, outputName string, lastDim int64) (*baseFixedModel, error) {
+// newSessionOptions returns ORT options tuned for a background editor process: few threads, no busy-wait spinning.
+func newSessionOptions() (*ort.SessionOptions, error) {
+	opts, err := ort.NewSessionOptions()
+	if err != nil {
+		return nil, err
+	}
+	for _, set := range []func() error{
+		func() error { threads, _ := Concurrency(); return opts.SetIntraOpNumThreads(threads) },
+		func() error { return opts.SetInterOpNumThreads(1) },
+		func() error { return opts.AddSessionConfigEntry("session.intra_op.allow_spinning", "0") },
+		func() error { return opts.AddSessionConfigEntry("session.inter_op.allow_spinning", "0") },
+	} {
+		if err := set(); err != nil {
+			opts.Destroy()
+			return nil, err
+		}
+	}
+	return opts, nil
+}
+
+// newDynamicSession creates a dynamic-shape ORT session with newSessionOptions.
+func newDynamicSession(modelPath string, inputs, outputs []string) (*ort.DynamicAdvancedSession, error) {
+	opts, err := newSessionOptions()
+	if err != nil {
+		return nil, fmt.Errorf("session options: %w", err)
+	}
+	defer opts.Destroy()
+	return ort.NewDynamicAdvancedSession(modelPath, inputs, outputs, opts)
+}
+
+// newBaseModel loads the tokenizer and creates the ORT session.
+func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64) (*baseModel, error) {
 	tok, err := initEnvAndTokenizer(vocabPath)
 	if err != nil {
 		return nil, err
 	}
-
-	shape2 := ort.NewShape(1, maxSeqLen)
-	shape3 := ort.NewShape(1, maxSeqLen, lastDim)
-
-	inputIDs, err := ort.NewTensor(shape2, make([]int64, maxSeqLen))
-	if err != nil {
-		ort.DestroyEnvironment()
-		return nil, fmt.Errorf("new inputIDs tensor: %w", err)
-	}
-	attMask, err := ort.NewTensor(shape2, make([]int64, maxSeqLen))
-	if err != nil {
-		inputIDs.Destroy()
-		ort.DestroyEnvironment()
-		return nil, fmt.Errorf("new attMask tensor: %w", err)
-	}
-	tokTypeIDs, err := ort.NewTensor(shape2, make([]int64, maxSeqLen))
-	if err != nil {
-		inputIDs.Destroy()
-		attMask.Destroy()
-		ort.DestroyEnvironment()
-		return nil, fmt.Errorf("new tokTypeIDs tensor: %w", err)
-	}
-	output, err := ort.NewEmptyTensor[float32](shape3)
-	if err != nil {
-		inputIDs.Destroy()
-		attMask.Destroy()
-		tokTypeIDs.Destroy()
-		ort.DestroyEnvironment()
-		return nil, fmt.Errorf("new output tensor: %w", err)
-	}
-
-	session, err := ort.NewAdvancedSession(modelPath,
+	session, err := newDynamicSession(modelPath,
 		[]string{"input_ids", "attention_mask", "token_type_ids"},
 		[]string{outputName},
-		[]ort.ArbitraryTensor{inputIDs, attMask, tokTypeIDs},
-		[]ort.ArbitraryTensor{output},
-		nil,
 	)
 	if err != nil {
-		inputIDs.Destroy()
-		attMask.Destroy()
-		tokTypeIDs.Destroy()
-		output.Destroy()
 		ort.DestroyEnvironment()
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
-
-	return &baseFixedModel{
-		session:    session,
-		tokenizer:  tok,
-		inputIDs:   inputIDs,
-		attMask:    attMask,
-		tokTypeIDs: tokTypeIDs,
-		output:     output,
-	}, nil
+	return &baseModel{session: session, tokenizer: tok, outputName: outputName, lastDim: lastDim}, nil
 }
 
-func (m *baseFixedModel) Close() {
+func (m *baseModel) Close() {
 	m.session.Destroy()
-	m.inputIDs.Destroy()
-	m.attMask.Destroy()
-	m.tokTypeIDs.Destroy()
-	m.output.Destroy()
 	ort.DestroyEnvironment()
 }
 
@@ -122,27 +100,38 @@ func decodeEnumList[T any](raw []string, decode func(string) (T, bool), fallback
 	return out
 }
 
-// runWords tokenizes words, fills the fixed-size input tensors, runs the session, and returns subword id/first-piece bookkeeping plus seqLen.
-func (m *baseFixedModel) runWords(words []tokenizer.WordSpan) (seqLen int, swWordIdx []int, swIsFirst []bool, err error) {
+// runWords tokenizes words, runs the session on exactly that many subwords, and returns the flat [seqLen x lastDim] output plus subword bookkeeping.
+func (m *baseModel) runWords(words []tokenizer.WordSpan) (out []float32, seqLen int, swWordIdx []int, swIsFirst []bool, err error) {
 	ids, mask, tti, swWordIdx, swIsFirst := m.tokenizer.TokenizeWords(words)
-
 	seqLen = min(len(ids), maxSeqLen)
+	shape := ort.NewShape(1, int64(seqLen))
 
-	idBuf := m.inputIDs.GetData()
-	maskBuf := m.attMask.GetData()
-	ttiBuf := m.tokTypeIDs.GetData()
-	for i := range idBuf {
-		idBuf[i] = 0
-		maskBuf[i] = 0
-		ttiBuf[i] = 0
+	inputIDs, err := ort.NewTensor(shape, ids[:seqLen])
+	if err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("new inputIDs tensor: %w", err)
 	}
-	copy(idBuf, ids[:seqLen])
-	copy(maskBuf, mask[:seqLen])
-	copy(ttiBuf, tti[:seqLen])
-
-	if err := m.session.Run(); err != nil {
-		return 0, nil, nil, fmt.Errorf("ort run: %w", err)
+	defer inputIDs.Destroy()
+	attMask, err := ort.NewTensor(shape, mask[:seqLen])
+	if err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("new attMask tensor: %w", err)
 	}
+	defer attMask.Destroy()
+	tokTypeIDs, err := ort.NewTensor(shape, tti[:seqLen])
+	if err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("new tokTypeIDs tensor: %w", err)
+	}
+	defer tokTypeIDs.Destroy()
+	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, int64(seqLen), m.lastDim))
+	if err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("new output tensor: %w", err)
+	}
+	defer output.Destroy()
 
-	return seqLen, swWordIdx, swIsFirst, nil
+	if err := m.session.Run(
+		[]ort.Value{inputIDs, attMask, tokTypeIDs},
+		[]ort.Value{output},
+	); err != nil {
+		return nil, 0, nil, nil, fmt.Errorf("ort run: %w", err)
+	}
+	return append([]float32(nil), output.GetData()...), seqLen, swWordIdx, swIsFirst, nil
 }

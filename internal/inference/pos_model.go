@@ -14,7 +14,7 @@ import (
 
 // POSModel holds the ONNX session and pre-allocated tensors.
 type POSModel struct {
-	*baseFixedModel
+	*baseModel
 	labels []postag.PartOfSpeech // index → PartOfSpeech, loaded from _labels.json
 }
 
@@ -61,24 +61,23 @@ func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		}
 	}
 
-	base, err := newBaseFixedModel(modelPath, vocabPath, "logits", int64(len(labels)))
+	base, err := newBaseModel(modelPath, vocabPath, "logits", int64(len(labels)))
 	if err != nil {
 		return nil, err
 	}
 
 	return &POSModel{
-		baseFixedModel: base,
-		labels:         labels,
+		baseModel: base,
+		labels:    labels,
 	}, nil
 }
 
 func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
-	seqLen, swWordIdx, swIsFirst, err := m.runWords(words)
+	logits, seqLen, swWordIdx, swIsFirst, err := m.runWords(words)
 	if err != nil {
 		return nil, err
 	}
 
-	logits := m.output.GetData()
 	numLabels := len(m.labels)
 
 	type best struct {

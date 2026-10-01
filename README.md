@@ -112,7 +112,7 @@ return {
 }
 ```
 
-To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI), e.g. `cmd = { "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/mpnet.onnx") }`.
+To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI), e.g. `cmd = { "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/mpnet.onnx") }`. `-threads N` sets ONNX Runtime threads per chunk; the default (0) uses the physical core count, capped at 4, and runs chunks in parallel on any cores left over.
 
 POS tags map to standard semantic token types, so colors come from your colorscheme's `@lsp.type.*` highlight groups. Link any that render plain, e.g. `vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })`.
 

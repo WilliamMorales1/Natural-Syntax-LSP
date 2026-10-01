@@ -16,6 +16,7 @@ func main() {
 	modelPath := flag.String("model", "", "Path to a .onnx model file")
 	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt file (the model's own vocab, whatever mode)")
 	mode := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
+	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
@@ -86,6 +87,8 @@ func main() {
 	if ortLib != "" {
 		inference.SetORTLibPath(ortLib)
 	}
+
+	inference.SetIntraOpThreads(*threads)
 
 	cfg := lspserver.Config{
 		ModelPath:       *modelPath,

@@ -4,3 +4,4 @@ vscode-extension/node_modules/
 *.vsix
 vscode-extension/bin/
 .venv/
+.conda-env/

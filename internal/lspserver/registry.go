@@ -1,6 +1,9 @@
 package lspserver
 
 import (
+	"strings"
+	"sync"
+
 	"natural-syntax-ls/internal/inference"
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
@@ -145,13 +148,16 @@ type documentRegistry struct {
 	tokenMap   tokenmap.Map
 	useDeprel  bool // true when model is *inference.DependencyModel: color tokens by deprel category, not POS tag
 	threshold  float64
+	workers    int // parallel chunk predictions per document
 	stores     map[string]*documentStore
 	onDocReady func(uri string, doc *document) // called after each chunk and on completion
 }
 
 func newDocumentRegistry(model inference.Predictor) *documentRegistry {
 	_, isDependency := model.(*inference.DependencyModel)
+	_, workers := inference.Concurrency()
 	dr := &documentRegistry{
+		workers:   workers,
 		ch:        make(chan registryMsg, 64),
 		model:     model,
 		tokenMap:  tokenmap.NewDefault(),
@@ -326,27 +332,22 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 	store.processingText = item.text
 	store.processingVersion = item.version
 
-	numChunks := (len(words) + inference.ChunkSize - 1) / inference.ChunkSize
-	if len(words) == 0 {
-		numChunks = 0
-	}
+	chunks := inference.SplitChunks(item.text, words)
+	numChunks := len(chunks)
 
-	// Determine dirty chunks; pre-populate clean ones with offset-patched results.
+	// Reuse any previous chunk with identical words, wherever it moved; inference only sees a chunk's own words, so this matches a fresh run exactly.
+	cache := make(map[string]*chunkResult, len(store.chunkResults))
+	for _, old := range store.chunkResults {
+		if old != nil {
+			cache[strings.Join(old.wordTexts, "\x00")] = old
+		}
+	}
 	newChunkResults := make([]*chunkResult, numChunks)
 	dirty := make([]bool, numChunks)
-
-	if len(store.chunkResults) == numChunks {
-		for i := range numChunks {
-			start := i * inference.ChunkSize
-			end := min(start+inference.ChunkSize, len(words))
-			if old := store.chunkResults[i]; old != nil && chunksEqual(old.wordTexts, words[start:end]) {
-				newChunkResults[i] = patchChunkOffsets(old, words[start:end])
-			} else {
-				dirty[i] = true
-			}
-		}
-	} else {
-		for i := range dirty {
+	for i, chunk := range chunks {
+		if old, ok := cache[chunkKey(chunk)]; ok {
+			newChunkResults[i] = patchChunkOffsets(old, chunk)
+		} else {
 			dirty[i] = true
 		}
 	}
@@ -405,36 +406,45 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 	threshold := dr.threshold
 	uri := item.uri
 	go func() {
-		for i := range numChunks {
-			if !dirty[i] {
-				continue
-			}
-			start := i * inference.ChunkSize
-			end := min(start+inference.ChunkSize, len(words))
-			chunkWords := words[start:end]
-			tokens, err := dr.model.PredictChunk(chunkWords)
-			if err != nil {
-				tokens = nil
-			}
-			var filtered []postag.POSToken
-			if _, isDependency := dr.model.(*inference.DependencyModel); isDependency {
-				// Dependency mode's Score is arc-softmax confidence, not a classification-confidence gate; thresholding it would hide valid roots/arcs.
-				filtered = tokens
-			} else {
-				filtered = tokens[:0]
-				for _, t := range tokens {
-					if postag.FilterToken(t, threshold) {
-						filtered = append(filtered, t)
+		// Dirty chunks are independent, so spare physical cores run them in parallel against the one shared session.
+		jobs := make(chan int)
+		var wg sync.WaitGroup
+		for range dr.workers {
+			wg.Go(func() {
+				for i := range jobs {
+					chunkWords := chunks[i]
+					tokens, err := dr.model.PredictChunk(chunkWords)
+					if err != nil {
+						tokens = nil
 					}
+					var filtered []postag.POSToken
+					if _, isDependency := dr.model.(*inference.DependencyModel); isDependency {
+						// Dependency mode's Score is arc-softmax confidence, not a classification-confidence gate; thresholding it would hide valid roots/arcs.
+						filtered = tokens
+					} else {
+						filtered = tokens[:0]
+						for _, t := range tokens {
+							if postag.FilterToken(t, threshold) {
+								filtered = append(filtered, t)
+							}
+						}
+					}
+					wordTexts := make([]string, len(chunkWords))
+					for j, w := range chunkWords {
+						wordTexts[j] = w.Text
+					}
+					cr := &chunkResult{wordTexts: wordTexts, words: chunkWords, tokens: filtered}
+					dr.send(registryMsg{kind: msgPartialPredicted, uri: uri, chunkIdx: i, chunk: cr})
 				}
-			}
-			wordTexts := make([]string, len(chunkWords))
-			for j, w := range chunkWords {
-				wordTexts[j] = w.Text
-			}
-			cr := &chunkResult{wordTexts: wordTexts, words: chunkWords, tokens: filtered}
-			dr.send(registryMsg{kind: msgPartialPredicted, uri: uri, chunkIdx: i, chunk: cr})
+			})
 		}
+		for i := range numChunks {
+			if dirty[i] {
+				jobs <- i
+			}
+		}
+		close(jobs)
+		wg.Wait()
 		dr.send(registryMsg{kind: msgPredicted, uri: uri})
 	}()
 }
@@ -448,17 +458,16 @@ func (dr *documentRegistry) storeFor(uri string) *documentStore {
 	return s
 }
 
-// chunksEqual reports whether old word texts match the new word spans.
-func chunksEqual(oldTexts []string, newWords []tokenizer.WordSpan) bool {
-	if len(oldTexts) != len(newWords) {
-		return false
-	}
-	for i, w := range newWords {
-		if oldTexts[i] != w.Text {
-			return false
+// chunkKey identifies a chunk by its word texts, matching strings.Join(chunkResult.wordTexts, "\x00").
+func chunkKey(words []tokenizer.WordSpan) string {
+	var sb strings.Builder
+	for i, w := range words {
+		if i > 0 {
+			sb.WriteByte(0)
 		}
+		sb.WriteString(w.Text)
 	}
-	return true
+	return sb.String()
 }
 
 // patchChunkOffsets returns a new chunkResult with offsets updated from newWords (assumed same order/texts as old).

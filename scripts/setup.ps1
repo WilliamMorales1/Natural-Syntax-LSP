@@ -42,13 +42,64 @@ New-Item -ItemType Directory -Force $DATA_DIR | Out-Null
 Ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ────────────────────────────────────────────────────────────
+#
+# pip first, into a venv if a plain install fails (e.g. PEP 668 under pwsh on
+# Linux). Without pip, fall back to uv, then conda, each into an env under the repo.
 
-Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests, diaparser)"
-& $PYTHON -m pip install --quiet transformers torch onnx onnxscript requests
-if ($LASTEXITCODE -ne 0) { Fail "pip install failed." }
-if ($Model -eq "dependency" -or $Model -eq "all") {
-    & $PYTHON -m pip install --quiet diaparser
-    if ($LASTEXITCODE -ne 0) { Fail "pip install diaparser failed." }
+Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
+
+$PKGS = @("transformers","torch","onnx","onnxscript","requests")
+if ($Model -eq "dependency" -or $Model -eq "all") { $PKGS += "diaparser" }
+
+# Native stderr can throw under ErrorActionPreference=Stop in Windows PowerShell 5, so probes go through try/catch.
+function Test-Native([scriptblock]$cmd) {
+    try { & $cmd *> $null; return ($LASTEXITCODE -eq 0) } catch { return $false }
+}
+
+# EnvPython returns the interpreter path inside a venv/conda env, which differs between Windows and Unix pwsh.
+function EnvPython($dir) {
+    $win = Join-Path $dir "Scripts\python.exe"
+    if (Test-Path $win) { return $win }
+    $unixVenv = Join-Path $dir "bin/python"
+    if (Test-Path $unixVenv) { return $unixVenv }
+    return (Join-Path $dir "python.exe") # conda on Windows puts python.exe at the env root
+}
+
+function Install-Pip {
+    & $PYTHON -m pip install --quiet @PKGS
+    return ($LASTEXITCODE -eq 0)
+}
+
+if (Test-Native { & $PYTHON -m pip --version }) {
+    if (-not (Install-Pip)) {
+        Step "System pip install failed, falling back to a venv"
+        $VENV_DIR = Join-Path $ROOT ".venv"
+        if (-not (Test-Path $VENV_DIR)) { & $PYTHON -m venv $VENV_DIR }
+        $PYTHON = EnvPython $VENV_DIR
+        Ok "Using venv: $VENV_DIR"
+        if (-not (Test-Native { & $PYTHON -m pip --version })) { & $PYTHON -m ensurepip --upgrade }
+        if (-not (Install-Pip)) { Fail "Failed to install Python dependencies even inside a venv." }
+    }
+} elseif (Get-Command uv -ErrorAction SilentlyContinue) {
+    Step "pip not found, using uv"
+    $VENV_DIR = Join-Path $ROOT ".venv"
+    if (-not (Test-Path $VENV_DIR)) { uv venv --quiet --python $PYTHON $VENV_DIR }
+    $PYTHON = EnvPython $VENV_DIR
+    Ok "Using venv: $VENV_DIR"
+    uv pip install --quiet --python $PYTHON @PKGS
+    if ($LASTEXITCODE -ne 0) { Fail "Failed to install Python dependencies with uv." }
+} elseif (Get-Command conda -ErrorAction SilentlyContinue) {
+    Step "pip and uv not found, using conda"
+    $CONDA_ENV = Join-Path $ROOT ".conda-env"
+    if (-not (Test-Path $CONDA_ENV)) {
+        conda create --quiet --yes --prefix $CONDA_ENV python=3.12 pip
+        if ($LASTEXITCODE -ne 0) { Fail "Failed to create conda env at $CONDA_ENV." }
+    }
+    $PYTHON = EnvPython $CONDA_ENV
+    Ok "Using conda env: $CONDA_ENV"
+    if (-not (Install-Pip)) { Fail "Failed to install Python dependencies inside the conda env." }
+} else {
+    Fail "No pip, uv, or conda found. Install one of them and re-run."
 }
 Ok "Python deps ready."
 

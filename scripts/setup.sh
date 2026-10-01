@@ -58,31 +58,58 @@ ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ─────────────────────────────────────────────────────────
 #
-# Installed into a venv rather than system-wide: PEP 668 ("externally
-# managed environment") blocks plain `pip install` on Arch, Debian 12+,
-# Fedora, and other recent distros.
+# pip first, into a venv if PEP 668 ("externally managed environment") blocks
+# a plain install, as on Arch, Debian 12+, Fedora, and other recent distros.
+# Without pip, fall back to uv, then conda, each into an env under the repo.
 
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
 
-install_deps() {
-    "$PYTHON" -m pip install --quiet transformers torch onnx onnxscript requests || return 1
-    if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
-        "$PYTHON" -m pip install --quiet diaparser || return 1
+PKGS=(transformers torch onnx onnxscript requests)
+if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
+    PKGS+=(diaparser)
+fi
+
+# env_python prints the interpreter path inside a venv/conda env, which differs on Windows.
+env_python() {
+    if [[ -x "$1/bin/python" ]]; then
+        echo "$1/bin/python"
+    else
+        echo "$1/Scripts/python.exe"
     fi
 }
 
-if ! install_deps; then
-    step "System pip install failed (externally-managed-environment?), falling back to a venv"
-    VENV_DIR="$ROOT/.venv"
-    [[ -d "$VENV_DIR" ]] || "$PYTHON" -m venv "$VENV_DIR"
-    if [[ -x "$VENV_DIR/bin/python" ]]; then
-        PYTHON="$VENV_DIR/bin/python"
-    else
-        PYTHON="$VENV_DIR/Scripts/python.exe"
+pip_install() {
+    "$PYTHON" -m pip install --quiet "${PKGS[@]}"
+}
+
+if "$PYTHON" -m pip --version &>/dev/null; then
+    if ! pip_install; then
+        step "System pip install failed (externally-managed-environment?), falling back to a venv"
+        VENV_DIR="$ROOT/.venv"
+        [[ -d "$VENV_DIR" ]] || "$PYTHON" -m venv "$VENV_DIR"
+        PYTHON="$(env_python "$VENV_DIR")"
+        ok "Using venv: $VENV_DIR"
+        "$PYTHON" -m pip --version &>/dev/null || "$PYTHON" -m ensurepip --upgrade
+        pip_install || fail "Failed to install Python dependencies even inside a venv."
     fi
+elif command -v uv &>/dev/null; then
+    step "pip not found, using uv"
+    VENV_DIR="$ROOT/.venv"
+    [[ -d "$VENV_DIR" ]] || uv venv --quiet --python "$PYTHON" "$VENV_DIR"
+    PYTHON="$(env_python "$VENV_DIR")"
     ok "Using venv: $VENV_DIR"
-    "$PYTHON" -m pip --version &>/dev/null || "$PYTHON" -m ensurepip --upgrade
-    install_deps || fail "Failed to install Python dependencies even inside a venv."
+    uv pip install --quiet --python "$PYTHON" "${PKGS[@]}" \
+        || fail "Failed to install Python dependencies with uv."
+elif command -v conda &>/dev/null; then
+    step "pip and uv not found, using conda"
+    CONDA_ENV="$ROOT/.conda-env"
+    [[ -d "$CONDA_ENV" ]] || conda create --quiet --yes --prefix "$CONDA_ENV" python=3.12 pip \
+        || fail "Failed to create conda env at $CONDA_ENV."
+    PYTHON="$(env_python "$CONDA_ENV")"
+    ok "Using conda env: $CONDA_ENV"
+    pip_install || fail "Failed to install Python dependencies inside the conda env."
+else
+    fail "No pip, uv, or conda found. Install one of them (or python3-pip) and re-run."
 fi
 ok "Python deps ready."
 

@@ -9,19 +9,19 @@ import (
 
 // EmbeddingModel runs a sentence-transformer ONNX model, pools per-word embeddings from subwords, and maps them to semantic colors via OKLCH projection.
 type EmbeddingModel struct {
-	*baseFixedModel
+	*baseModel
 	hiddenSize int
 }
 
 func NewEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingModel, error) {
-	base, err := newBaseFixedModel(modelPath, vocabPath, "last_hidden_state", int64(hiddenSize))
+	base, err := newBaseModel(modelPath, vocabPath, "last_hidden_state", int64(hiddenSize))
 	if err != nil {
 		return nil, err
 	}
 
 	return &EmbeddingModel{
-		baseFixedModel: base,
-		hiddenSize:     hiddenSize,
+		baseModel:  base,
+		hiddenSize: hiddenSize,
 	}, nil
 }
 
@@ -51,16 +51,12 @@ func (m *EmbeddingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POST
 }
 
 func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, error) {
-	seqLen, swWordIdx, _, err := m.runWords(words)
+	hidden, seqLen, swWordIdx, _, err := m.runWords(words)
 	if err != nil {
 		return nil, err
 	}
-
-	hidden := m.output.GetData() // flat [1 * maxSeqLen * hiddenSize]
 	hs := m.hiddenSize
-	maskBuf := m.attMask.GetData()
 
-	// Attention-mask-weighted pool: subwords with mask=0 (padding) contribute nothing.
 	sums := make([][]float32, len(words))
 	weights := make([]float32, len(words))
 	for i := range sums {
@@ -71,18 +67,14 @@ func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, er
 		if wi < 0 {
 			continue
 		}
-		w := float32(maskBuf[si])
-		if w == 0 {
-			continue
-		}
 		base := si * hs
 		if base+hs > len(hidden) {
 			break
 		}
 		for d := range hs {
-			sums[wi][d] += w * hidden[base+d]
+			sums[wi][d] += hidden[base+d]
 		}
-		weights[wi] += w
+		weights[wi]++
 	}
 	embeddings := make([][]float32, len(words))
 	for i := range words {

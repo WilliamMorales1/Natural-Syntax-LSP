@@ -154,7 +154,8 @@ func (m *Modifier) UnmarshalJSON(data []byte) error {
 	}
 	v, ok := modifierByName[s]
 	if !ok {
-		return nil
+		// A list element can't be dropped from inside its own unmarshaler, so mark it for modifiersToBitmap to skip.
+		v = N_TOKEN_MODIFIERS
 	}
 	*m = v
 	return nil
@@ -163,7 +164,9 @@ func (m *Modifier) UnmarshalJSON(data []byte) error {
 func modifiersToBitmap(mods []Modifier) uint32 {
 	var bits uint32
 	for _, m := range mods {
-		bits |= 1 << m
+		if m < N_TOKEN_MODIFIERS {
+			bits |= 1 << m
+		}
 	}
 	return bits
 }
