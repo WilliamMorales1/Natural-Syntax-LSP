@@ -1,6 +1,6 @@
 # UD Relation Reference
 
-Universal Dependencies relation labels used in dependency mode, and the VS Code semantic token type each maps to (color comes from your theme). See [`internal/tokenmap/deprel_bits.go`](internal/tokenmap/deprel_bits.go).
+Universal Dependencies relation labels used in dependency mode, and the VS Code semantic token type each maps to (color comes from your theme). See [`internal/tokenmap/deprel_bits.go`](../internal/tokenmap/deprel_bits.go).
 
 | # | Relation | Meaning | Example | Token Type |
 |---|---|---|---|---|

@@ -1,6 +1,6 @@
 # POS Tag Reference
 
-Penn Treebank part-of-speech tags used in POS mode, and the VS Code semantic token type each maps to (color comes from your theme). See [`internal/tokenmap/pos_bits.go`](internal/tokenmap/pos_bits.go).
+Penn Treebank part-of-speech tags used in POS mode, and the VS Code semantic token type each maps to (color comes from your theme). See [`internal/tokenmap/pos_bits.go`](../internal/tokenmap/pos_bits.go).
 
 | # | Tag | Meaning | Example | Token Type |
 |---|---|---|---|---|
