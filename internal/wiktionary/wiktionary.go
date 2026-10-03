@@ -76,24 +76,6 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 		lower = "-'s"
 	}
 
-	resolved := word
-	payload, err := wiktFetch(word)
-	if err != nil || len(payload["en"]) == 0 {
-		if word == lower {
-			return "", "", false
-		}
-		payload, err = wiktFetch(lower)
-		if err != nil {
-			return "", "", false
-		}
-		resolved = lower
-	}
-
-	entries := payload["en"]
-	if len(entries) == 0 {
-		return "", "", false
-	}
-
 	target := posToWiktCategory(pos)
 	if pos == postag.POS_O {
 		target = deprelToWiktCategory(deprel)
@@ -102,8 +84,37 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}
-	pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", resolved)
 
+	forms := []string{word}
+	if word != lower {
+		forms = append(forms, lower)
+	}
+	// Capitalized pages can lack the tagged POS (sentence-initial "Said" is only a proper noun), so try lowercase before settling.
+	var fallbackDef, fallbackURL string
+	for _, form := range forms {
+		payload, err := fetchPayload(form)
+		if err != nil {
+			continue
+		}
+		def, matched := pickDef(payload["en"], target, numeralGlyph)
+		if def == "" {
+			continue
+		}
+		pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", form)
+		if matched || target == "" {
+			return def, pageURL, true
+		}
+		if fallbackDef == "" {
+			fallbackDef, fallbackURL = def, pageURL
+		}
+	}
+	return fallbackDef, fallbackURL, fallbackDef != ""
+}
+
+var fetchPayload = wiktFetch
+
+// pickDef returns the best definition from entries and whether it came from an entry matching target.
+func pickDef(entries []wiktDef, target string, numeralGlyph bool) (string, bool) {
 	// firstNonEmpty returns the first non-empty stripped definition from an entry.
 	firstNonEmpty := func(e *wiktDef) string {
 		for _, d := range e.Definitions {
@@ -129,7 +140,7 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 		e := &entries[i]
 		lpos := strings.ToLower(e.PartOfSpeech)
 		switch {
-		case strings.EqualFold(e.PartOfSpeech, target):
+		case strings.EqualFold(e.PartOfSpeech, target), target == "Noun" && lpos == "proper noun":
 			addTo(&matched, e)
 		case lowPriPOS[lpos]:
 			addTo(&lowPri, e)
@@ -146,13 +157,17 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 		return append(b.main, b.trans...)
 	}
 
-	candidates := append(append(ordered(matched), ordered(normal)...), ordered(lowPri)...)
-	for _, e := range candidates {
+	for _, e := range ordered(matched) {
 		if def := firstNonEmpty(e); def != "" {
-			return def, pageURL, true
+			return def, true
 		}
 	}
-	return "", pageURL, false
+	for _, e := range append(ordered(normal), ordered(lowPri)...) {
+		if def := firstNonEmpty(e); def != "" {
+			return def, false
+		}
+	}
+	return "", false
 }
 
 var htmlEntityRe = regexp.MustCompile(`&[a-zA-Z]+;|&#[0-9]+;`)
