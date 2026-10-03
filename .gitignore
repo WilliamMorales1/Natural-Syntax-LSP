@@ -3,5 +3,6 @@
 vscode-extension/node_modules/
 *.vsix
 vscode-extension/bin/
+bin/
 .venv/
 .conda-env/

@@ -59,7 +59,7 @@ func main() {
 
 	if *modelPath == "" || *vocabPath == "" {
 		fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find embedding model or vocab file")
-		fmt.Fprintf(os.Stderr, "Run scripts/export_models.py to export them.\n")
+		fmt.Fprintf(os.Stderr, "Run scripts/export_model.py to export them.\n")
 		os.Exit(1)
 	}
 
