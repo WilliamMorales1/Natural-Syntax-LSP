@@ -377,22 +377,19 @@ type markupContent struct {
 func formatHoverContent(tok *postag.Token, dependents []postag.Token, dependentsHaveDeps []bool, wiktDef, wiktURL string) string {
 	var header string
 	if tok.HasHead || len(dependents) > 0 {
-		// Rendered as an "nlsdep" fenced block using this extension's own grammar (syntaxes/nlsdep.tmLanguage.json), which colors by position not keyword matching.
-		var lines []string
-		if len(dependents) == 0 {
-			lines = []string{fmt.Sprintf("head %s %s", tok.Word, tok.Deprel)}
-		} else {
-			lines = []string{fmt.Sprintf("head %s %s {", tok.Word, tok.Deprel)}
-			for i, d := range dependents {
-				suffix := ""
-				if i < len(dependentsHaveDeps) && dependentsHaveDeps[i] {
-					suffix = "{}"
-				}
-				lines = append(lines, fmt.Sprintf("    %s %s%s", d.Word, d.Deprel, suffix))
-			}
-			lines = append(lines, "}")
+		lines := []string{fmt.Sprintf("%s: %s", tok.Word, tok.Deprel)}
+		if len(dependents) > 0 {
+			// Nesting under a scalar is invalid YAML, which highlighters render as one multi-line string.
+			lines = append(lines, "dependents:")
 		}
-		header = fmt.Sprintf("```nlsdep\n%s\n```", strings.Join(lines, "\n"))
+		for i, d := range dependents {
+			line := fmt.Sprintf("  %s: %s", d.Word, d.Deprel)
+			if i < len(dependentsHaveDeps) && dependentsHaveDeps[i] {
+				line += "  # has dependents"
+			}
+			lines = append(lines, line)
+		}
+		header = fmt.Sprintf("```yaml\n%s\n```", strings.Join(lines, "\n"))
 	} else {
 		label := tok.Tag.Description()
 		if tok.Description != "" {

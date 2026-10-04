@@ -76,6 +76,7 @@ type chunkResult struct {
 	key    string               // chunkKey of words, for reuse detection
 	words  []tokenizer.WordSpan // full spans for offset patching
 	tokens []postag.Token
+	embeds [][]float32 // unit embedding per token; semantic mode only
 }
 
 // documentStore tracks per-URI state.
@@ -92,6 +93,8 @@ type documentStore struct {
 	processingText    string
 	processingVersion int32
 	chunkResults      []*chunkResult
+
+	plane inference.SemanticPlane // semantic mode: color plane carried across versions so hues stay stable
 }
 
 // textItem is a document text from the client.
@@ -105,6 +108,7 @@ type textItem struct {
 type documentRegistry struct {
 	ch         chan func()
 	model      inference.Predictor
+	embedder   inference.Embedder // non-nil in semantic mode: tokens are recolored per document
 	tokenMap   tokenmap.Map
 	useDeprel  bool // true when model is *inference.DependencyModel: color tokens by deprel category, not POS tag
 	threshold  float64
@@ -115,11 +119,13 @@ type documentRegistry struct {
 
 func newDocumentRegistry(model inference.Predictor) *documentRegistry {
 	_, isDependency := model.(*inference.DependencyModel)
+	embedder, _ := model.(inference.Embedder)
 	_, workers := inference.Concurrency()
 	dr := &documentRegistry{
 		workers:   workers,
 		ch:        make(chan func(), 64),
 		model:     model,
+		embedder:  embedder,
 		tokenMap:  tokenmap.NewDefault(),
 		useDeprel: isDependency,
 		threshold: defaultScoreThreshold,
@@ -190,7 +196,7 @@ func (dr *documentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr 
 	// Update doc so hover sees the latest partial data.
 	partialDoc := &document{
 		text:    store.processingText,
-		tokens:  mergeChunkTokens(store.chunkResults),
+		tokens:  dr.docTokens(store, store.chunkResults, false),
 		version: store.processingVersion,
 	}
 	store.doc = partialDoc
@@ -213,7 +219,7 @@ func (dr *documentRegistry) finalize(uri string, store *documentStore) {
 	store.processing = false
 	doc := &document{
 		text:    store.processingText,
-		tokens:  mergeChunkTokens(store.chunkResults),
+		tokens:  dr.docTokens(store, store.chunkResults, true),
 		version: store.processingVersion,
 	}
 	store.doc = doc
@@ -333,7 +339,7 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 	if len(dirty) < len(chunks) && dr.onDocReady != nil {
 		partialDoc := &document{
 			text:    item.text,
-			tokens:  mergeChunkTokens(results),
+			tokens:  dr.docTokens(store, results, false),
 			version: item.version,
 		}
 		store.doc = partialDoc
@@ -365,15 +371,57 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 
 // predictChunk runs the model on one chunk; errors yield an empty result so the chunk still completes.
 func (dr *documentRegistry) predictChunk(words []tokenizer.WordSpan, threshold float64) *chunkResult {
-	tokens, err := dr.model.PredictChunk(words)
+	var tokens []postag.Token
+	var embeds [][]float32
+	var err error
+	if dr.embedder != nil {
+		tokens, embeds, err = dr.embedder.EmbedChunk(words)
+	} else {
+		tokens, err = dr.model.PredictChunk(words)
+	}
 	if err != nil {
-		tokens = nil
+		tokens, embeds = nil, nil
 	}
 	// Dependency mode's Score is arc-softmax confidence, not a classification-confidence gate; thresholding it would hide valid roots/arcs.
 	if !dr.useDeprel {
-		tokens = slices.DeleteFunc(tokens, func(t postag.Token) bool { return !t.Keep(threshold) })
+		kept := tokens[:0]
+		var keptEmbeds [][]float32
+		for i, t := range tokens {
+			if !t.Keep(threshold) {
+				continue
+			}
+			kept = append(kept, t)
+			if embeds != nil {
+				keptEmbeds = append(keptEmbeds, embeds[i])
+			}
+		}
+		tokens, embeds = kept, keptEmbeds
 	}
-	return &chunkResult{key: chunkKey(words), words: words, tokens: tokens}
+	return &chunkResult{key: chunkKey(words), words: words, tokens: tokens, embeds: embeds}
+}
+
+// docTokens merges chunk tokens and, in semantic mode, recolors them from store's plane, refitting it first when refit is set or it was never fit.
+func (dr *documentRegistry) docTokens(store *documentStore, results []*chunkResult, refit bool) []postag.Token {
+	tokens := mergeChunkTokens(results)
+	if dr.embedder == nil {
+		return tokens
+	}
+	var embeds [][]float32
+	for _, cr := range results {
+		if cr != nil {
+			embeds = append(embeds, cr.embeds...)
+		}
+	}
+	if refit || !store.plane.Fitted() {
+		store.plane.Fit(embeds)
+	}
+	// mergeChunkTokens copied the tokens, so cached chunk results keep their own colors.
+	for i, e := range embeds {
+		c := store.plane.Color(e)
+		tokens[i].Color = c
+		tokens[i].Description = "Semantic color " + c
+	}
+	return tokens
 }
 
 func (dr *documentRegistry) storeFor(uri string) *documentStore {
@@ -418,7 +466,7 @@ func patchChunkOffsets(old *chunkResult, newWords []tokenizer.WordSpan) *chunkRe
 		}
 	}
 
-	return &chunkResult{key: old.key, words: newWords, tokens: patched}
+	return &chunkResult{key: old.key, words: newWords, tokens: patched, embeds: old.embeds}
 }
 
 // mergeChunkTokens concatenates chunk token slices in order (chunks are contiguous, so no sort is needed).

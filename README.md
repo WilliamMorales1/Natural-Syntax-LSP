@@ -1,12 +1,12 @@
 # Natural Syntax LSP
 
-Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Code via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its head/dependents) plus a Wiktionary definition.
+Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Code or Neovim via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its relation and dependents) plus a Wiktionary definition.
 
 Three modes:
 
 - **POS mode** (default) — BERT/MobileBERT classifies each word's part of speech and maps it to a VS Code semantic token type (color determined by your theme).
-- **Semantic mode** — `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2` embeds each word into a high-dimensional vector, projects it onto a 2D plane, and maps the angle to a continuous OKLCH color. Similar words get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
-- **Dependency mode** — a biaffine Universal Dependencies parser ([diaparser](https://github.com/Unipisa/diaparser), default checkpoint `en_ewt.electra-base`) assigns each word a syntactic head and UD relation label (`nsubj`, `obj`, `amod`, …). Words are colored by relation category, and hovering a word shows its head/dependents as a small rendered tree (via the bundled `nlsdep` grammar in `vscode-extension/syntaxes/`).
+- **Semantic mode** — `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2` turns each word into a vector describing its meaning in context, and words used alike get similar colors. Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
+- **Dependency mode** — a biaffine Universal Dependencies parser ([diaparser](https://github.com/Unipisa/diaparser), default checkpoint `en_ewt.electra-base`) assigns each word a syntactic head and UD relation label (`nsubj`, `obj`, `amod`, …). Words are colored by relation category, and hovering a word shows its relation and dependents in the same `word: label` YAML style as the other modes.
 
 ## Installation
 
@@ -56,65 +56,7 @@ To use your own binary instead of the bundled one, set in VS Code settings:
 
 ### Neovim
 
-The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client. Semantic/dependency-mode color pushes (`$/nls/semanticColors`) are a VS Code-only decoration mechanism and won't render in Neovim, but POS-mode highlighting and hover work natively in all three modes.
-
-`scripts/setup.sh` installs the binary to `~/.local/bin` (`$XDG_BIN_HOME` if set); `scripts/setup.ps1` installs it to `%LOCALAPPDATA%\Programs\natural-syntax-ls` and adds that to your user `PATH`. With it on `PATH`, `cmd = { "natural-syntax-ls" }` is enough.
-
-**Plain Neovim 0.11+** (built-in `vim.lsp.config`, no plugins required), e.g. in `init.lua`:
-
-```lua
-vim.lsp.config("natural_syntax_ls", {
-  cmd = { "natural-syntax-ls" },
-  filetypes = { "text", "markdown" },
-  root_dir = function(bufnr, on_dir)
-    on_dir(vim.fn.getcwd())
-  end,
-})
-vim.lsp.enable("natural_syntax_ls")
-```
-
-If you use `mason-lspconfig`, you still need the `vim.lsp.enable` call — its `automatic_enable` only covers servers Mason installed.
-
-**Neovim 0.10 with `nvim-lspconfig`:**
-
-```lua
-local configs = require("lspconfig.configs")
-if not configs.natural_syntax_ls then
-  configs.natural_syntax_ls = {
-    default_config = {
-      cmd = { "natural-syntax-ls" },
-      filetypes = { "text", "markdown" },
-      root_dir = function() return vim.fn.getcwd() end,
-    },
-  }
-end
-require("lspconfig").natural_syntax_ls.setup({})
-```
-
-**LazyVim:**
-
-```lua
--- lua/plugins/natural-syntax-ls.lua
-return {
-  "neovim/nvim-lspconfig",
-  opts = {
-    servers = {
-      natural_syntax_ls = {
-        mason = false,
-        cmd = { "natural-syntax-ls" },
-        filetypes = { "text", "markdown" },
-        root_dir = function(bufnr, on_dir)
-          on_dir(vim.fn.getcwd())
-        end,
-      },
-    },
-  },
-}
-```
-
-To switch mode/model, append `-mode`, `-model`, `-vocab` args to `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI), e.g. `cmd = { "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/mpnet.onnx") }`. `-threads N` sets ONNX Runtime threads per chunk; the default (0) uses the physical core count, capped at 4, and runs chunks in parallel on any cores left over.
-
-POS tags map to standard semantic token types, so colors come from your colorscheme's `@lsp.type.*` highlight groups. Link any that render plain, e.g. `vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })`.
+The server is a standard stdio LSP, so it works in Neovim too: POS and dependency coloring, hover, mode switching, and (with a small handler) semantic-mode colors. Setup and snippets: [docs/neovim.md](docs/neovim.md).
 
 ## Models
 
@@ -140,7 +82,7 @@ One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is acti
 | `naturalSyntaxLs.tokenMapUpdate`        | `{}`                        | Override POS → token type mappings                                   |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true`                      | Show Wiktionary definitions in hover                                 |
 | `naturalSyntaxLs.semanticLightness`     | `0.75`                      | OKLCH lightness for semantic colors (0–1); increase for light themes |
-| `naturalSyntaxLs.semanticChroma`        | `0.14`                      | OKLCH chroma (color intensity) for semantic colors                   |
+| `naturalSyntaxLs.semanticChroma`        | `0.14`                      | OKLCH chroma of the most vivid semantic colors                       |
 
 ## POS Tag Colors (POS mode)
 
@@ -150,9 +92,11 @@ Hover shows the Part of Speech and a Wiktionary definition (when available).
 
 ## Semantic Mode Colors
 
-Each word is embedded by `all-mpnet-base-v2` (default) or `all-MiniLM-L6-v2`, projected onto a fixed 2D plane via two orthogonal random unit vectors, and the angle maps to a hue in OKLCH color space (perceptually uniform lightness). Similar words get similar hues. The color is not theme-dependent.
+For each document, the server lays every word out on a 2D map, choosing the view where that document's words are most spread out. A word's direction on the map sets its hue and its distance from the middle sets how vivid it is. Words used in similar ways land close together, so they get similar colors. The map is updated as you type and lined up with the previous one, so colors stay steady. Colors are per document and don't depend on your theme.
 
-Default: OKLCH(0.75, 0.14, hue). Adjust `semanticLightness` and `semanticChroma` for your theme.
+All colors share one lightness. `semanticLightness` (default 0.75) sets it; increase it for light themes. `semanticChroma` (default 0.14) sets the most vivid words' intensity.
+
+How it works, in depth (the math, the code, and its time and memory costs): [semantic-colors.md](docs/semantic-colors.md).
 
 Hover shows the hex color code and a Wiktionary definition (when available).
 
@@ -160,7 +104,7 @@ Hover shows the hex color code and a Wiktionary definition (when available).
 
 Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](docs/deprelList.md).
 
-Hover a word to see its head and dependents rendered as a small tree, plus a Wiktionary definition (when available).
+Hover shows the word's relation to its head, then the words that depend on it under `dependents:` (marked `# has dependents` when they have their own), plus a Wiktionary definition (when available):
 
 ## Troubleshooting
 
@@ -168,7 +112,7 @@ If POS mode tags nearly every word as "Foreign word" or other nonsense tags with
 
 ## Test
 
-Open [test.txt](docs/test.txt) in VS Code after installation.
+Open [test.txt](docs/test.txt) in VS Code after installation. For semantic mode, [semantic-example.txt](docs/semantic-example.txt) shows animals, food, technology and feelings each getting their own color family.
 
 Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (dependency). Hover any word to see its tag and Wiktionary definition.
 

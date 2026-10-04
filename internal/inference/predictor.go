@@ -14,6 +14,12 @@ type Predictor interface {
 	Close()
 }
 
+// Embedder is a Predictor whose tokens come with unit embeddings, so they can be recolored per document.
+type Embedder interface {
+	Predictor
+	EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token, [][]float32, error)
+}
+
 // SetORTLibPath sets the path to the onnxruntime shared library; must be called before any model is loaded.
 func SetORTLibPath(path string) {
 	ort.SetSharedLibraryPath(path)

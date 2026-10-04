@@ -14,26 +14,7 @@
     "onStartupFinished"
   ],
   "main": "./extension.js",
-  "scripts": {
-    "test": "node arc-layout.test.js"
-  },
   "contributes": {
-    "languages": [
-      {
-        "id": "nlsdep",
-        "aliases": [
-          "NLS Dependency Hover"
-        ],
-        "extensions": []
-      }
-    ],
-    "grammars": [
-      {
-        "language": "nlsdep",
-        "scopeName": "source.nlsdep",
-        "path": "./syntaxes/nlsdep.tmLanguage.json"
-      }
-    ],
     "configuration": {
       "title": "Natural Syntax LS",
       "properties": {

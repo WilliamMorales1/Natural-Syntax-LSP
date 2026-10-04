@@ -23,16 +23,25 @@ func NewEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingM
 
 // PredictChunk colors each non-punctuation word by its mean-pooled subword embedding.
 func (m *EmbeddingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
+	tokens, _, err := m.EmbedChunk(words)
+	return tokens, err
+}
+
+// EmbedChunk is PredictChunk plus each token's unit embedding, for recoloring against a per-document SemanticPlane.
+func (m *EmbeddingModel) EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token, [][]float32, error) {
 	embeds, err := m.embedChunk(words)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var tokens []postag.Token
+	var units [][]float32
 	for i, w := range words {
 		if tokenizer.IsAllPunct(w.Text) {
 			continue
 		}
-		color := EmbeddingToColor(l2Normalize(embeds[i]))
+		unit := l2Normalize(embeds[i])
+		units = append(units, unit)
+		color := EmbeddingToColor(unit)
 		tokens = append(tokens, postag.Token{
 			Word:        w.Text,
 			Score:       1,
@@ -43,7 +52,7 @@ func (m *EmbeddingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Toke
 			Description: "Semantic color " + color,
 		})
 	}
-	return tokens, nil
+	return tokens, units, nil
 }
 
 func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, error) {

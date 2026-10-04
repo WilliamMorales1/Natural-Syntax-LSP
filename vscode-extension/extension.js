@@ -30,11 +30,33 @@ function getOrCreateDecorationType(color) {
     return colorDecorationTypes.get(color);
 }
 
-/** Apply a cached decoration list to an editor. */
-function applyColorDecorations(editor, groups) {
+/**
+ * Apply a cached decoration list to an editor, clearing colors from `previous` that the new list
+ * dropped; a decoration type keeps its old ranges until it is set again.
+ */
+function applyColorDecorations(editor, groups, previous = []) {
     if (!editor || !groups) return;
+    const current = new Set(groups.map(g => g.color));
+    for (const { color } of previous) {
+        const dt = colorDecorationTypes.get(color);
+        if (dt && !current.has(color)) editor.setDecorations(dt, []);
+    }
     for (const { color, ranges } of groups) {
         editor.setDecorations(getOrCreateDecorationType(color), ranges);
+    }
+}
+
+/** Dispose decoration types no cached document uses; disposing also removes them from every editor. */
+function disposeUnusedDecorationTypes() {
+    const used = new Set();
+    for (const groups of decorationCache.values()) {
+        for (const { color } of groups) used.add(color);
+    }
+    for (const [color, dt] of colorDecorationTypes) {
+        if (!used.has(color)) {
+            dt.dispose();
+            colorDecorationTypes.delete(color);
+        }
     }
 }
 
@@ -58,15 +80,17 @@ function handleSemanticColors(params) {
     for (const [color, ranges] of byColor) {
         groups.push({ color, ranges });
     }
+    const previous = decorationCache.get(uri) || [];
     decorationCache.set(uri, groups);
 
     // Apply to any visible editor showing this URI.
     for (const editor of vscode.window.visibleTextEditors) {
         if (editor.document.uri.toString() === uri) {
-            applyColorDecorations(editor, groups);
+            applyColorDecorations(editor, groups, previous);
             console.log('[nls] applied', groups.length, 'colors to', uri);
         }
     }
+    disposeUnusedDecorationTypes();
 }
 
 /**
@@ -151,12 +175,20 @@ async function activate(context) {
         // Listen for the server's color push notification.
         client.onNotification('$/nls/semanticColors', handleSemanticColors);
 
-        // Reapply cached decorations when switching to an editor we've already colored.
+        // Reapply cached decorations to editors that become visible (tab switch, split, reopen); VS Code gives them fresh, undecorated editor objects.
         context.subscriptions.push(
-            vscode.window.onDidChangeActiveTextEditor(editor => {
-                if (!editor) return;
-                const cached = decorationCache.get(editor.document.uri.toString());
-                if (cached) applyColorDecorations(editor, cached);
+            vscode.window.onDidChangeVisibleTextEditors(editors => {
+                for (const editor of editors) {
+                    const cached = decorationCache.get(editor.document.uri.toString());
+                    if (cached) applyColorDecorations(editor, cached);
+                }
+            })
+        );
+
+        // The server drops a closed document's state; drop its colors too so their types can be freed.
+        context.subscriptions.push(
+            vscode.workspace.onDidCloseTextDocument(doc => {
+                if (decorationCache.delete(doc.uri.toString())) disposeUnusedDecorationTypes();
             })
         );
 

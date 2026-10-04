@@ -3,10 +3,12 @@ package lspserver
 import (
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -134,9 +136,7 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 			inference.InitSemantic(768)
 			return inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
 		}, func(t *testing.T, b, a *hoverQueryResult) {
-			if b.tok.Color == a.tok.Color {
-				t.Errorf("change kept color %s", b.tok.Color)
-			}
+			// Re-embedding is checked on the stored embedding: a sub-visible shift can snap to the same color.
 			t.Logf("change: %s -> %s", b.tok.Color, a.tok.Color)
 		}},
 		{"dependency", func() (inference.Predictor, error) {
@@ -159,8 +159,12 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 			inc := newDocumentRegistry(m)
 			syncTokens(inc, before, 1)
 			hb := hoverAt(t, inc, 0, col)
+			eb := embeddingAt(inc, col)
 			got := syncTokens(inc, after, 2)
 			ha := hoverAt(t, inc, 0, col)
+			if md.name == "semantic" && slices.Equal(eb, embeddingAt(inc, col)) {
+				t.Error("change kept its embedding")
+			}
 
 			fresh := newDocumentRegistry(m)
 			want := syncTokens(fresh, after, 1)
@@ -168,7 +172,8 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 				t.Errorf("incremental tokens differ from fresh run")
 			}
 			hf := hoverAt(t, fresh, 0, col)
-			if ha.tok.Tag != hf.tok.Tag || ha.tok.Color != hf.tok.Color || ha.tok.Deprel != hf.tok.Deprel || !slices.Equal(dependentWords(ha), dependentWords(hf)) {
+			// Semantic colors depend on edit history (the plane is refit from its previous fit), so only the other fields must match a fresh run.
+			if ha.tok.Tag != hf.tok.Tag || (md.name != "semantic" && ha.tok.Color != hf.tok.Color) || ha.tok.Deprel != hf.tok.Deprel || !slices.Equal(dependentWords(ha), dependentWords(hf)) {
 				t.Errorf("change: incremental %+v, fresh %+v", *ha.tok, *hf.tok)
 			}
 			md.check(t, hb, ha)
@@ -293,4 +298,120 @@ func TestRegistryManyDocuments(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+const clusterDim = 16
+
+// clusterModel embeds each word near one of four cluster centers spanning e0/e1, so a document has a clear principal plane.
+type clusterModel struct{ contextModel }
+
+func (m clusterModel) EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token, [][]float32, error) {
+	toks, _ := m.PredictChunk(words)
+	embeds := make([][]float32, len(toks))
+	for i, t := range toks {
+		h := fnv.New64a()
+		h.Write([]byte(t.Word))
+		rng := rand.New(rand.NewPCG(h.Sum64(), 0))
+		v := make([]float32, clusterDim)
+		for k := range v {
+			v[k] = 0.2 * float32(rng.NormFloat64())
+		}
+		v[int(h.Sum64()%2)] += []float32{-3, 3}[h.Sum64()/2%2]
+		var n float32
+		for _, x := range v {
+			n += x * x
+		}
+		for k := range v {
+			v[k] /= float32(math.Sqrt(float64(n)))
+		}
+		toks[i].Color = inference.EmbeddingToColor(v)
+		embeds[i] = v
+	}
+	return toks, embeds, nil
+}
+
+func storeTokens(reg *documentRegistry, uri string) []postag.Token {
+	reply := make(chan []postag.Token, 1)
+	reg.do(func() { reply <- slices.Clone(reg.stores[uri].doc.tokens) })
+	return <-reply
+}
+
+func hexDist(a, b string) int {
+	d := 0
+	for i := 1; i < 7; i += 2 {
+		x, _ := strconv.ParseUint(a[i:i+2], 16, 8)
+		y, _ := strconv.ParseUint(b[i:i+2], 16, 8)
+		d = max(d, int(x)-int(y), int(y)-int(x))
+	}
+	return d
+}
+
+func TestRegistrySemanticColorsStableAcrossEdits(t *testing.T) {
+	inference.InitSemantic(clusterDim)
+	vocab := strings.Fields("dog cat bird fish tree rock river cloud king queen run jump red blue seven twelve")
+	rng := rand.New(rand.NewPCG(7, 8))
+	var sb strings.Builder
+	for i := range 300 {
+		sb.WriteString(vocab[rng.IntN(len(vocab))])
+		if i%12 == 11 {
+			sb.WriteString(". ")
+		} else {
+			sb.WriteByte(' ')
+		}
+	}
+	text := sb.String()
+
+	reg := newDocumentRegistry(clusterModel{})
+	syncTokens(reg, text, 1)
+	before := storeTokens(reg, testURI)
+	for _, tok := range before {
+		if tok.Color == "" || tok.Description != "Semantic color "+tok.Color {
+			t.Fatalf("token %q: color %q, description %q", tok.Word, tok.Color, tok.Description)
+		}
+	}
+	if fixed := (clusterModel{}).fixedColors(text); slices.Equal(colorsOf(before), fixed) {
+		t.Error("colors still come from the fixed plane")
+	}
+
+	syncTokens(reg, text+"river cloud king jump red seven fish dog.", 2)
+	after := storeTokens(reg, testURI)
+	moved := 0
+	for i, tok := range before {
+		if hexDist(tok.Color, after[i].Color) > 8 {
+			moved++
+		}
+	}
+	if moved > len(before)/10 {
+		t.Errorf("%d of %d existing words changed color after appending a sentence", moved, len(before))
+	}
+}
+
+func (m clusterModel) fixedColors(text string) []string {
+	toks, _, _ := m.EmbedChunk(tokenizer.BasicTokenize(text))
+	return colorsOf(toks)
+}
+
+func colorsOf(toks []postag.Token) []string {
+	out := make([]string, len(toks))
+	for i, t := range toks {
+		out[i] = t.Color
+	}
+	return out
+}
+
+// embeddingAt returns a copy of the stored embedding of the token starting at offset, or nil.
+func embeddingAt(reg *documentRegistry, offset uint32) []float32 {
+	reply := make(chan []float32, 1)
+	reg.do(func() {
+		for _, cr := range reg.stores[testURI].chunkResults {
+			for i, tok := range cr.tokens {
+				if tok.OffsetBegin == offset && i < len(cr.embeds) {
+					reply <- slices.Clone(cr.embeds[i])
+					return
+				}
+			}
+		}
+		reply <- nil
+	})
+	return <-reply
 }

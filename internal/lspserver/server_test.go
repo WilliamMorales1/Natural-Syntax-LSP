@@ -149,7 +149,7 @@ func TestFormatHoverContent(t *testing.T) {
 	head := &postag.Token{Word: "ran", HasHead: true, Deprel: postag.DepRoot}
 	deps := []postag.Token{{Word: "dog", Deprel: postag.DepNsubj}, {Word: "far", Deprel: postag.DepAdvmod}}
 	got := formatHoverContent(head, deps, []bool{true, false}, "to move quickly", "https://en.wiktionary.org/wiki/run")
-	for _, want := range []string{"```nlsdep\nhead ran root {", "    dog nsubj{}", "    far advmod\n}", "to move quickly", "[Wiktionary](https://en.wiktionary.org/wiki/run)"} {
+	for _, want := range []string{"```yaml\nran: root\ndependents:\n", "  dog: nsubj  # has dependents\n", "  far: advmod\n```", "to move quickly", "[Wiktionary](https://en.wiktionary.org/wiki/run)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("dependency hover missing %q in %q", want, got)
 		}
