@@ -2,85 +2,84 @@ package tokenmap
 
 import "natural-syntax-ls/internal/postag"
 
+// posBits is the built-in POS coloring behind NewDefault.
 func posBits(pos postag.PartOfSpeech) Bits {
-	type tb = Bits
-	mod := func(ms ...Modifier) uint32 { return modifiersToBitmap(ms) }
 	switch pos {
-	case postag.POS_CC: // and, but, or
-		return tb{uint32(TT_Keyword), mod()}
-	case postag.POS_CD: // cardinal number
-		return tb{uint32(TT_Number), mod()}
-	case postag.POS_DT: // the, a, an
-		return tb{uint32(TT_Macro), mod()}
-	case postag.POS_EX: // existential there
-		return tb{uint32(TT_Keyword), mod(TM_Abstract)}
-	case postag.POS_FW: // foreign word
-		return tb{uint32(TT_String), mod()}
-	case postag.POS_IN: // preposition
-		return tb{uint32(TT_Operator), mod()}
-	case postag.POS_JJ: // adjective
-		return tb{uint32(TT_Type), mod()}
-	case postag.POS_JJR: // adjective comparative
-		return tb{uint32(TT_Struct), mod()}
-	case postag.POS_JJS: // adjective superlative
-		return tb{uint32(TT_Interface), mod()}
-	case postag.POS_LS: // list item marker
-		return tb{uint32(TT_Decorator), mod()}
-	case postag.POS_MD: // modal: could, will
-		return tb{uint32(TT_Modifier), mod()}
-	case postag.POS_NN: // noun
-		return tb{uint32(TT_Variable), mod()}
-	case postag.POS_NNP: // proper noun
-		return tb{uint32(TT_Namespace), mod()}
-	case postag.POS_NNPS: // proper noun plural
-		return tb{uint32(TT_TypeParameter), mod()}
-	case postag.POS_NNS: // noun plural
-		return tb{uint32(TT_Variable), mod(TM_Modification)}
-	case postag.POS_O: // other/punctuation
-		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
-	case postag.POS_PDT: // predeterminer: all, both
-		return tb{uint32(TT_Macro), mod(TM_Definition)}
-	case postag.POS_POS: // possessive 's
-		return tb{uint32(TT_Operator), mod(TM_Definition)}
-	case postag.POS_PRP: // personal pronoun: I, he
-		return tb{uint32(TT_Keyword), mod(TM_Declaration)}
-	case postag.POS_PRPS: // possessive pronoun: my, his
-		return tb{uint32(TT_Property), mod()}
-	case postag.POS_RB: // adverb
-		return tb{uint32(TT_EnumMember), mod()}
-	case postag.POS_RBR: // adverb comparative
-		return tb{uint32(TT_EnumMember), mod(TM_Async)}
-	case postag.POS_RBS: // adverb superlative
-		return tb{uint32(TT_EnumMember), mod(TM_DefaultLibrary)}
-	case postag.POS_RP: // particle
-		return tb{uint32(TT_Operator), mod(TM_Modification)}
-	case postag.POS_SYM: // symbol [filtered out]
-		return tb{uint32(TT_Operator), mod(TM_Documentation)}
-	case postag.POS_TO: // to
-		return tb{uint32(TT_Keyword), mod(TM_Static)}
-	case postag.POS_UH: // interjection: oh, wow
-		return tb{uint32(TT_String), mod(TM_Declaration)}
-	case postag.POS_VB: // verb base
-		return tb{uint32(TT_Function), mod()}
-	case postag.POS_VBD: // verb past tense
-		return tb{uint32(TT_Function), mod(TM_Modification)}
-	case postag.POS_VBG: // verb gerund
-		return tb{uint32(TT_Function), mod(TM_Async)}
-	case postag.POS_VBN: // verb past participle
-		return tb{uint32(TT_Method), mod(TM_DefaultLibrary)}
-	case postag.POS_VBP: // verb non-3rd present
-		return tb{uint32(TT_Function), mod(TM_Readonly)}
-	case postag.POS_VBZ: // verb 3rd person
-		return tb{uint32(TT_Method), mod(TM_Static)}
-	case postag.POS_WDT: // wh-determiner: which, that
-		return tb{uint32(TT_Macro), mod(TM_Modification)}
-	case postag.POS_WP: // wh-pronoun: who, what
-		return tb{uint32(TT_Regexp), mod()}
-	case postag.POS_WPS: // possessive wh-pronoun: whose
-		return tb{uint32(TT_Property), mod(TM_Declaration)}
-	case postag.POS_WRB: // wh-adverb: where, when
-		return tb{uint32(TT_EnumMember), mod(TM_Modification)}
+	case postag.CC: // and, but, or
+		return bits(TypeKeyword)
+	case postag.CD: // cardinal number
+		return bits(TypeNumber)
+	case postag.DT: // the, a, an
+		return bits(TypeMacro)
+	case postag.EX: // existential there
+		return bits(TypeKeyword, ModifierAbstract)
+	case postag.FW: // foreign word
+		return bits(TypeString)
+	case postag.IN: // preposition
+		return bits(TypeOperator)
+	case postag.JJ: // adjective
+		return bits(TypeType)
+	case postag.JJR: // adjective comparative
+		return bits(TypeStruct)
+	case postag.JJS: // adjective superlative
+		return bits(TypeInterface)
+	case postag.LS: // list item marker
+		return bits(TypeDecorator)
+	case postag.MD: // modal: could, will
+		return bits(TypeModifier)
+	case postag.NN: // noun
+		return bits(TypeVariable)
+	case postag.NNP: // proper noun
+		return bits(TypeNamespace)
+	case postag.NNPS: // proper noun plural
+		return bits(TypeTypeParameter)
+	case postag.NNS: // noun plural
+		return bits(TypeVariable, ModifierModification)
+	case postag.O: // other/punctuation
+		return bits(TypeComment, ModifierDeprecated)
+	case postag.PDT: // predeterminer: all, both
+		return bits(TypeMacro, ModifierDefinition)
+	case postag.POS: // possessive 's
+		return bits(TypeOperator, ModifierDefinition)
+	case postag.PRP: // personal pronoun: I, he
+		return bits(TypeKeyword, ModifierDeclaration)
+	case postag.PRPS: // possessive pronoun: my, his
+		return bits(TypeProperty)
+	case postag.RB: // adverb
+		return bits(TypeEnumMember)
+	case postag.RBR: // adverb comparative
+		return bits(TypeEnumMember, ModifierAsync)
+	case postag.RBS: // adverb superlative
+		return bits(TypeEnumMember, ModifierDefaultLibrary)
+	case postag.RP: // particle
+		return bits(TypeOperator, ModifierModification)
+	case postag.SYM: // symbol [filtered out]
+		return bits(TypeOperator, ModifierDocumentation)
+	case postag.TO: // to
+		return bits(TypeKeyword, ModifierStatic)
+	case postag.UH: // interjection: oh, wow
+		return bits(TypeString, ModifierDeclaration)
+	case postag.VB: // verb base
+		return bits(TypeFunction)
+	case postag.VBD: // verb past tense
+		return bits(TypeFunction, ModifierModification)
+	case postag.VBG: // verb gerund
+		return bits(TypeFunction, ModifierAsync)
+	case postag.VBN: // verb past participle
+		return bits(TypeMethod, ModifierDefaultLibrary)
+	case postag.VBP: // verb non-3rd present
+		return bits(TypeFunction, ModifierReadonly)
+	case postag.VBZ: // verb 3rd person
+		return bits(TypeMethod, ModifierStatic)
+	case postag.WDT: // wh-determiner: which, that
+		return bits(TypeMacro, ModifierModification)
+	case postag.WP: // wh-pronoun: who, what
+		return bits(TypeRegexp)
+	case postag.WPS: // possessive wh-pronoun: whose
+		return bits(TypeProperty, ModifierDeclaration)
+	case postag.WRB: // wh-adverb: where, when
+		return bits(TypeEnumMember, ModifierModification)
 	default:
-		return tb{uint32(TT_Comment), mod(TM_Deprecated)}
+		return bits(TypeComment, ModifierDeprecated)
 	}
 }

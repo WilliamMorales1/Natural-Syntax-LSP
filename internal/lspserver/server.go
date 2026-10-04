@@ -4,6 +4,7 @@ package lspserver
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,9 @@ type jsonrpcMsg struct {
 	Result  any              `json:"result,omitempty"`
 	Error   *rpcError        `json:"error,omitempty"`
 }
+
+// codeMethodNotFound is the JSON-RPC error code for an unknown method.
+const codeMethodNotFound = -32601
 
 type rpcError struct {
 	Code    int    `json:"code"`
@@ -57,7 +61,7 @@ type lspServer struct {
 	wiktionary atomic.Bool // true = show Wiktionary defs (default)
 
 	pendingMu sync.Mutex
-	pending   []registryMsg // didOpen/didChange before model ready
+	pending   []*textItem // didOpen/didChange before model ready
 
 	writerMu  sync.Mutex
 	writer    io.Writer // set in serve(); used to push server→client requests
@@ -71,18 +75,16 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 	br := bufio.NewReader(r)
 	for {
 		msg, err := readMessage(br)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
 			return err
 		}
-		switch {
-		case msg.Method != "":
+		// Messages without a method are responses to our server→client requests; ignore them.
+		if msg.Method != "" {
 			// Dispatch in a goroutine so slow handlers don't block the read loop.
 			go s.handle(msg)
-		case msg.Method == "" && msg.ID != nil:
-			// response to one of our server→client requests; ignore
 		}
 	}
 }
@@ -94,10 +96,8 @@ func (s *lspServer) handle(msg jsonrpcMsg) {
 	switch msg.Method {
 	case "initialize":
 		result, rpcErr = s.handleInitialize(msg.Params)
-	case "initialized":
-		// no-op notification
-	case "shutdown":
-		result = nil
+	case "initialized", "shutdown":
+		// nothing to do; shutdown replies with a null result
 	case "exit":
 		os.Exit(0)
 	case "textDocument/didOpen":
@@ -112,7 +112,7 @@ func (s *lspServer) handle(msg jsonrpcMsg) {
 		result, rpcErr = s.handleSemanticTokensFull(msg.Params)
 	default:
 		if msg.ID != nil {
-			rpcErr = &rpcError{Code: -32601, Message: "method not found: " + msg.Method}
+			rpcErr = &rpcError{Code: codeMethodNotFound, Message: "method not found: " + msg.Method}
 		}
 	}
 
@@ -160,93 +160,7 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 	_ = json.Unmarshal(rawParams, &params)
 
 	// Load model in background so initialize responds immediately.
-	go func() {
-		var predictor inference.Predictor
-		var err error
-		switch s.cfg.Mode {
-		case "semantic":
-			predictor, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, s.cfg.EmbedHiddenSize)
-		case "dependency":
-			predictor, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath)
-		default:
-			predictor, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath)
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
-			s.loadFailed.Store(true)
-			close(s.ready)
-			return
-		}
-		reg := newDocumentRegistry(predictor)
-		if s.cfg.Mode == "semantic" {
-			// POS_O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.
-			reg.send(registryMsg{kind: msgTokenMapUpdate, mapUpdate: map[postag.PartOfSpeech]*tokenmap.Override{
-				postag.POS_O: nil,
-			}})
-			reg.onDocReady = func(uri string, doc *document) {
-				s.sendSemanticColors(uri, doc)
-			}
-		}
-		s.registry.Store(reg)
-
-		// Replay pending didOpen/didChange BEFORE signaling ready, so they lead any queued semantic-token requests.
-		s.pendingMu.Lock()
-		queued := s.pending
-		s.pending = nil
-		s.pendingMu.Unlock()
-		for _, m := range queued {
-			reg.send(m)
-		}
-		close(s.ready)
-		// Tell VS Code to re-request semantic tokens for all open documents.
-		s.sendRequest("workspace/semanticTokens/refresh")
-
-		// Apply initializationOptions if provided.
-		if params.InitializationOptions != nil {
-			var opts initOptions
-			if err := json.Unmarshal(*params.InitializationOptions, &opts); err == nil {
-				if opts.TokenMapUpdate != nil {
-					update := make(map[postag.PartOfSpeech]*tokenmap.Override)
-					for tag, val := range opts.TokenMapUpdate {
-						pos, ok := postag.FromString[tag]
-						if !ok {
-							continue
-						}
-						if string(val) == "null" {
-							update[pos] = nil
-						} else {
-							var o tokenmap.Override
-							if err := json.Unmarshal(val, &o); err == nil {
-								update[pos] = &o
-							}
-						}
-					}
-					reg.send(registryMsg{kind: msgTokenMapUpdate, mapUpdate: update})
-				}
-				if opts.ScoreThreshold != nil {
-					reg.send(registryMsg{kind: msgScoreThreshold, threshold: *opts.ScoreThreshold})
-				}
-				if opts.WiktionaryDefinitions != nil {
-					s.wiktionary.Store(*opts.WiktionaryDefinitions)
-				}
-				if opts.SemanticLightness != nil || opts.SemanticChroma != nil {
-					l, c := inference.SemanticColorParams()
-					if opts.SemanticLightness != nil {
-						l = *opts.SemanticLightness
-					}
-					if opts.SemanticChroma != nil {
-						c = *opts.SemanticChroma
-					}
-					inference.SetSemanticColorParams(l, c)
-				}
-			}
-		}
-	}()
-
-	types := make([]string, tokenmap.N_TOKEN_TYPES)
-	copy(types, tokenmap.TypeNames[:])
-	mods := make([]string, tokenmap.N_TOKEN_MODIFIERS)
-	copy(mods, tokenmap.ModifierNames[:])
+	go s.loadModel(params.InitializationOptions)
 
 	return initializeResult{
 		Capabilities: serverCapabilities{
@@ -254,13 +168,94 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 			HoverProvider:    true,
 			SemanticTokensProvider: semanticTokensProvider{
 				Legend: semanticTokensLegend{
-					TokenTypes:     types,
-					TokenModifiers: mods,
+					TokenTypes:     tokenmap.TypeNames[:],
+					TokenModifiers: tokenmap.ModifierNames[:],
 				},
 				Full: true,
 			},
 		},
 	}, nil
+}
+
+// loadModel loads the configured predictor, starts the registry, replays queued documents, and applies rawOpts.
+func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
+	var predictor inference.Predictor
+	var err error
+	switch s.cfg.Mode {
+	case "semantic":
+		predictor, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, s.cfg.EmbedHiddenSize)
+	case "dependency":
+		predictor, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath)
+	default:
+		predictor, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
+		s.loadFailed.Store(true)
+		close(s.ready)
+		return
+	}
+	reg := newDocumentRegistry(predictor)
+	if s.cfg.Mode == "semantic" {
+		// O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.
+		reg.extendTokenMap(map[postag.PartOfSpeech]*tokenmap.Override{postag.O: nil})
+		reg.onDocReady = s.sendSemanticColors
+	}
+	s.registry.Store(reg)
+
+	// Replay pending didOpen/didChange BEFORE signaling ready, so they lead any queued semantic-token requests.
+	s.pendingMu.Lock()
+	queued := s.pending
+	s.pending = nil
+	s.pendingMu.Unlock()
+	for _, item := range queued {
+		reg.update(item)
+	}
+	close(s.ready)
+	// Tell VS Code to re-request semantic tokens for all open documents.
+	s.sendRequest("workspace/semanticTokens/refresh")
+
+	if rawOpts == nil {
+		return
+	}
+	var opts initOptions
+	if err := json.Unmarshal(*rawOpts, &opts); err != nil {
+		return
+	}
+	s.applyOptions(reg, opts)
+}
+
+func (s *lspServer) applyOptions(reg *documentRegistry, opts initOptions) {
+	if opts.TokenMapUpdate != nil {
+		update := make(map[postag.PartOfSpeech]*tokenmap.Override)
+		for tag, val := range opts.TokenMapUpdate {
+			pos, ok := postag.ParsePartOfSpeech(tag)
+			if !ok {
+				continue
+			}
+			var o *tokenmap.Override // JSON null leaves it nil, disabling the tag
+			if err := json.Unmarshal(val, &o); err == nil {
+				update[pos] = o
+			}
+		}
+		reg.extendTokenMap(update)
+	}
+	if opts.ScoreThreshold != nil {
+		reg.setThreshold(*opts.ScoreThreshold)
+	}
+	if opts.WiktionaryDefinitions != nil {
+		s.wiktionary.Store(*opts.WiktionaryDefinitions)
+	}
+	if opts.SemanticLightness != nil || opts.SemanticChroma != nil {
+		l, c := inference.SemanticColorParams()
+		if opts.SemanticLightness != nil {
+			l = *opts.SemanticLightness
+		}
+		if opts.SemanticChroma != nil {
+			c = *opts.SemanticChroma
+		}
+		inference.SetSemanticColorParams(l, c)
+	}
 }
 
 // --- didOpen / didChange / didClose ---
@@ -290,11 +285,10 @@ type didCloseParams struct {
 // writeBytes writes a pre-marshaled JSON body as a framed LSP message, under writerMu.
 func (s *lspServer) writeBytes(body []byte) {
 	s.writerMu.Lock()
+	defer s.writerMu.Unlock()
 	if s.writer != nil {
-		fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n", len(body))
-		s.writer.Write(body)
+		fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n%s", len(body), body)
 	}
-	s.writerMu.Unlock()
 }
 
 // writeMsg serializes msg and writes it atomically under writerMu.
@@ -306,26 +300,24 @@ func (s *lspServer) writeMsg(msg jsonrpcMsg) {
 // sendRequest sends a server→client request (has an id; client must reply); replies are ignored in the default handler.
 func (s *lspServer) sendRequest(method string) {
 	id := s.nextReqID.Add(1)
-	raw, _ := json.Marshal(id)
-	rm := json.RawMessage(raw)
-	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", ID: &rm, Method: method})
+	raw := json.RawMessage(strconv.FormatInt(id, 10))
+	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", ID: &raw, Method: method})
 }
 
-func (s *lspServer) queueOrSend(m registryMsg) {
-	reg := s.registry.Load()
-	if reg != nil {
-		reg.send(m)
+// update forwards item to the registry, or queues it until the model has loaded.
+func (s *lspServer) update(item *textItem) {
+	if reg := s.registry.Load(); reg != nil {
+		reg.update(item)
 		return
 	}
 	s.pendingMu.Lock()
 	// Check again under lock in case model finished between the Load and Lock.
-	reg = s.registry.Load()
-	if reg != nil {
+	if reg := s.registry.Load(); reg != nil {
 		s.pendingMu.Unlock()
-		reg.send(m)
+		reg.update(item)
 		return
 	}
-	s.pending = append(s.pending, m)
+	s.pending = append(s.pending, item)
 	s.pendingMu.Unlock()
 }
 
@@ -334,10 +326,7 @@ func (s *lspServer) handleDidOpen(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
-	s.queueOrSend(registryMsg{
-		kind: msgItem,
-		item: &textItem{uri: p.TextDocument.URI, text: p.TextDocument.Text, version: p.TextDocument.Version},
-	})
+	s.update(&textItem{uri: p.TextDocument.URI, text: p.TextDocument.Text, version: p.TextDocument.Version})
 }
 
 func (s *lspServer) handleDidChange(raw json.RawMessage) {
@@ -352,10 +341,7 @@ func (s *lspServer) handleDidChange(raw json.RawMessage) {
 	if err := json.Unmarshal(p.ContentChanges[len(p.ContentChanges)-1], &change); err != nil {
 		return
 	}
-	s.queueOrSend(registryMsg{
-		kind: msgItem,
-		item: &textItem{uri: p.TextDocument.URI, text: change.Text, version: p.TextDocument.Version},
-	})
+	s.update(&textItem{uri: p.TextDocument.URI, text: change.Text, version: p.TextDocument.Version})
 }
 
 func (s *lspServer) handleDidClose(raw json.RawMessage) {
@@ -364,7 +350,7 @@ func (s *lspServer) handleDidClose(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
 		return
 	}
-	reg.send(registryMsg{kind: msgDiscard, uri: p.TextDocument.URI})
+	reg.discard(p.TextDocument.URI)
 }
 
 // --- hover ---
@@ -388,27 +374,27 @@ type markupContent struct {
 	Value string `json:"value"`
 }
 
-func formatHoverContent(tok *postag.POSToken, dependents []postag.POSToken, dependentsHaveDeps []bool, wiktDef, wiktURL string) string {
+func formatHoverContent(tok *postag.Token, dependents []postag.Token, dependentsHaveDeps []bool, wiktDef, wiktURL string) string {
 	var header string
 	if tok.HasHead || len(dependents) > 0 {
 		// Rendered as an "nlsdep" fenced block using this extension's own grammar (syntaxes/nlsdep.tmLanguage.json), which colors by position not keyword matching.
 		var lines []string
 		if len(dependents) == 0 {
-			lines = []string{fmt.Sprintf("head %s %s", tok.Word, tok.Deprel.String())}
+			lines = []string{fmt.Sprintf("head %s %s", tok.Word, tok.Deprel)}
 		} else {
-			lines = []string{fmt.Sprintf("head %s %s {", tok.Word, tok.Deprel.String())}
+			lines = []string{fmt.Sprintf("head %s %s {", tok.Word, tok.Deprel)}
 			for i, d := range dependents {
 				suffix := ""
 				if i < len(dependentsHaveDeps) && dependentsHaveDeps[i] {
 					suffix = "{}"
 				}
-				lines = append(lines, fmt.Sprintf("    %s %s%s", d.Word, d.Deprel.String(), suffix))
+				lines = append(lines, fmt.Sprintf("    %s %s%s", d.Word, d.Deprel, suffix))
 			}
 			lines = append(lines, "}")
 		}
 		header = fmt.Sprintf("```nlsdep\n%s\n```", strings.Join(lines, "\n"))
 	} else {
-		label := postag.Description(tok.Tag)
+		label := tok.Tag.Description()
 		if tok.Description != "" {
 			label = tok.Description
 		}
@@ -433,13 +419,7 @@ func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
 		return nil, nil
 	}
 	reply := make(chan *hoverQueryResult, 1)
-	reg.send(registryMsg{
-		kind:           msgHoverQuery,
-		uri:            p.TextDocument.URI,
-		hoverLine:      p.Position.Line,
-		hoverCharacter: p.Position.Character,
-		hoverReply:     reply,
-	})
+	reg.hover(p.TextDocument.URI, p.Position.Line, p.Position.Character, reply)
 	var res *hoverQueryResult
 	select {
 	case res = <-reply:
@@ -472,23 +452,17 @@ type semanticTokensResult struct {
 }
 
 func (s *lspServer) handleSemanticTokensFull(raw json.RawMessage) (any, *rpcError) {
+	empty := semanticTokensResult{Data: []uint32{}}
 	reg := s.registry.Load()
 	var p semanticTokensParams
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return semanticTokensResult{Data: []uint32{}}, nil
-	}
-	if reg == nil {
-		return semanticTokensResult{Data: []uint32{}}, nil
+	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
+		return empty, nil
 	}
 	reply := make(chan []uint32, 1)
-	reg.send(registryMsg{
-		kind:     msgSemanticTokensCall,
-		uri:      p.TextDocument.URI,
-		semReply: reply,
-	})
-	data, ok := <-reply
-	if !ok || data == nil {
-		return semanticTokensResult{Data: []uint32{}}, nil
+	reg.semanticTokens(p.TextDocument.URI, reply)
+	data := <-reply // nil when closed because a newer request superseded this one
+	if data == nil {
+		return empty, nil
 	}
 	return semanticTokensResult{Data: data}, nil
 }
@@ -511,15 +485,13 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 	if doc == nil || len(doc.tokens) == 0 {
 		return
 	}
-	lineStarts := buildLineStarts([]rune(doc.text))
+	lines := lineCursor{starts: buildLineStarts([]rune(doc.text))}
 	tokens := make([]colorTokenJSON, 0, len(doc.tokens))
 	for _, tok := range doc.tokens {
 		if tok.Color == "" {
 			continue
 		}
-		charIdx := int(tok.OffsetBegin)
-		line := charOffsetToLine(lineStarts, charIdx)
-		col := charIdx - lineStarts[line]
+		line, col := lines.position(int(tok.OffsetBegin))
 		tokens = append(tokens, colorTokenJSON{
 			Line:      line,
 			Character: col,
@@ -535,8 +507,7 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 
 func (s *lspServer) writeNotification(method string, params any) {
 	body, _ := json.Marshal(params)
-	rm := json.RawMessage(body)
-	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: rm})
+	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: body})
 }
 
 // --- JSON-RPC framing ---
@@ -552,13 +523,12 @@ func readMessage(r *bufio.Reader) (jsonrpcMsg, error) {
 		if line == "" {
 			break
 		}
-		if strings.HasPrefix(line, "Content-Length:") {
-			n, _ := strconv.Atoi(strings.TrimSpace(line[len("Content-Length:"):]))
-			contentLength = n
+		if v, ok := strings.CutPrefix(line, "Content-Length:"); ok {
+			contentLength, _ = strconv.Atoi(strings.TrimSpace(v))
 		}
 	}
 	if contentLength == 0 {
-		return jsonrpcMsg{}, fmt.Errorf("missing Content-Length")
+		return jsonrpcMsg{}, errors.New("missing Content-Length")
 	}
 	buf := make([]byte, contentLength)
 	if _, err := io.ReadFull(r, buf); err != nil {

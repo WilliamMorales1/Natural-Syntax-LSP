@@ -1,74 +1,74 @@
 package lspserver
 
-import "natural-syntax-ls/internal/tokenmap"
+import (
+	"slices"
+
+	"natural-syntax-ls/internal/tokenmap"
+)
 
 // encodeSemanticTokens encodes filtered tokens as a flat []uint32 of LSP semantic-token 5-tuples: deltaLine, deltaStart, length, tokenType, modifiers.
 func encodeSemanticTokens(doc *document, tm *tokenmap.Map, useDeprel bool) []uint32 {
-	lineStarts := buildLineStarts([]rune(doc.text))
-
+	lines := lineCursor{starts: buildLineStarts([]rune(doc.text))}
 	result := make([]uint32, 0, len(doc.tokens)*5)
-
-	prevLine := 0
-	prevStart := 0
-
+	prevLine, prevCol := 0, 0
 	for _, tok := range doc.tokens {
-		var bits *tokenmap.Bits
+		var bits tokenmap.Bits
 		if useDeprel {
-			b := tokenmap.DeprelBits(tok.Deprel)
-			bits = &b
+			bits = tokenmap.DeprelBits(tok.Deprel)
+		} else if b := tm.Get(tok.Tag); b != nil {
+			bits = *b
 		} else {
-			bits = tm.Get(tok.Tag)
-		}
-		if bits == nil {
 			continue
 		}
-		charIdx := int(tok.OffsetBegin)
-		line := charOffsetToLine(lineStarts, charIdx)
-		col := charIdx - lineStarts[line]
-		length := int(tok.OffsetEnd - tok.OffsetBegin)
-
-		deltaLine := uint32(line - prevLine)
-		var deltaStart uint32
-		if deltaLine == 0 {
-			deltaStart = uint32(col - prevStart)
-		} else {
-			deltaStart = uint32(col)
+		line, col := lines.position(int(tok.OffsetBegin))
+		deltaStart := col
+		if line == prevLine {
+			deltaStart -= prevCol
 		}
-		prevLine = line
-		prevStart = col
-
 		result = append(result,
-			deltaLine,
-			deltaStart,
-			uint32(length),
+			uint32(line-prevLine),
+			uint32(deltaStart),
+			tok.OffsetEnd-tok.OffsetBegin,
 			bits.TokenType,
 			bits.TokenModifierBitset,
 		)
+		prevLine, prevCol = line, col
 	}
 	return result
 }
 
 // buildLineStarts returns the char offset (within runes) of the start of each line.
 func buildLineStarts(runes []rune) []int {
-	n := len(runes)
 	lineStarts := []int{0}
 	for i, r := range runes {
-		if r == '\n' && i+1 < n {
+		if r == '\n' && i+1 < len(runes) {
 			lineStarts = append(lineStarts, i+1)
 		}
 	}
 	return lineStarts
 }
 
+// charOffsetToLine returns the line containing offset, given lineStarts from buildLineStarts.
 func charOffsetToLine(lineStarts []int, offset int) int {
-	lo, hi := 0, len(lineStarts)-1
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		if lineStarts[mid] <= offset {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
+	i, found := slices.BinarySearch(lineStarts, offset)
+	if found {
+		return i
 	}
-	return lo
+	return i - 1
+}
+
+// lineCursor converts rune offsets to line/column, scanning forward from the previous lookup since tokens arrive in order.
+type lineCursor struct {
+	starts []int
+	line   int
+}
+
+func (c *lineCursor) position(offset int) (line, col int) {
+	if offset < c.starts[c.line] {
+		c.line = charOffsetToLine(c.starts, offset)
+	}
+	for c.line+1 < len(c.starts) && c.starts[c.line+1] <= offset {
+		c.line++
+	}
+	return c.line, offset - c.starts[c.line]
 }

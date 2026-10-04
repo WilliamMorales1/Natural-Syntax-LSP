@@ -10,7 +10,7 @@ import (
 
 // Predictor abstracts POS tagging, dependency parsing, and semantic embedding modes.
 type Predictor interface {
-	PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error)
+	PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error)
 	Close()
 }
 

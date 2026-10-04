@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,74 +14,80 @@ import (
 	"natural-syntax-ls/internal/postag"
 )
 
-var wiktionaryClient = &http.Client{Timeout: 8 * time.Second}
+var client = &http.Client{Timeout: 8 * time.Second}
 
-type wiktCacheEntry struct {
-	def string
-	url string
-	ok  bool
+type cacheEntry struct {
+	def, url string
 }
 
-var wiktCache sync.Map // key: lowercase word → wiktCacheEntry
-var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
-var styleBlockRe = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
+var cache sync.Map // key: lowercase word:pos:deprel → cacheEntry
 
-type wiktDef struct {
-	PartOfSpeech string `json:"partOfSpeech"`
-	Language     string `json:"language"`
-	Definitions  []struct {
-		Definition string `json:"definition"`
-	} `json:"definitions"`
+var (
+	htmlTagRe    = regexp.MustCompile(`<[^>]+>`)
+	styleBlockRe = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
+)
+
+// entry is one part-of-speech section of a Wiktionary definition response.
+type entry struct {
+	PartOfSpeech string  `json:"partOfSpeech"`
+	Language     string  `json:"language"`
+	Definitions  []sense `json:"definitions"`
 }
 
-func wiktFetch(word string) (map[string][]wiktDef, error) {
-	apiURL := fmt.Sprintf("https://en.wiktionary.org/api/rest_v1/page/definition/%s", word)
-	req, err := http.NewRequest("GET", apiURL, nil)
+type sense struct {
+	Definition string `json:"definition"`
+}
+
+// fetch returns the definition API payload for word, keyed by language code.
+func fetch(word string) (map[string][]entry, error) {
+	req, err := http.NewRequest(http.MethodGet, "https://en.wiktionary.org/api/rest_v1/page/definition/"+url.PathEscape(word), nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "natural-syntax-ls/1.0 (https://github.com/wsm5224/NLSyntaxHighlighting-Go)")
-	resp, err := wiktionaryClient.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return nil, fmt.Errorf("request failed")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
-	var payload map[string][]wiktDef
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("wiktionary %q: %s", word, resp.Status)
+	}
+	var payload map[string][]entry
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
 }
 
-// FetchDef returns (definition, wiktionary URL, ok), matching the word's POS if possible, trying exact case then lowercase.
-// In dependency mode there is no POS tag (pos == postag.POS_O); deprel is used instead to guess the Wiktionary category.
-func FetchDef(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
-	lower := strings.ToLower(word)
-	cacheKey := lower + ":" + pos.String() + ":" + deprel.String()
-	if v, ok := wiktCache.Load(cacheKey); ok {
-		e := v.(wiktCacheEntry)
-		return e.def, e.url, e.ok
+// FetchDef returns a definition for word and its Wiktionary page, matching the word's POS if possible, trying exact case then lowercase.
+// In dependency mode there is no POS tag (pos == postag.O); deprel is used instead to guess the Wiktionary category.
+func FetchDef(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok bool) {
+	key := strings.ToLower(word) + ":" + pos.String() + ":" + deprel.String()
+	if v, ok := cache.Load(key); ok {
+		e := v.(cacheEntry)
+		return e.def, e.url, true
 	}
-	def, url, ok := fetchDefUncached(word, pos, deprel)
+	def, pageURL, ok = fetchDefUncached(word, pos, deprel)
 	if ok {
-		wiktCache.Store(cacheKey, wiktCacheEntry{def, url, true})
+		cache.Store(key, cacheEntry{def, pageURL})
 	}
-	return def, url, ok
+	return def, pageURL, ok
 }
 
 func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
 	lower := strings.ToLower(word)
 
-	if pos == postag.POS_POS || (deprel == postag.DEP_CASE && lower == "'s") {
+	if pos == postag.POS || (deprel == postag.DepCase && lower == "'s") {
 		word = "-'s"
 		lower = "-'s"
 	}
 
-	target := posToWiktCategory(pos)
-	if pos == postag.POS_O {
-		target = deprelToWiktCategory(deprel)
+	target := posCategory(pos)
+	if pos == postag.O {
+		target = deprelCategory(deprel)
 	}
-	numeralGlyph := ((pos == postag.POS_CD || pos == postag.POS_LS) || (deprel == postag.DEP_NUMMOD)) && isNumeralGlyph(lower)
+	numeralGlyph := (pos == postag.CD || pos == postag.LS || deprel == postag.DepNummod) && isNumeralGlyph(lower)
 	if numeralGlyph {
 		target = "Symbol" // Translingual numeral entries use partOfSpeech="Symbol"
 	}
@@ -100,7 +107,7 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 		if def == "" {
 			continue
 		}
-		pageURL := fmt.Sprintf("https://en.wiktionary.org/wiki/%s", form)
+		pageURL := "https://en.wiktionary.org/wiki/" + url.PathEscape(form)
 		if matched || target == "" {
 			return def, pageURL, true
 		}
@@ -111,12 +118,12 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 	return fallbackDef, fallbackURL, fallbackDef != ""
 }
 
-var fetchPayload = wiktFetch
+// fetchPayload is fetch, swappable in tests.
+var fetchPayload = fetch
 
 // pickDef returns the best definition from entries and whether it came from an entry matching target.
-func pickDef(entries []wiktDef, target string, numeralGlyph bool) (string, bool) {
-	// firstNonEmpty returns the first non-empty stripped definition from an entry.
-	firstNonEmpty := func(e *wiktDef) string {
+func pickDef(entries []entry, target string, numeralGlyph bool) (string, bool) {
+	firstNonEmpty := func(e *entry) string {
 		for _, d := range e.Definitions {
 			if s := stripHTML(d.Definition); s != "" {
 				return s
@@ -125,11 +132,9 @@ func pickDef(entries []wiktDef, target string, numeralGlyph bool) (string, bool)
 		return ""
 	}
 
-	lowPriPOS := map[string]bool{"symbol": true, "letter": true, "prefix": true, "suffix": true, "affix": true}
-
-	type bucket struct{ trans, main []*wiktDef }
+	type bucket struct{ trans, main []*entry }
 	var matched, normal, lowPri bucket
-	addTo := func(b *bucket, e *wiktDef) {
+	addTo := func(b *bucket, e *entry) {
 		if strings.EqualFold(e.Language, "Translingual") {
 			b.trans = append(b.trans, e)
 		} else {
@@ -150,7 +155,7 @@ func pickDef(entries []wiktDef, target string, numeralGlyph bool) (string, bool)
 	}
 
 	// Numeral glyphs: Translingual before English in every tier; words: reverse.
-	ordered := func(b bucket) []*wiktDef {
+	ordered := func(b bucket) []*entry {
 		if numeralGlyph {
 			return append(b.trans, b.main...)
 		}
@@ -169,6 +174,9 @@ func pickDef(entries []wiktDef, target string, numeralGlyph bool) (string, bool)
 	}
 	return "", false
 }
+
+// lowPriPOS are Wiktionary sections ranked after every other non-matching section.
+var lowPriPOS = map[string]bool{"symbol": true, "letter": true, "prefix": true, "suffix": true, "affix": true}
 
 var htmlEntityRe = regexp.MustCompile(`&[a-zA-Z]+;|&#[0-9]+;`)
 
@@ -191,70 +199,63 @@ func stripHTML(s string) string {
 }
 
 func isNumeralGlyph(word string) bool {
-	if len(word) == 0 {
-		return false
-	}
-	for _, ch := range word {
-		if ch < '0' || ch > '9' {
-			return false
-		}
-	}
-	return true
+	return word != "" && !strings.ContainsFunc(word, func(r rune) bool { return r < '0' || r > '9' })
 }
 
-func posToWiktCategory(pos postag.PartOfSpeech) string {
+// posCategory maps a POS tag to the Wiktionary section name it should match.
+func posCategory(pos postag.PartOfSpeech) string {
 	switch pos {
-	case postag.POS_NN, postag.POS_NNS, postag.POS_NNP, postag.POS_NNPS:
+	case postag.NN, postag.NNS, postag.NNP, postag.NNPS:
 		return "Noun"
-	case postag.POS_CD:
+	case postag.CD:
 		return "Numeral"
-	case postag.POS_VB, postag.POS_VBD, postag.POS_VBG, postag.POS_VBN, postag.POS_VBP, postag.POS_VBZ, postag.POS_MD:
+	case postag.VB, postag.VBD, postag.VBG, postag.VBN, postag.VBP, postag.VBZ, postag.MD:
 		return "Verb"
-	case postag.POS_JJ, postag.POS_JJR, postag.POS_JJS:
+	case postag.JJ, postag.JJR, postag.JJS:
 		return "Adjective"
-	case postag.POS_RB, postag.POS_RBR, postag.POS_RBS:
+	case postag.RB, postag.RBR, postag.RBS:
 		return "Adverb"
-	case postag.POS_IN, postag.POS_TO:
+	case postag.IN, postag.TO:
 		return "Preposition"
-	case postag.POS_DT, postag.POS_PDT, postag.POS_WDT:
+	case postag.DT, postag.PDT, postag.WDT:
 		return "Article"
-	case postag.POS_PRP, postag.POS_WP:
+	case postag.PRP, postag.WP:
 		return "Pronoun"
-	case postag.POS_CC:
+	case postag.CC:
 		return "Conjunction"
-	case postag.POS_UH:
+	case postag.UH:
 		return "Interjection"
-	case postag.POS_RP:
+	case postag.RP:
 		return "Particle"
 	default:
 		return ""
 	}
 }
 
-// deprelToWiktCategory guesses a Wiktionary POS category from a UD dependency relation,
+// deprelCategory guesses a Wiktionary POS category from a UD dependency relation,
 // since dependency mode has no POS tag (deprels are not POS tags: e.g. nsubj can be a noun
 // or pronoun, root can be a verb or noun). Best-effort based on the relation's typical filler.
-func deprelToWiktCategory(rel postag.Deprel) string {
+func deprelCategory(rel postag.Deprel) string {
 	switch rel {
-	case postag.DEP_NSUBJ, postag.DEP_OBJ, postag.DEP_IOBJ, postag.DEP_OBL, postag.DEP_NMOD,
-		postag.DEP_APPOS, postag.DEP_COMPOUND, postag.DEP_FLAT, postag.DEP_LIST, postag.DEP_VOCATIVE,
-		postag.DEP_EXPL, postag.DEP_CLF, postag.DEP_CSUBJ:
+	case postag.DepNsubj, postag.DepObj, postag.DepIobj, postag.DepObl, postag.DepNmod,
+		postag.DepAppos, postag.DepCompound, postag.DepFlat, postag.DepList, postag.DepVocative,
+		postag.DepExpl, postag.DepClf, postag.DepCsubj:
 		return "Noun"
-	case postag.DEP_AMOD:
+	case postag.DepAmod:
 		return "Adjective"
-	case postag.DEP_ADVMOD:
+	case postag.DepAdvmod:
 		return "Adverb"
-	case postag.DEP_AUX, postag.DEP_COP, postag.DEP_XCOMP, postag.DEP_CCOMP, postag.DEP_ADVCL, postag.DEP_ACL:
+	case postag.DepAux, postag.DepCop, postag.DepXcomp, postag.DepCcomp, postag.DepAdvcl, postag.DepAcl:
 		return "Verb"
-	case postag.DEP_DET:
+	case postag.DepDet:
 		return "Article"
-	case postag.DEP_CASE, postag.DEP_MARK:
+	case postag.DepCase, postag.DepMark:
 		return "Preposition"
-	case postag.DEP_CC:
+	case postag.DepCc:
 		return "Conjunction"
-	case postag.DEP_NUMMOD:
+	case postag.DepNummod:
 		return "Numeral"
-	case postag.DEP_DISCOURSE:
+	case postag.DepDiscourse:
 		return "Interjection"
 	default:
 		return ""

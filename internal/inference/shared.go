@@ -2,6 +2,7 @@ package inference
 
 import (
 	"fmt"
+	"slices"
 
 	"natural-syntax-ls/internal/tokenizer"
 
@@ -82,6 +83,7 @@ func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64) (*base
 	return &baseModel{session: session, tokenizer: tok, outputName: outputName, lastDim: lastDim}, nil
 }
 
+// Close releases the ORT session and environment.
 func (m *baseModel) Close() {
 	m.session.Destroy()
 	ort.DestroyEnvironment()
@@ -133,5 +135,5 @@ func (m *baseModel) runWords(words []tokenizer.WordSpan) (out []float32, seqLen 
 	); err != nil {
 		return nil, 0, nil, nil, fmt.Errorf("ort run: %w", err)
 	}
-	return append([]float32(nil), output.GetData()...), seqLen, swWordIdx, swIsFirst, nil
+	return slices.Clone(output.GetData()), seqLen, swWordIdx, swIsFirst, nil
 }

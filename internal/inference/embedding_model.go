@@ -1,8 +1,6 @@
 package inference
 
 import (
-	"fmt"
-
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
 )
@@ -13,38 +11,36 @@ type EmbeddingModel struct {
 	hiddenSize int
 }
 
+// NewEmbeddingModel loads a sentence-transformer model whose last_hidden_state has hiddenSize dims.
 func NewEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingModel, error) {
 	base, err := newBaseModel(modelPath, vocabPath, "last_hidden_state", int64(hiddenSize))
 	if err != nil {
 		return nil, err
 	}
 
-	return &EmbeddingModel{
-		baseModel:  base,
-		hiddenSize: hiddenSize,
-	}, nil
+	return &EmbeddingModel{baseModel: base, hiddenSize: hiddenSize}, nil
 }
 
-func (m *EmbeddingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+// PredictChunk colors each non-punctuation word by its mean-pooled subword embedding.
+func (m *EmbeddingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	embeds, err := m.embedChunk(words)
 	if err != nil {
 		return nil, err
 	}
-	var tokens []postag.POSToken
+	var tokens []postag.Token
 	for i, w := range words {
 		if tokenizer.IsAllPunct(w.Text) {
 			continue
 		}
-		v := l2Normalize(embeds[i])
-		color := EmbeddingToColor(v)
-		tokens = append(tokens, postag.POSToken{
+		color := EmbeddingToColor(l2Normalize(embeds[i]))
+		tokens = append(tokens, postag.Token{
 			Word:        w.Text,
-			Score:       1.0,
-			Tag:         postag.POS_O,
+			Score:       1,
+			Tag:         postag.O,
 			Color:       color,
 			OffsetBegin: w.Begin,
 			OffsetEnd:   w.End,
-			Description: fmt.Sprintf("Semantic color %s", color),
+			Description: "Semantic color " + color,
 		})
 	}
 	return tokens, nil
@@ -57,10 +53,11 @@ func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, er
 	}
 	hs := m.hiddenSize
 
-	sums := make([][]float32, len(words))
-	weights := make([]float32, len(words))
-	for i := range sums {
-		sums[i] = make([]float32, hs)
+	// embeddings start as per-word subword sums and are divided into means below.
+	embeddings := make([][]float32, len(words))
+	counts := make([]float32, len(words))
+	for i := range embeddings {
+		embeddings[i] = make([]float32, hs)
 	}
 	for si := range seqLen {
 		wi := swWordIdx[si]
@@ -71,21 +68,16 @@ func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, er
 		if base+hs > len(hidden) {
 			break
 		}
-		for d := range hs {
-			sums[wi][d] += hidden[base+d]
+		for d, h := range hidden[base : base+hs] {
+			embeddings[wi][d] += h
 		}
-		weights[wi]++
+		counts[wi]++
 	}
-	embeddings := make([][]float32, len(words))
-	for i := range words {
-		if weights[i] > 0 {
-			vec := make([]float32, hs)
-			for d := range hs {
-				vec[d] = sums[i][d] / weights[i]
+	for i, vec := range embeddings {
+		if counts[i] > 0 {
+			for d := range vec {
+				vec[d] /= counts[i]
 			}
-			embeddings[i] = vec
-		} else {
-			embeddings[i] = make([]float32, hs)
 		}
 	}
 	return embeddings, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 	"natural-syntax-ls/internal/tokenizer"
 )
 
-// POSModel holds the ONNX session and pre-allocated tensors.
+// POSModel tags each word with a Penn Treebank POS from a BERT token-classification model.
 type POSModel struct {
 	*baseModel
 	labels []postag.PartOfSpeech // index → PartOfSpeech, loaded from _labels.json
@@ -20,11 +21,9 @@ type POSModel struct {
 
 // labelsPathFor derives the labels JSON path from the model path.
 func labelsPathFor(modelPath string) string {
-	base := modelPath
-	if i := strings.LastIndex(base, "_pos.onnx"); i >= 0 {
-		base = base[:i]
-	} else {
-		base = strings.TrimSuffix(base, ".onnx")
+	base, ok := strings.CutSuffix(modelPath, "_pos.onnx")
+	if !ok {
+		base = strings.TrimSuffix(modelPath, ".onnx")
 	}
 	return base + "_labels.json"
 }
@@ -48,14 +47,15 @@ func loadLabels(labelsPath string) ([]postag.PartOfSpeech, error) {
 		tags[idx] = tag
 	}
 	// unknown tags treated as O
-	return decodeEnumList(tags, func(s string) (postag.PartOfSpeech, bool) { pos, ok := postag.FromString[s]; return pos, ok }, postag.POS_O), nil
+	return decodeEnumList(tags, postag.ParsePartOfSpeech, postag.O), nil
 }
 
+// NewPOSModel loads a POS model and its labels sidecar, falling back to the default label order.
 func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 	labels, err := loadLabels(labelsPathFor(modelPath))
 	if err != nil {
 		// Fall back to default mobilebert label order if no sidecar found.
-		labels = make([]postag.PartOfSpeech, postag.N_PART_OF_SPEECH)
+		labels = make([]postag.PartOfSpeech, postag.NumPartsOfSpeech)
 		for i := range labels {
 			labels[i] = postag.PartOfSpeech(i)
 		}
@@ -66,13 +66,11 @@ func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		return nil, err
 	}
 
-	return &POSModel{
-		baseModel: base,
-		labels:    labels,
-	}, nil
+	return &POSModel{baseModel: base, labels: labels}, nil
 }
 
-func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+// PredictChunk tags each non-punctuation word by its first subword's argmax label.
+func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	logits, seqLen, swWordIdx, swIsFirst, err := m.runWords(words)
 	if err != nil {
 		return nil, err
@@ -83,8 +81,9 @@ func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, 
 	type best struct {
 		label int
 		score float64
+		ok    bool
 	}
-	wordBest := make([]*best, len(words))
+	wordBest := make([]best, len(words))
 
 	for si := range seqLen {
 		wi := swWordIdx[si]
@@ -97,23 +96,17 @@ func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, 
 		}
 		scores := softmax(logits[base : base+numLabels])
 		label := argmax(scores)
-		wordBest[wi] = &best{label: label, score: float64(scores[label])}
+		wordBest[wi] = best{label: label, score: float64(scores[label]), ok: true}
 	}
 
-	tokens := make([]postag.POSToken, 0, len(words))
+	tokens := make([]postag.Token, 0, len(words))
 	for wi, w := range words {
 		b := wordBest[wi]
-		if b == nil {
+		if !b.ok || tokenizer.IsAllPunct(w.Text) {
 			continue
 		}
-		if tokenizer.IsAllPunct(w.Text) {
-			continue
-		}
-		pos := postag.POS_O
-		if b.label >= 0 && b.label < numLabels {
-			pos = m.labels[b.label]
-		}
-		tokens = append(tokens, postag.POSToken{
+		pos := m.labels[b.label]
+		tokens = append(tokens, postag.Token{
 			Word:        w.Text,
 			Score:       b.score,
 			Tag:         pos,
@@ -125,16 +118,11 @@ func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, 
 }
 
 func softmax(logits []float32) []float32 {
-	max := logits[0]
-	for _, v := range logits[1:] {
-		if v > max {
-			max = v
-		}
-	}
-	sum := float32(0)
+	peak := slices.Max(logits)
+	var sum float32
 	out := make([]float32, len(logits))
 	for i, v := range logits {
-		out[i] = float32(math.Exp(float64(v - max)))
+		out[i] = float32(math.Exp(float64(v - peak)))
 		sum += out[i]
 	}
 	for i := range out {
@@ -145,8 +133,8 @@ func softmax(logits []float32) []float32 {
 
 func argmax(scores []float32) int {
 	best := 0
-	for i := 1; i < len(scores); i++ {
-		if scores[i] > scores[best] {
+	for i, s := range scores {
+		if s > scores[best] {
 			best = i
 		}
 	}

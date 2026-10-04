@@ -30,31 +30,27 @@ func TestIsNumeralGlyph(t *testing.T) {
 
 func TestCategories(t *testing.T) {
 	for p, want := range map[postag.PartOfSpeech]string{
-		postag.POS_NNS: "Noun", postag.POS_VBZ: "Verb", postag.POS_MD: "Verb", postag.POS_JJR: "Adjective",
-		postag.POS_TO: "Preposition", postag.POS_PRP: "Pronoun", postag.POS_SYM: "",
+		postag.NNS: "Noun", postag.VBZ: "Verb", postag.MD: "Verb", postag.JJR: "Adjective",
+		postag.TO: "Preposition", postag.PRP: "Pronoun", postag.SYM: "",
 	} {
-		if got := posToWiktCategory(p); got != want {
-			t.Errorf("posToWiktCategory(%v) = %q, want %q", p, got, want)
+		if got := posCategory(p); got != want {
+			t.Errorf("posCategory(%v) = %q, want %q", p, got, want)
 		}
 	}
 	for d, want := range map[postag.Deprel]string{
-		postag.DEP_NSUBJ: "Noun", postag.DEP_AMOD: "Adjective", postag.DEP_CASE: "Preposition", postag.DEP_PUNCT: "",
+		postag.DepNsubj: "Noun", postag.DepAmod: "Adjective", postag.DepCase: "Preposition", postag.DepPunct: "",
 	} {
-		if got := deprelToWiktCategory(d); got != want {
-			t.Errorf("deprelToWiktCategory(%v) = %q, want %q", d, got, want)
+		if got := deprelCategory(d); got != want {
+			t.Errorf("deprelCategory(%v) = %q, want %q", d, got, want)
 		}
 	}
 }
 
 func TestFetchDefSentenceInitialVerb(t *testing.T) {
-	def := func(pos, text string) wiktDef {
-		d := wiktDef{PartOfSpeech: pos, Language: "English"}
-		d.Definitions = append(d.Definitions, struct {
-			Definition string `json:"definition"`
-		}{text})
-		return d
+	def := func(pos, text string) entry {
+		return entry{PartOfSpeech: pos, Language: "English", Definitions: []sense{{text}}}
 	}
-	pages := map[string]map[string][]wiktDef{
+	pages := map[string]map[string][]entry{
 		"Said": {"en": {def("Proper noun", "A male given name from Arabic."), def("Noun", "plural of Sa")}},
 		"said": {"en": {def("Verb", "simple past and past participle of say"), def("Adjective", "mentioned")}},
 		"make": {"en": {def("Verb", "To create.")}},
@@ -63,7 +59,7 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 	}
 	orig := fetchPayload
 	t.Cleanup(func() { fetchPayload = orig })
-	fetchPayload = func(word string) (map[string][]wiktDef, error) {
+	fetchPayload = func(word string) (map[string][]entry, error) {
 		if p, ok := pages[word]; ok {
 			return p, nil
 		}
@@ -77,13 +73,13 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 		wantDef string
 		wantURL string
 	}{
-		{"Said", postag.POS_VBD, "simple past and past participle of say", "https://en.wiktionary.org/wiki/said"},
-		{"to", postag.POS_TO, "Toward.", "https://en.wiktionary.org/wiki/to"},
-		{"make", postag.POS_VB, "To create.", "https://en.wiktionary.org/wiki/make"},
-		{"sure", postag.POS_JJ, "Certain.", "https://en.wiktionary.org/wiki/sure"},
-		{"Said", postag.POS_NNP, "A male given name from Arabic.", "https://en.wiktionary.org/wiki/Said"},
+		{"Said", postag.VBD, "simple past and past participle of say", "https://en.wiktionary.org/wiki/said"},
+		{"to", postag.TO, "Toward.", "https://en.wiktionary.org/wiki/to"},
+		{"make", postag.VB, "To create.", "https://en.wiktionary.org/wiki/make"},
+		{"sure", postag.JJ, "Certain.", "https://en.wiktionary.org/wiki/sure"},
+		{"Said", postag.NNP, "A male given name from Arabic.", "https://en.wiktionary.org/wiki/Said"},
 	} {
-		got, url, ok := fetchDefUncached(tc.word, tc.pos, postag.DEP_ROOT)
+		got, url, ok := fetchDefUncached(tc.word, tc.pos, postag.DepRoot)
 		if !ok || got != tc.wantDef || url != tc.wantURL {
 			t.Errorf("fetchDefUncached(%q, %v) = %q, %q, %v; want %q, %q", tc.word, tc.pos, got, url, ok, tc.wantDef, tc.wantURL)
 		}

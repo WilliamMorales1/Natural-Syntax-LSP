@@ -26,7 +26,7 @@ func forEachModel(t *testing.T, f func(t *testing.T, m Predictor)) {
 }
 
 // checkTokens fails unless every token maps to one of words by text and offsets, in order.
-func checkTokens(t *testing.T, words []tokenizer.WordSpan, toks []postag.POSToken) {
+func checkTokens(t *testing.T, words []tokenizer.WordSpan, toks []postag.Token) {
 	t.Helper()
 	wi := 0
 	for _, tok := range toks {
@@ -121,14 +121,14 @@ func TestModelConcurrentMatchesSequential(t *testing.T) {
 		"I saw her duck under the table.",
 	}
 	forEachModel(t, func(t *testing.T, m Predictor) {
-		want := make([][]postag.POSToken, len(texts))
+		want := make([][]postag.Token, len(texts))
 		for i, s := range texts {
 			var err error
 			if want[i], err = m.PredictChunk(tokenizer.BasicTokenize(s)); err != nil {
 				t.Fatal(err)
 			}
 		}
-		got := make([][]postag.POSToken, len(texts)*4)
+		got := make([][]postag.Token, len(texts)*4)
 		var wg sync.WaitGroup
 		for i := range got {
 			wg.Go(func() {

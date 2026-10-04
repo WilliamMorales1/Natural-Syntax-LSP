@@ -1,6 +1,9 @@
 package postag
 
-type POSToken struct {
+import "strings"
+
+// Token is one tagged word from a model, positioned by rune offsets in the source text.
+type Token struct {
 	Word        string
 	Score       float64
 	Tag         PartOfSpeech
@@ -18,17 +21,9 @@ type POSToken struct {
 	Deprel Deprel
 }
 
-// FilterToken reports whether t should be kept, given a score threshold: below-threshold or all-punctuation tokens are dropped.
-func FilterToken(t POSToken, threshold float64) bool {
-	if t.Score <= threshold {
-		return false
-	}
-	for _, ch := range t.Word {
-		if !isASCIIPunct(ch) {
-			return true
-		}
-	}
-	return false
+// Keep reports whether t scores above threshold and has at least one non-ASCII-punctuation rune.
+func (t Token) Keep(threshold float64) bool {
+	return t.Score > threshold && strings.ContainsFunc(t.Word, func(r rune) bool { return !isASCIIPunct(r) })
 }
 
 func isASCIIPunct(r rune) bool {

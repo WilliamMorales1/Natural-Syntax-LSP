@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"natural-syntax-ls/internal/postag"
@@ -22,8 +23,7 @@ type DependencyModel struct {
 
 // depRelsPathFor derives the rel-labels JSON path from the model path.
 func depRelsPathFor(modelPath string) string {
-	base := strings.TrimSuffix(modelPath, ".onnx")
-	return base + "_rels.json"
+	return strings.TrimSuffix(modelPath, ".onnx") + "_rels.json"
 }
 
 func loadDepRels(relsPath string) ([]postag.Deprel, error) {
@@ -36,7 +36,7 @@ func loadDepRels(relsPath string) ([]postag.Deprel, error) {
 		return nil, err
 	}
 	// unrecognized/placeholder ("<bos>") labels decode as generic "dep"
-	return decodeEnumList(raw, postag.ParseDeprel, postag.DEP_DEP), nil
+	return decodeEnumList(raw, postag.ParseDeprel, postag.DepDep), nil
 }
 
 // NewDependencyModel loads the dependency-parsing ONNX model.
@@ -61,13 +61,10 @@ func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
 
-	return &DependencyModel{
-		session:   session,
-		tokenizer: tok,
-		rels:      rels,
-	}, nil
+	return &DependencyModel{session: session, tokenizer: tok, rels: rels}, nil
 }
 
+// Close releases the ORT session and environment.
 func (m *DependencyModel) Close() {
 	m.session.Destroy()
 	ort.DestroyEnvironment()
@@ -100,18 +97,15 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 
 	nSub = len(pieceIDs)
 	seqLen = len(bounds)
-	mask = make([]int64, nSub)
-	for i := range mask {
-		mask[i] = 1
-	}
+	mask = slices.Repeat([]int64{1}, nSub)
 	pool = make([]float32, seqLen*nSub)
 	for wi, b := range bounds {
 		if b.count == 0 {
 			continue
 		}
-		weight := float32(1.0) / float32(b.count)
+		weight := 1 / float32(b.count)
 		row := wi * nSub
-		for i := 0; i < b.count; i++ {
+		for i := range b.count {
 			pool[row+b.start+i] = weight
 		}
 	}
@@ -137,11 +131,12 @@ func splitSentences(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
 	return sentences
 }
 
-func (m *DependencyModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+// PredictChunk parses each sentence in words separately, each under its own synthetic root.
+func (m *DependencyModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	if len(words) == 0 {
 		return nil, nil
 	}
-	var tokens []postag.POSToken
+	var tokens []postag.Token
 	for _, sentence := range splitSentences(words) {
 		sentTokens, err := m.predictSentence(sentence)
 		if err != nil {
@@ -153,7 +148,7 @@ func (m *DependencyModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POS
 }
 
 // predictSentence runs the biaffine model on a single sentence (one synthetic root).
-func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	if len(words) == 0 {
 		return nil, nil
 	}
@@ -200,7 +195,7 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 	// words[wi] corresponds to seq row wi+1 (row 0 is the synthetic root).
 	numRealWords := seqLen - 1
 
-	tokens := make([]postag.POSToken, 0, len(words))
+	tokens := make([]postag.Token, 0, len(words))
 	for wi := range numRealWords {
 		w := words[wi]
 		if tokenizer.IsAllPunct(w.Text) {
@@ -226,14 +221,14 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 		relRow := relData[relBase : relBase+numRels]
 		relClass := argmax(relRow[1:]) + 1 // skip index 0, the unused "<bos>" placeholder
 		var rel postag.Deprel
-		if relClass >= 0 && relClass < len(m.rels) {
+		if relClass < len(m.rels) { // a rels file holding only "<bos>" leaves no real class
 			rel = m.rels[relClass]
 		}
 
-		tokens = append(tokens, postag.POSToken{
+		tokens = append(tokens, postag.Token{
 			Word:            w.Text,
 			Score:           score,
-			Tag:             postag.POS_O,
+			Tag:             postag.O,
 			HasHead:         hasHead,
 			HeadOffsetBegin: headOffset,
 			Deprel:          rel,
@@ -264,13 +259,13 @@ func argmaxFloat32ExceptSelf(v []float32, self int) int {
 
 // softmaxAt returns the softmax probability of v[idx] within v, handling -Inf entries (masked self-loops) safely.
 func softmaxAt(v []float32, idx int) float32 {
-	max := v[argmax(v)]
+	peak := slices.Max(v)
 	var sum float64
 	for _, x := range v {
-		sum += math.Exp(float64(x - max))
+		sum += math.Exp(float64(x - peak))
 	}
 	if sum == 0 {
 		return 0
 	}
-	return float32(math.Exp(float64(v[idx]-max)) / sum)
+	return float32(math.Exp(float64(v[idx]-peak)) / sum)
 }

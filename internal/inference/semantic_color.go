@@ -12,14 +12,12 @@ type semanticColorParams struct{ L, C float64 }
 var semanticColorParamsPtr atomic.Pointer[semanticColorParams]
 
 func init() {
-	p := &semanticColorParams{L: 0.75, C: 0.14}
-	semanticColorParamsPtr.Store(p)
+	semanticColorParamsPtr.Store(&semanticColorParams{L: 0.75, C: 0.14})
 }
 
 // SetSemanticColorParams sets the OKLCH lightness/chroma used by EmbeddingToColor.
 func SetSemanticColorParams(l, c float64) {
-	p := &semanticColorParams{L: l, C: c}
-	semanticColorParamsPtr.Store(p)
+	semanticColorParamsPtr.Store(&semanticColorParams{L: l, C: c})
 }
 
 // SemanticColorParams returns the current OKLCH lightness/chroma.
@@ -38,36 +36,24 @@ var (
 func InitSemantic(dim int) {
 	rng := rand.New(rand.NewSource(0xC0105500))
 
-	colorProjX = make([]float32, dim)
-	colorProjY = make([]float32, dim)
-
-	var norm float32
-	for j := range dim {
-		x := float32(rng.NormFloat64())
-		colorProjX[j] = x
-		norm += x * x
+	gaussian := func() []float32 {
+		v := make([]float32, dim)
+		for j := range v {
+			v[j] = float32(rng.NormFloat64())
+		}
+		return v
 	}
-	norm = float32(math.Sqrt(float64(norm)))
-	for j := range dim {
-		colorProjX[j] /= norm
-	}
-
+	colorProjX = l2Normalize(gaussian())
+	// Gram-Schmidt: remove Y's X component so the two axes are orthogonal.
+	y := gaussian()
 	var dot float32
-	for j := range dim {
-		colorProjY[j] = float32(rng.NormFloat64())
+	for j := range y {
+		dot += colorProjX[j] * y[j]
 	}
-	for j := range dim {
-		dot += colorProjX[j] * colorProjY[j]
+	for j := range y {
+		y[j] -= dot * colorProjX[j]
 	}
-	norm = 0
-	for j := range dim {
-		colorProjY[j] -= dot * colorProjX[j]
-		norm += colorProjY[j] * colorProjY[j]
-	}
-	norm = float32(math.Sqrt(float64(norm)))
-	for j := range dim {
-		colorProjY[j] /= norm
-	}
+	colorProjY = l2Normalize(y)
 }
 
 // EmbeddingToColor maps a normalized embedding to a "#RRGGBB" hex color: project onto a fixed 2D plane → angle → OKLCH hue → sRGB.
@@ -84,18 +70,18 @@ func EmbeddingToColor(v []float32) string {
 }
 
 // oklchToSRGB converts OKLCH (L, C, hue in radians) to gamma-corrected sRGB bytes.
-func oklchToSRGB(L, C, hRad float64) (uint8, uint8, uint8) {
-	a := C * math.Cos(hRad)
-	b := C * math.Sin(hRad)
+func oklchToSRGB(lightness, chroma, hRad float64) (r, g, b uint8) {
+	oa := chroma * math.Cos(hRad)
+	ob := chroma * math.Sin(hRad)
 
-	// OKLab → linear sRGB (Björn Ottosson's matrix).
-	l_ := L + 0.3963377774*a + 0.2158037573*b
-	m_ := L - 0.1055613458*a - 0.0638541728*b
-	s_ := L - 0.0894841775*a - 1.2914855480*b
+	// OKLab → linear sRGB (Björn Ottosson's matrix); lc/mc/sc are the cube roots of LMS.
+	lc := lightness + 0.3963377774*oa + 0.2158037573*ob
+	mc := lightness - 0.1055613458*oa - 0.0638541728*ob
+	sc := lightness - 0.0894841775*oa - 1.2914855480*ob
 
-	l := l_ * l_ * l_
-	m := m_ * m_ * m_
-	s := s_ * s_ * s_
+	l := lc * lc * lc
+	m := mc * mc * mc
+	s := sc * sc * sc
 
 	rl := 4.0767416621*l - 3.3077115913*m + 0.2309699292*s
 	gl := -1.2684380046*l + 2.6097574011*m - 0.3413193965*s
@@ -112,15 +98,13 @@ func linearToU8(c float64) uint8 {
 	if c >= 1 {
 		return 255
 	}
-	var g float64
 	if c <= 0.0031308 {
-		g = 12.92 * c
-	} else {
-		g = 1.055*math.Pow(c, 1.0/2.4) - 0.055
+		return uint8(12.92 * c * 255)
 	}
-	return uint8(g * 255)
+	return uint8((1.055*math.Pow(c, 1.0/2.4) - 0.055) * 255)
 }
 
+// l2Normalize returns v scaled to unit length, or v itself if it is near zero.
 func l2Normalize(v []float32) []float32 {
 	var sum float32
 	for _, x := range v {

@@ -1,3 +1,4 @@
+// Command natural-syntax-ls is a language server that highlights prose by part of speech, dependency relation, or semantic embedding.
 package main
 
 import (
@@ -22,14 +23,11 @@ func main() {
 
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
-	userDir, err := os.UserConfigDir()
-	if err != nil {
-		userDir = ""
-	}
+	userDir, _ := os.UserConfigDir()
 	dataDir := filepath.Join(userDir, "natural-syntax-ls")
 
 	if *modelPath == "" {
-		*modelPath = findFile([]string{
+		*modelPath = findFile(
 			filepath.Join(dataDir, "bert_base.onnx"),
 			filepath.Join(dataDir, "mobilebert.onnx"),
 			filepath.Join(exeDir, "bert_base.onnx"),
@@ -38,7 +36,7 @@ func main() {
 			filepath.Join(dataDir, "minilm.onnx"),
 			filepath.Join(exeDir, "mpnet.onnx"),
 			filepath.Join(exeDir, "minilm.onnx"),
-		})
+		)
 	}
 
 	embedHiddenSize := 768
@@ -48,9 +46,7 @@ func main() {
 
 	// The vocab must belong to the chosen model; any other vocab maps subwords to the wrong ids.
 	if *vocabPath == "" && *modelPath != "" {
-		*vocabPath = findFile([]string{
-			strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt",
-		})
+		*vocabPath = findFile(strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt")
 	}
 
 	if *mode == "semantic" {
@@ -59,11 +55,11 @@ func main() {
 
 	if *modelPath == "" || *vocabPath == "" {
 		fmt.Fprintln(os.Stderr, "natural-syntax-ls: cannot find embedding model or vocab file")
-		fmt.Fprintf(os.Stderr, "Run scripts/export_model.py to export them.\n")
+		fmt.Fprintln(os.Stderr, "Run scripts/export_model.py to export them.")
 		os.Exit(1)
 	}
 
-	ortLib := findFile([]string{
+	if ortLib := findFile(
 		os.Getenv("ORT_LIB_PATH"),
 		filepath.Join(dataDir, "onnxruntime.dll"),
 		filepath.Join(dataDir, "libonnxruntime.so"),
@@ -71,26 +67,25 @@ func main() {
 		filepath.Join(exeDir, "onnxruntime.dll"),
 		filepath.Join(exeDir, "libonnxruntime.so"),
 		filepath.Join(exeDir, "libonnxruntime.dylib"),
-	})
-	if ortLib != "" {
+	); ortLib != "" {
 		inference.SetORTLibPath(ortLib)
 	}
 
 	inference.SetIntraOpThreads(*threads)
 
-	cfg := lspserver.Config{
+	if err := lspserver.Run(lspserver.Config{
 		ModelPath:       *modelPath,
 		VocabPath:       *vocabPath,
 		Mode:            *mode,
 		EmbedHiddenSize: embedHiddenSize,
-	}
-	if err := lspserver.Run(cfg); err != nil {
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "natural-syntax-ls: lsp: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func findFile(candidates []string) string {
+// findFile returns the first existing path among candidates, or "" if none exist.
+func findFile(candidates ...string) string {
 	for _, p := range candidates {
 		if p == "" {
 			continue

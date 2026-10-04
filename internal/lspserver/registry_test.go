@@ -20,18 +20,18 @@ import (
 // contextModel tags every word from a hash of its whole chunk, so any stale chunk reuse shows up as a tag mismatch.
 type contextModel struct{}
 
-func (contextModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+func (contextModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	h := fnv.New32a()
 	for _, w := range words {
 		h.Write([]byte(w.Text + "\x00"))
 	}
 	seed := h.Sum32()
-	toks := make([]postag.POSToken, 0, len(words))
+	toks := make([]postag.Token, 0, len(words))
 	for i, w := range words {
-		toks = append(toks, postag.POSToken{
+		toks = append(toks, postag.Token{
 			Word:        w.Text,
 			Score:       1,
-			Tag:         postag.PartOfSpeech((seed + uint32(i)) % postag.N_PART_OF_SPEECH),
+			Tag:         postag.PartOfSpeech((seed + uint32(i)) % postag.NumPartsOfSpeech),
 			OffsetBegin: w.Begin,
 			OffsetEnd:   w.End,
 		})
@@ -45,16 +45,13 @@ const testURI = "file:///t.txt"
 
 // syncTokens feeds text as the next version and blocks until its semantic tokens are ready.
 func syncTokens(reg *documentRegistry, text string, version int32) []uint32 {
-	reg.send(registryMsg{kind: msgItem, item: &textItem{uri: testURI, text: text, version: version}})
-	reply := make(chan []uint32, 1)
-	reg.send(registryMsg{kind: msgSemanticTokensCall, uri: testURI, semReply: reply})
-	return <-reply
+	return syncTokensURI(reg, testURI, text, version)
 }
 
 func hoverAt(t *testing.T, reg *documentRegistry, line, char uint32) *hoverQueryResult {
 	t.Helper()
 	reply := make(chan *hoverQueryResult, 1)
-	reg.send(registryMsg{kind: msgHoverQuery, uri: testURI, hoverLine: line, hoverCharacter: char, hoverReply: reply})
+	reg.hover(testURI, line, char, reply)
 	res := <-reply
 	if res == nil || res.tok == nil {
 		t.Fatalf("no token at %d:%d", line, char)
@@ -185,15 +182,15 @@ type countingModel struct {
 	calls atomic.Int64
 }
 
-func (m *countingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.POSToken, error) {
+func (m *countingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	m.calls.Add(1)
 	return m.contextModel.PredictChunk(words)
 }
 
 func syncTokensURI(reg *documentRegistry, uri, text string, version int32) []uint32 {
-	reg.send(registryMsg{kind: msgItem, item: &textItem{uri: uri, text: text, version: version}})
+	reg.update(&textItem{uri: uri, text: text, version: version})
 	reply := make(chan []uint32, 1)
-	reg.send(registryMsg{kind: msgSemanticTokensCall, uri: uri, semReply: reply})
+	reg.semanticTokens(uri, reply)
 	return <-reply
 }
 
@@ -240,9 +237,9 @@ func TestRegistryIgnoresStaleVersion(t *testing.T) {
 func TestRegistryDiscard(t *testing.T) {
 	reg := newDocumentRegistry(contextModel{})
 	syncTokens(reg, "some words.", 1)
-	reg.send(registryMsg{kind: msgDiscard, uri: testURI})
+	reg.discard(testURI)
 	reply := make(chan *hoverQueryResult, 1)
-	reg.send(registryMsg{kind: msgHoverQuery, uri: testURI, hoverReply: reply})
+	reg.hover(testURI, 0, 0, reply)
 	if res := <-reply; res != nil {
 		t.Errorf("hover after close: %+v", res.tok)
 	}
@@ -257,13 +254,13 @@ func TestRegistryHoverMisses(t *testing.T) {
 	syncTokens(reg, "one two\n\nthree", 1)
 	for _, pos := range [][2]uint32{{0, 3}, {1, 0}, {9, 0}, {0, 99}} {
 		reply := make(chan *hoverQueryResult, 1)
-		reg.send(registryMsg{kind: msgHoverQuery, uri: testURI, hoverLine: pos[0], hoverCharacter: pos[1], hoverReply: reply})
+		reg.hover(testURI, pos[0], pos[1], reply)
 		if res := <-reply; res != nil {
 			t.Errorf("hover at %v hit %q", pos, res.tok.Word)
 		}
 	}
 	reply := make(chan *hoverQueryResult, 1)
-	reg.send(registryMsg{kind: msgHoverQuery, uri: "file:///never-opened", hoverReply: reply})
+	reg.hover("file:///never-opened", 0, 0, reply)
 	if <-reply != nil {
 		t.Error("hover on unknown document returned a token")
 	}
@@ -283,7 +280,8 @@ func TestRegistryManyDocuments(t *testing.T) {
 			for v := range int32(20) {
 				var sb strings.Builder
 				for range 50 + d*40 {
-					sb.WriteString(words[rng.IntN(len(words))] + " ")
+					sb.WriteString(words[rng.IntN(len(words))])
+					sb.WriteByte(' ')
 				}
 				text = sb.String()
 				syncTokensURI(reg, uri, text, v)

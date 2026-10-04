@@ -54,6 +54,30 @@ func cpuTime() time.Duration {
 	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
 }
 
+// BenchmarkPredictChunk times one chunk of docs/test.txt through each installed model.
+func BenchmarkPredictChunk(b *testing.B) {
+	dir := testDataDir(b)
+	raw, err := os.ReadFile("../../docs/test.txt")
+	if err != nil {
+		b.Fatal(err)
+	}
+	words := tokenizer.BasicTokenize(string(raw))
+	for _, tm := range testModels {
+		b.Run(tm.name, func(b *testing.B) {
+			m, err := tm.load(dir)
+			if err != nil {
+				b.Skip(err)
+			}
+			defer m.Close()
+			for b.Loop() {
+				if _, err := m.PredictChunk(words); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // TestModelCost prints wall/CPU time per mode for a full-document run and a one-sentence run; NLS_TAG_DUMP=dir also writes each mode's outputs for before/after diffing.
 func TestModelCost(t *testing.T) {
 	dir := testDataDir(t)

@@ -1,178 +1,133 @@
 // Package postag holds the linguistic tag types (POS, UD deprel) shared across inference, token-mapping, and LSP layers.
 package postag
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
+// PartOfSpeech is a Penn Treebank part-of-speech tag.
 type PartOfSpeech int
 
 const (
-	POS_CC   PartOfSpeech = 0
-	POS_CD   PartOfSpeech = 1
-	POS_DT   PartOfSpeech = 2
-	POS_EX   PartOfSpeech = 3
-	POS_FW   PartOfSpeech = 4
-	POS_IN   PartOfSpeech = 5
-	POS_JJ   PartOfSpeech = 6
-	POS_JJR  PartOfSpeech = 7
-	POS_JJS  PartOfSpeech = 8
-	POS_LS   PartOfSpeech = 9
-	POS_MD   PartOfSpeech = 10
-	POS_NN   PartOfSpeech = 11
-	POS_NNP  PartOfSpeech = 12
-	POS_NNPS PartOfSpeech = 13
-	POS_NNS  PartOfSpeech = 14
-	POS_O    PartOfSpeech = 15
-	POS_PDT  PartOfSpeech = 16
-	POS_POS  PartOfSpeech = 17
-	POS_PRP  PartOfSpeech = 18
-	POS_PRPS PartOfSpeech = 19
-	POS_RB   PartOfSpeech = 20
-	POS_RBR  PartOfSpeech = 21
-	POS_RBS  PartOfSpeech = 22
-	POS_RP   PartOfSpeech = 23
-	POS_SYM  PartOfSpeech = 24
-	POS_TO   PartOfSpeech = 25
-	POS_UH   PartOfSpeech = 26
-	POS_VB   PartOfSpeech = 27
-	POS_VBD  PartOfSpeech = 28
-	POS_VBG  PartOfSpeech = 29
-	POS_VBN  PartOfSpeech = 30
-	POS_VBP  PartOfSpeech = 31
-	POS_VBZ  PartOfSpeech = 32
-	POS_WDT  PartOfSpeech = 33
-	POS_WP   PartOfSpeech = 34
-	POS_WPS  PartOfSpeech = 35
-	POS_WRB  PartOfSpeech = 36
+	CC PartOfSpeech = iota
+	CD
+	DT
+	EX
+	FW
+	IN
+	JJ
+	JJR
+	JJS
+	LS
+	MD
+	NN
+	NNP
+	NNPS
+	NNS
+	O
+	PDT
+	POS
+	PRP
+	PRPS
+	RB
+	RBR
+	RBS
+	RP
+	SYM
+	TO
+	UH
+	VB
+	VBD
+	VBG
+	VBN
+	VBP
+	VBZ
+	WDT
+	WP
+	WPS
+	WRB
 
-	N_PART_OF_SPEECH = 37
+	NumPartsOfSpeech = iota
 )
 
-var FromString = map[string]PartOfSpeech{
-	"CC": POS_CC, "CD": POS_CD, "DT": POS_DT, "EX": POS_EX,
-	"FW": POS_FW, "IN": POS_IN, "JJ": POS_JJ, "JJR": POS_JJR,
-	"JJS": POS_JJS, "LS": POS_LS, "MD": POS_MD, "NN": POS_NN,
-	"NNP": POS_NNP, "NNPS": POS_NNPS, "NNS": POS_NNS, "O": POS_O,
-	"PDT": POS_PDT, "POS": POS_POS, "PRP": POS_PRP, "PRP$": POS_PRPS,
-	"RB": POS_RB, "RBR": POS_RBR, "RBS": POS_RBS, "RP": POS_RP,
-	"SYM": POS_SYM, "TO": POS_TO, "UH": POS_UH, "VB": POS_VB,
-	"VBD": POS_VBD, "VBG": POS_VBG, "VBN": POS_VBN, "VBP": POS_VBP,
-	"VBZ": POS_VBZ, "WDT": POS_WDT, "WP": POS_WP, "WP$": POS_WPS,
-	"WRB": POS_WRB,
+var posInfo = [NumPartsOfSpeech]struct{ tag, description string }{
+	CC:   {"CC", "Coordinating conjunction"},
+	CD:   {"CD", "Cardinal number"},
+	DT:   {"DT", "Determiner"},
+	EX:   {"EX", "Existential"},
+	FW:   {"FW", "Foreign word"},
+	IN:   {"IN", "Preposition or subordinating conjunction"},
+	JJ:   {"JJ", "Adjective"},
+	JJR:  {"JJR", "Adjective, comparative"},
+	JJS:  {"JJS", "Adjective, superlative"},
+	LS:   {"LS", "List item marker"},
+	MD:   {"MD", "Modal"},
+	NN:   {"NN", "Noun, singular or mass"},
+	NNP:  {"NNP", "Proper noun, singular"},
+	NNPS: {"NNPS", "Proper noun, plural"},
+	NNS:  {"NNS", "Noun, plural"},
+	O:    {"O", "Other"},
+	PDT:  {"PDT", "Predeterminer"},
+	POS:  {"POS", "Possessive ending"},
+	PRP:  {"PRP", "Personal pronoun"},
+	PRPS: {"PRP$", "Possessive pronoun"},
+	RB:   {"RB", "Adverb"},
+	RBR:  {"RBR", "Adverb, comparative"},
+	RBS:  {"RBS", "Adverb, superlative"},
+	RP:   {"RP", "Particle"},
+	SYM:  {"SYM", "Symbol"},
+	TO:   {"TO", "to"},
+	UH:   {"UH", "Interjection"},
+	VB:   {"VB", "Verb, base form"},
+	VBD:  {"VBD", "Verb, past tense"},
+	VBG:  {"VBG", "Verb, gerund or present participle"},
+	VBN:  {"VBN", "Verb, past participle"},
+	VBP:  {"VBP", "Verb, non-3rd person singular present"},
+	VBZ:  {"VBZ", "Verb, 3rd person singular present"},
+	WDT:  {"WDT", "Wh-determiner"},
+	WP:   {"WP", "Wh-pronoun"},
+	WPS:  {"WP$", "Possessive wh-pronoun"},
+	WRB:  {"WRB", "Wh-adverb"},
 }
 
-var posToString = [N_PART_OF_SPEECH]string{
-	"CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR",
-	"JJS", "LS", "MD", "NN", "NNP", "NNPS", "NNS", "O", "PDT",
-	"POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO",
-	"UH", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "WDT",
-	"WP", "WP$", "WRB",
+var posByTag = func() map[string]PartOfSpeech {
+	m := make(map[string]PartOfSpeech, NumPartsOfSpeech)
+	for i, info := range posInfo {
+		m[info.tag] = PartOfSpeech(i)
+	}
+	return m
+}()
+
+// ParsePartOfSpeech maps a Penn Treebank tag such as "NN" or "PRP$" to its PartOfSpeech.
+func ParsePartOfSpeech(tag string) (PartOfSpeech, bool) {
+	p, ok := posByTag[tag]
+	return p, ok
 }
+
+func (p PartOfSpeech) valid() bool { return p >= 0 && p < NumPartsOfSpeech }
 
 func (p PartOfSpeech) String() string {
-	if p >= 0 && int(p) < N_PART_OF_SPEECH {
-		return posToString[p]
+	if p.valid() {
+		return posInfo[p].tag
 	}
 	return fmt.Sprintf("POS(%d)", int(p))
 }
 
-func (p PartOfSpeech) MarshalJSON() ([]byte, error) {
-	return json.Marshal(p.String())
+// Description returns a human-readable label for p, used in hover text.
+func (p PartOfSpeech) Description() string {
+	if p.valid() {
+		return posInfo[p].description
+	}
+	return "Unknown"
 }
 
-func (p *PartOfSpeech) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-	v, ok := FromString[s]
+func (p PartOfSpeech) MarshalText() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+func (p *PartOfSpeech) UnmarshalText(text []byte) error {
+	v, ok := ParsePartOfSpeech(string(text))
 	if !ok {
-		return fmt.Errorf("unknown POS tag: %s", s)
+		return fmt.Errorf("unknown POS tag: %s", text)
 	}
 	*p = v
 	return nil
-}
-
-// Description returns a human-readable label for pos, used in hover text.
-func Description(pos PartOfSpeech) string {
-	switch pos {
-	case POS_CC:
-		return "Coordinating conjunction"
-	case POS_CD:
-		return "Cardinal number"
-	case POS_DT:
-		return "Determiner"
-	case POS_EX:
-		return "Existential"
-	case POS_FW:
-		return "Foreign word"
-	case POS_IN:
-		return "Preposition or subordinating conjunction"
-	case POS_JJ:
-		return "Adjective"
-	case POS_JJR:
-		return "Adjective, comparative"
-	case POS_JJS:
-		return "Adjective, superlative"
-	case POS_LS:
-		return "List item marker"
-	case POS_MD:
-		return "Modal"
-	case POS_NN:
-		return "Noun, singular or mass"
-	case POS_NNP:
-		return "Proper noun, singular"
-	case POS_NNPS:
-		return "Proper noun, plural"
-	case POS_NNS:
-		return "Noun, plural"
-	case POS_O:
-		return "Other"
-	case POS_PDT:
-		return "Predeterminer"
-	case POS_POS:
-		return "Possessive ending"
-	case POS_PRP:
-		return "Personal pronoun"
-	case POS_PRPS:
-		return "Possessive pronoun"
-	case POS_RB:
-		return "Adverb"
-	case POS_RBR:
-		return "Adverb, comparative"
-	case POS_RBS:
-		return "Adverb, superlative"
-	case POS_RP:
-		return "Particle"
-	case POS_SYM:
-		return "Symbol"
-	case POS_TO:
-		return "to"
-	case POS_UH:
-		return "Interjection"
-	case POS_VB:
-		return "Verb, base form"
-	case POS_VBD:
-		return "Verb, past tense"
-	case POS_VBG:
-		return "Verb, gerund or present participle"
-	case POS_VBN:
-		return "Verb, past participle"
-	case POS_VBP:
-		return "Verb, non-3rd person singular present"
-	case POS_VBZ:
-		return "Verb, 3rd person singular present"
-	case POS_WDT:
-		return "Wh-determiner"
-	case POS_WP:
-		return "Wh-pronoun"
-	case POS_WPS:
-		return "Possessive wh-pronoun"
-	case POS_WRB:
-		return "Wh-adverb"
-	default:
-		return "Unknown"
-	}
 }

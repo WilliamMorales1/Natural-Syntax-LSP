@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -29,7 +30,7 @@ func TestReadMessage(t *testing.T) {
 			t.Fatalf("got %q, %v; want %q", msg.Method, err, want)
 		}
 	}
-	if _, err := readMessage(r); err != io.EOF {
+	if _, err := readMessage(r); !errors.Is(err, io.EOF) {
 		t.Errorf("after last message: %v, want EOF", err)
 	}
 
@@ -60,7 +61,7 @@ func TestWriteResponse(t *testing.T) {
 	if ok := payload(nil, nil); string(ok["result"]) != "null" || string(ok["id"]) != "7" {
 		t.Errorf("success: %v", ok)
 	}
-	if bad := payload(nil, &rpcError{Code: -32601, Message: "nope"}); bad["error"] == nil || bad["result"] != nil {
+	if bad := payload(nil, &rpcError{Code: codeMethodNotFound, Message: "nope"}); bad["error"] == nil || bad["result"] != nil {
 		t.Errorf("error: %v", bad)
 	}
 }
@@ -88,6 +89,14 @@ func TestLineHelpers(t *testing.T) {
 				t.Errorf("%q: lineToCharOffset(%d) = %d, want %d", tc.text, line, got, start)
 			}
 		}
+		// Backwards lookups make the cursor fall back to binary search.
+		c := lineCursor{starts: got}
+		for off := len([]rune(tc.text)); off >= 0; off-- {
+			want := charOffsetToLine(got, off)
+			if l, col := c.position(off); l != want || col != off-got[want] {
+				t.Errorf("%q: cursor at %d = %d:%d, want line %d", tc.text, off, l, col, want)
+			}
+		}
 	}
 	if lineToCharOffset("a\nb", 5) != -1 {
 		t.Error("lineToCharOffset past end not -1")
@@ -96,11 +105,11 @@ func TestLineHelpers(t *testing.T) {
 
 func TestEncodeSemanticTokens(t *testing.T) {
 	text := "the dog\nran é far"
-	doc := &document{text: text, tokens: []postag.POSToken{
-		{Word: "the", Tag: postag.POS_DT, OffsetBegin: 0, OffsetEnd: 3},
-		{Word: "dog", Tag: postag.POS_NN, OffsetBegin: 4, OffsetEnd: 7},
-		{Word: "ran", Tag: postag.POS_VBD, OffsetBegin: 8, OffsetEnd: 11},
-		{Word: "far", Tag: postag.POS_RB, OffsetBegin: 14, OffsetEnd: 17},
+	doc := &document{text: text, tokens: []postag.Token{
+		{Word: "the", Tag: postag.DT, OffsetBegin: 0, OffsetEnd: 3},
+		{Word: "dog", Tag: postag.NN, OffsetBegin: 4, OffsetEnd: 7},
+		{Word: "ran", Tag: postag.VBD, OffsetBegin: 8, OffsetEnd: 11},
+		{Word: "far", Tag: postag.RB, OffsetBegin: 14, OffsetEnd: 17},
 	}}
 	tm := tokenmap.NewDefault()
 	bits := func(p postag.PartOfSpeech) (uint32, uint32) {
@@ -111,7 +120,7 @@ func TestEncodeSemanticTokens(t *testing.T) {
 	for _, row := range [][3]uint32{{0, 0, 3}, {0, 4, 3}, {1, 0, 3}, {0, 6, 3}} {
 		want = append(want, row[:]...)
 	}
-	for i, p := range []postag.PartOfSpeech{postag.POS_DT, postag.POS_NN, postag.POS_VBD, postag.POS_RB} {
+	for i, p := range []postag.PartOfSpeech{postag.DT, postag.NN, postag.VBD, postag.RB} {
 		ty, mod := bits(p)
 		want = slices.Insert(want, i*5+3, ty, mod)
 	}
@@ -120,25 +129,25 @@ func TestEncodeSemanticTokens(t *testing.T) {
 	}
 
 	// A disabled tag is skipped and the next token's delta spans the gap.
-	tm.Extend(map[postag.PartOfSpeech]*tokenmap.Override{postag.POS_NN: nil, postag.POS_VBD: nil})
+	tm.Extend(map[postag.PartOfSpeech]*tokenmap.Override{postag.NN: nil, postag.VBD: nil})
 	got := encodeSemanticTokens(doc, &tm, false)
-	ty, mod := bits(postag.POS_RB)
+	ty, mod := bits(postag.RB)
 	if len(got) != 10 || !slices.Equal(got[5:], []uint32{1, 6, 3, ty, mod}) {
 		t.Errorf("with NN/VBD disabled: %v", got)
 	}
 }
 
 func TestFormatHoverContent(t *testing.T) {
-	pos := &postag.POSToken{Word: "dog", Tag: postag.POS_NN, Score: 0.912}
+	pos := &postag.Token{Word: "dog", Tag: postag.NN, Score: 0.912}
 	if got := formatHoverContent(pos, nil, nil, "", ""); !strings.Contains(got, "```yaml\ndog: ") || !strings.Contains(got, "# 0.91") {
 		t.Errorf("POS hover: %q", got)
 	}
-	sem := &postag.POSToken{Word: "dog", Color: "#112233", Description: "Semantic color #112233"}
+	sem := &postag.Token{Word: "dog", Color: "#112233", Description: "Semantic color #112233"}
 	if got := formatHoverContent(sem, nil, nil, "", ""); strings.Contains(got, "#") && strings.Contains(got, "# 0.") {
 		t.Errorf("semantic hover shows a score: %q", got)
 	}
-	head := &postag.POSToken{Word: "ran", HasHead: true, Deprel: postag.DEP_ROOT}
-	deps := []postag.POSToken{{Word: "dog", Deprel: postag.DEP_NSUBJ}, {Word: "far", Deprel: postag.DEP_ADVMOD}}
+	head := &postag.Token{Word: "ran", HasHead: true, Deprel: postag.DepRoot}
+	deps := []postag.Token{{Word: "dog", Deprel: postag.DepNsubj}, {Word: "far", Deprel: postag.DepAdvmod}}
 	got := formatHoverContent(head, deps, []bool{true, false}, "to move quickly", "https://en.wiktionary.org/wiki/run")
 	for _, want := range []string{"```nlsdep\nhead ran root {", "    dog nsubj{}", "    far advmod\n}", "to move quickly", "[Wiktionary](https://en.wiktionary.org/wiki/run)"} {
 		if !strings.Contains(got, want) {
@@ -211,7 +220,7 @@ func TestServerRoundTrip(t *testing.T) {
 		select {
 		case msg := <-responses:
 			if msg.ID != nil && string(*msg.ID) == "3" {
-				if msg.Error == nil || msg.Error.Code != -32601 {
+				if msg.Error == nil || msg.Error.Code != codeMethodNotFound {
 					t.Errorf("unknown method: %+v", msg.Error)
 				}
 				inW.Close()
