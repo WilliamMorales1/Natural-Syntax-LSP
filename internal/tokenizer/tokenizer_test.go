@@ -62,6 +62,50 @@ func TestBasicTokenizeOffsets(t *testing.T) {
 	}
 }
 
+// TestBasicTokenizeBlockStart checks which words open a markdown block; want lists the text of each BlockStart word.
+func TestBasicTokenizeBlockStart(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"plain prose", "one line\nwrapped onto two.", nil},
+		{"dash list", "- apples\n- pears\n- plums", []string{"-", "-", "-"}},
+		{"star and plus list", "* a\n+ b", []string{"*", "+"}},
+		{"ordered list", "1. first\n2) second\n10. tenth", []string{"1", "2", "10"}},
+		{"indented sublist", "- outer\n  - inner", []string{"-", "-"}},
+		{"list item continuation", "- a long item\n  that wraps", []string{"-"}},
+		{"lazy continuation", "- a long item\nthat wraps", []string{"-"}},
+		{"heading then text", "# Title\nBody text here.", []string{"#", "Body"}},
+		{"text then heading", "Body text\n## Next", []string{"#"}},
+		{"setext heading", "Title\n=====\nBody", []string{"=", "Body"}},
+		{"thematic break", "above\n---\nbelow", []string{"-", "below"}},
+		{"spaced thematic break", "above\n* * *\nbelow", []string{"*", "below"}},
+		{"quoted list", "> - a\n> - b", []string{">", ">"}},
+		{"quote continuation", "> one line\n> wrapped", nil},
+		{"table rows", "| a | b |\n|---|---|\n| c | d |", []string{"|", "|", "|"}},
+		{"fenced code", "intro\n```go\nx := 1\ny := 2\n```\noutro", []string{"`", "x", "y", "`", "outro"}},
+		{"hashtag is not heading", "#hashtag\n#tag", nil},
+		{"seven hashes is not heading", "####### no", nil},
+		{"dash without space is not list", "-5 degrees\n-ish", nil},
+		{"number without marker", "2024 was\n2025 is", nil},
+		{"crlf list", "- a\r\n- b", []string{"-", "-"}},
+		{"leading blank lines", "\n\n- a\n- b", []string{"-", "-"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, w := range BasicTokenize(tc.in) {
+				if w.BlockStart {
+					got = append(got, w.Text)
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("BasicTokenize(%q) block starts = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestIsAllPunct(t *testing.T) {
 	for in, want := range map[string]bool{
 		"":      false,

@@ -115,20 +115,28 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 // sentenceEnders are word texts that end a sentence for chunking purposes (the biaffine model was trained one sentence per synthetic root).
 var sentenceEnders = map[string]bool{".": true, "!": true, "?": true}
 
-// splitSentences groups words into sentences, splitting right after any sentenceEnders token.
+// splitSentences groups words into sentences: markdown blocks, each further split right after any sentenceEnders token.
 func splitSentences(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
 	var sentences [][]tokenizer.WordSpan
-	start := 0
-	for i, w := range words {
-		if sentenceEnders[w.Text] {
-			sentences = append(sentences, words[start:i+1])
-			start = i + 1
+	for _, block := range splitBlocks(words) {
+		start := 0
+		for i, w := range block {
+			if sentenceEnders[w.Text] && !isOrderedListMarker(block[start:i+1]) {
+				sentences = append(sentences, block[start:i+1])
+				start = i + 1
+			}
+		}
+		if start < len(block) {
+			sentences = append(sentences, block[start:])
 		}
 	}
-	if start < len(words) {
-		sentences = append(sentences, words[start:])
-	}
 	return sentences
+}
+
+// isOrderedListMarker reports whether sent is just the "1." that opens an ordered list item, whose period doesn't end a sentence.
+func isOrderedListMarker(sent []tokenizer.WordSpan) bool {
+	return len(sent) == 2 && sent[0].BlockStart && sent[1].Text == "." &&
+		!strings.ContainsFunc(sent[0].Text, func(r rune) bool { return r < '0' || r > '9' })
 }
 
 // PredictChunk parses each sentence in words separately, each under its own synthetic root.

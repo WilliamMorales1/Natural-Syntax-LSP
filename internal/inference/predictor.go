@@ -50,6 +50,22 @@ func SplitChunks(text string, words []tokenizer.WordSpan) [][]tokenizer.WordSpan
 	return chunks
 }
 
+// splitBlocks groups words into markdown blocks, breaking right before each BlockStart word, so disjoint lines (list items, headings, table rows) never share model context.
+func splitBlocks(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
+	var blocks [][]tokenizer.WordSpan
+	start := 0
+	for i, w := range words {
+		if w.BlockStart && i > start {
+			blocks = append(blocks, words[start:i])
+			start = i
+		}
+	}
+	if start < len(words) {
+		blocks = append(blocks, words[start:])
+	}
+	return blocks
+}
+
 // splitParagraphs groups words into paragraphs, breaking where the gap between two words holds a blank line.
 func splitParagraphs(runes []rune, words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
 	var paras [][]tokenizer.WordSpan

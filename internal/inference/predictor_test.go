@@ -78,7 +78,7 @@ func TestSplitChunksHardSplitsLongSentence(t *testing.T) {
 // TestSplitChunksProperties checks on random documents that chunks cover every word once, in order, within ChunkSize, and break only at sentence or paragraph ends unless a sentence overflows.
 func TestSplitChunksProperties(t *testing.T) {
 	rng := rand.New(rand.NewPCG(7, 7))
-	pieces := []string{"alpha", "beta", "gamma", "it's", "x", ".", "!", "?", ",", " ", " ", " ", "\n", "\n\n", "\r\n\r\n", "\n \n"}
+	pieces := []string{"alpha", "beta", "gamma", "it's", "x", ".", "!", "?", ",", " ", " ", " ", "\n", "\n\n", "\r\n\r\n", "\n \n", "\n- ", "\n1. ", "\n# ", "\n```\n"}
 	for trial := range 300 {
 		var sb strings.Builder
 		for range rng.IntN(800) {
@@ -106,7 +106,7 @@ func TestSplitChunksProperties(t *testing.T) {
 			}
 			last, next := c[len(c)-1], chunks[i+1][0]
 			gap := string(runes[last.End:next.Begin])
-			if !sentenceEnders[last.Text] && strings.Count(gap, "\n") < 2 {
+			if !sentenceEnders[last.Text] && !next.BlockStart && strings.Count(gap, "\n") < 2 {
 				t.Fatalf("trial %d chunk %d: breaks mid-sentence after %q (gap %q)", trial, i, last.Text, gap)
 			}
 		}
@@ -119,6 +119,117 @@ func TestSplitSentences(t *testing.T) {
 	want := [][]string{{"Hi", "."}, {"How", "are", "you", "?"}, {"Fine", "!"}, {"trailing"}}
 	if !slices.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// sentenceTexts joins each sentence's words with spaces, for compact comparison.
+func sentenceTexts(sents [][]tokenizer.WordSpan) []string {
+	out := make([]string, len(sents))
+	for i, words := range chunkTexts(sents) {
+		out[i] = strings.Join(words, " ")
+	}
+	return out
+}
+
+// TestSplitSentencesMarkdown checks that markdown blocks split into separate sentences even without terminal punctuation, while wrapped prose stays whole.
+func TestSplitSentencesMarkdown(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"dash list items", "- buy milk\n- walk the dog\n- call mom", []string{"- buy milk", "- walk the dog", "- call mom"}},
+		{"list items with enders", "- First item.\n- Second item!", []string{"- First item .", "- Second item !"}},
+		{"multi-sentence item", "- One. Two\n- Three", []string{"- One .", "Two", "- Three"}},
+		{"ordered list keeps its period", "1. preheat the oven\n2. mix the flour\n3) bake", []string{"1 . preheat the oven", "2 . mix the flour", "3 ) bake"}},
+		{"ordered list item with ender", "1. Done.\n2. Next", []string{"1 . Done .", "2 . Next"}},
+		{"version number mid-line still splits", "use v1. then", []string{"use v1 .", "then"}},
+		{"intro then list", "You will need:\n- eggs\n- flour", []string{"You will need :", "- eggs", "- flour"}},
+		{"wrapped item stays whole", "- a long item that\n  wraps onto two lines\n- short", []string{"- a long item that wraps onto two lines", "- short"}},
+		{"lazy continuation stays whole", "- a long item that\nwraps lazily\n- short", []string{"- a long item that wraps lazily", "- short"}},
+		{"nested list", "- fruit\n  - apple\n  - pear\n- veg", []string{"- fruit", "- apple", "- pear", "- veg"}},
+		{"heading then paragraph", "# Getting Started\nInstall the tool first", []string{"# Getting Started", "Install the tool first"}},
+		{"paragraph then heading", "Some text here\n## Usage", []string{"Some text here", "# # Usage"}},
+		{"setext heading", "Overview\n========\nThe tool colors words", []string{"Overview", "= = = = = = = =", "The tool colors words"}},
+		{"thematic break", "end of part one\n***\nstart of part two", []string{"end of part one", "* * *", "start of part two"}},
+		{"table rows", "| name | role |\n| Ann | dev |", []string{"| name | role |", "| Ann | dev |"}},
+		{"quoted list", "> - quoted one\n> - quoted two", []string{"> - quoted one", "> - quoted two"}},
+		{"quote wraps", "> a quote that\n> wraps", []string{"> a quote that > wraps"}},
+		{"code lines", "```\nfoo bar\nbaz qux\n```\nafter code", []string{"` ` `", "foo bar", "baz qux", "` ` `", "after code"}},
+		{"plain wrapped prose", "the wind blew hard\nand the sun shone.", []string{"the wind blew hard and the sun shone ."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentenceTexts(splitSentences(tokenizer.BasicTokenize(tc.in))); !slices.Equal(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSplitBlocks(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"prose is one block", "One sentence. Another one\nwrapped.", []string{"One sentence . Another one wrapped ."}},
+		{"list items", "Steps:\n- a b\n- c. d", []string{"Steps :", "- a b", "- c . d"}},
+		{"heading and body", "# Title\nBody. More body.", []string{"# Title", "Body . More body ."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentenceTexts(splitBlocks(tokenizer.BasicTokenize(tc.in))); !slices.Equal(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSplitChunksMarkdownDoc checks a realistic README-style document: paragraphs become chunks, and every sentence inside stays within its block.
+func TestSplitChunksMarkdownDoc(t *testing.T) {
+	in := `# Natural Syntax
+
+Highlights words by part of speech.
+It runs locally.
+
+## Features
+
+- POS mode colors by tag
+- Semantic mode colors by meaning
+  across the document
+- Dependency mode
+
+1. Install the extension
+2. Export the models
+`
+	words := tokenizer.BasicTokenize(in)
+	chunks := SplitChunks(in, words)
+	var got [][]string
+	for _, c := range chunks {
+		got = append(got, sentenceTexts(splitSentences(c)))
+	}
+	want := [][]string{
+		{"# Natural Syntax"},
+		{"Highlights words by part of speech .", "It runs locally ."},
+		{"# # Features"},
+		{"- POS mode colors by tag", "- Semantic mode colors by meaning across the document", "- Dependency mode"},
+		{"1 . Install the extension", "2 . Export the models"},
+	}
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestSplitChunksPacksListItems checks that a list too long for one chunk breaks between items, never inside one.
+func TestSplitChunksPacksListItems(t *testing.T) {
+	in := strings.Repeat("- one two three four\n", 60)
+	chunks := SplitChunks(in, tokenizer.BasicTokenize(in))
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(chunks))
+	}
+	for i, c := range chunks {
+		if len(c) > ChunkSize || !c[0].BlockStart || c[len(c)-1].Text != "four" {
+			t.Errorf("chunk %d: %d words from %q to %q", i, len(c), c[0].Text, c[len(c)-1].Text)
+		}
 	}
 }
 

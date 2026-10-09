@@ -415,3 +415,12 @@ func embeddingAt(reg *documentRegistry, offset uint32) []float32 {
 	})
 	return <-reply
 }
+
+// TestChunkKeyBlockStart checks that turning prose lines into list items changes the cache key, since sentence splits differ even though the words match.
+func TestChunkKeyBlockStart(t *testing.T) {
+	prose := tokenizer.BasicTokenize("a - b\n- c")
+	list := tokenizer.BasicTokenize("a\n- b\n- c")
+	if chunkKey(prose) == chunkKey(list) {
+		t.Errorf("same key %q for different block starts", chunkKey(list))
+	}
+}

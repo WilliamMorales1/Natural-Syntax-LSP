@@ -55,7 +55,20 @@ func (m *EmbeddingModel) EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token,
 	return tokens, units, nil
 }
 
+// embedChunk returns each word's mean-pooled subword embedding, running each markdown block as its own sequence.
 func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, error) {
+	embeddings := make([][]float32, 0, len(words))
+	for _, block := range splitBlocks(words) {
+		blockEmbeds, err := m.embedBlock(block)
+		if err != nil {
+			return nil, err
+		}
+		embeddings = append(embeddings, blockEmbeds...)
+	}
+	return embeddings, nil
+}
+
+func (m *EmbeddingModel) embedBlock(words []tokenizer.WordSpan) ([][]float32, error) {
 	hidden, seqLen, swWordIdx, _, err := m.runWords(words)
 	if err != nil {
 		return nil, err

@@ -69,8 +69,21 @@ func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 	return &POSModel{baseModel: base, labels: labels}, nil
 }
 
-// PredictChunk tags each non-punctuation word by its first subword's argmax label.
+// PredictChunk tags each non-punctuation word by its first subword's argmax label, running each markdown block as its own sequence.
 func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
+	var tokens []postag.Token
+	for _, block := range splitBlocks(words) {
+		blockTokens, err := m.predictBlock(block)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, blockTokens...)
+	}
+	return tokens, nil
+}
+
+// predictBlock tags one block in a single model run.
+func (m *POSModel) predictBlock(words []tokenizer.WordSpan) ([]postag.Token, error) {
 	logits, seqLen, swWordIdx, swIsFirst, err := m.runWords(words)
 	if err != nil {
 		return nil, err

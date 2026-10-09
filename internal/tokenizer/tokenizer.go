@@ -14,6 +14,8 @@ type WordSpan struct {
 	Text  string
 	Begin uint32
 	End   uint32
+	// BlockStart marks the first word of a line that opens a new markdown block (list item, heading, table row, code line, ...), which always starts a new sentence.
+	BlockStart bool
 }
 
 // BERTTokenizer does basic BERT tokenization + WordPiece.
@@ -127,10 +129,17 @@ func BasicTokenize(text string) []WordSpan {
 	var words []WordSpan
 	runes := []rune(text)
 	n := len(runes)
+	var lines lineClassifier
+	blockLine := lines.next(runes)
 	i := 0
 	for i < n {
+		lineFirst := i == 0
 		// skip whitespace
 		for i < n && unicode.IsSpace(runes[i]) {
+			if runes[i] == '\n' {
+				blockLine = lines.next(runes[i+1:])
+				lineFirst = true
+			}
 			i++
 		}
 		if i >= n {
@@ -142,9 +151,105 @@ func BasicTokenize(text string) []WordSpan {
 			i++
 		}
 		// Split run on punctuation boundaries.
-		words = append(words, splitPunct(runes[start:i], uint32(start))...)
+		spans := splitPunct(runes[start:i], uint32(start))
+		if lineFirst && blockLine && len(spans) > 0 {
+			spans[0].BlockStart = true
+		}
+		words = append(words, spans...)
 	}
 	return words
+}
+
+// lineKind is the markdown block construct a line opens.
+type lineKind int
+
+const (
+	lineText lineKind = iota
+	lineBlank
+	lineList
+	lineHeading
+	lineRule // thematic break or setext underline
+	lineTable
+	lineFence
+)
+
+// lineClassifier tracks enough markdown state across lines to tell which lines open a new block.
+type lineClassifier struct {
+	prev    lineKind
+	inFence bool
+}
+
+// next classifies the line at the start of rest and reports whether its first word starts a new block.
+func (c *lineClassifier) next(rest []rune) bool {
+	line := rest
+	if j := slices.Index(rest, '\n'); j >= 0 {
+		line = rest[:j]
+	}
+	kind := classifyLine(line)
+	var block bool
+	switch {
+	case c.inFence:
+		// Code lines are never prose continuations of each other.
+		block = true
+		if kind == lineFence {
+			c.inFence = false
+		}
+		kind = lineFence
+	case kind == lineFence:
+		block, c.inFence = true, true
+	case kind == lineText || kind == lineBlank:
+		// Lists and quotes allow lazy continuation lines; single-line blocks don't.
+		block = c.prev == lineHeading || c.prev == lineRule || c.prev == lineTable || c.prev == lineFence
+	default:
+		block = true
+	}
+	c.prev = kind
+	return block
+}
+
+// classifyLine reports which block construct a single line (without its newline) opens.
+func classifyLine(line []rune) lineKind {
+	s := strings.TrimLeft(string(line), " \t\r")
+	// Blockquote markers are containers; classify what's inside them.
+	for strings.HasPrefix(s, ">") {
+		s = strings.TrimLeft(s[1:], " \t")
+	}
+	s = strings.TrimRight(s, " \t\r")
+	switch {
+	case s == "":
+		return lineBlank
+	case strings.HasPrefix(s, "```") || strings.HasPrefix(s, "~~~"):
+		return lineFence
+	case isRule(s):
+		return lineRule
+	case strings.HasPrefix(s, "|"):
+		return lineTable
+	}
+	if h := strings.TrimLeft(s, "#"); len(s)-len(h) <= 6 && h != s && (h == "" || h[0] == ' ' || h[0] == '\t') {
+		return lineHeading
+	}
+	if strings.ContainsRune("-*+", rune(s[0])) && hasMarkerGap(s[1:]) {
+		return lineList
+	}
+	d := strings.TrimLeft(s, "0123456789")
+	if digits := len(s) - len(d); digits >= 1 && digits <= 9 && d != "" && (d[0] == '.' || d[0] == ')') && hasMarkerGap(d[1:]) {
+		return lineList
+	}
+	return lineText
+}
+
+// hasMarkerGap reports whether the text after a list marker begins with the whitespace (or end of line) that makes it a marker.
+func hasMarkerGap(after string) bool {
+	return after == "" || after[0] == ' ' || after[0] == '\t'
+}
+
+// isRule reports whether s is a thematic break (three or more -, * or _) or a setext underline (= or - run).
+func isRule(s string) bool {
+	compact := strings.ReplaceAll(s, " ", "")
+	if len(compact) < 3 && !strings.HasPrefix(compact, "=") {
+		return false
+	}
+	return strings.Trim(compact, compact[:1]) == "" && strings.ContainsAny(compact[:1], "-*_=")
 }
 
 // splitPunct splits a whitespace-free run into words and punctuation, keeping "'s" and mid-word apostrophes attached.

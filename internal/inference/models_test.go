@@ -2,6 +2,7 @@ package inference
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -106,6 +107,71 @@ func TestModelDependencyHeadsInChunk(t *testing.T) {
 		// Each sentence is parsed with its own root, so two sentences need at least two roots.
 		if roots < 2 {
 			t.Errorf("%d roots for two sentences", roots)
+		}
+	})
+}
+
+// TestModelMarkdownBlocksIsolated checks that a markdown block gets the same output after other blocks as on its own, so neighboring list items or headings can't sway its tags or colors.
+func TestModelMarkdownBlocksIsolated(t *testing.T) {
+	blocks := []string{
+		"# Install",
+		"- fast",
+		"- open source",
+		"- runs locally",
+		"1. Preheat the oven",
+		"| Name | Role |",
+		"Download the release. It is small.",
+	}
+	forEachModel(t, func(t *testing.T, m Predictor) {
+		want := make([][]string, len(blocks))
+		for i, b := range blocks {
+			want[i] = tokenSummaries(t, m, b)
+		}
+		doc := strings.Join(blocks, "\n")
+		got := tokenSummaries(t, m, doc)
+		if flat := slices.Concat(want...); !slices.Equal(got, flat) {
+			t.Errorf("%q\n got %q\nwant %q", doc, got, flat)
+		}
+	})
+}
+
+// tokenSummaries runs text through m and returns each token as "word/tag/color", ignoring offsets.
+func tokenSummaries(t *testing.T, m Predictor, text string) []string {
+	t.Helper()
+	toks, err := m.PredictChunk(tokenizer.BasicTokenize(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, len(toks))
+	for i, tok := range toks {
+		out[i] = tok.Word + "/" + tok.Tag.String() + "/" + tok.Color + "/" + tok.Deprel.String()
+	}
+	return out
+}
+
+// TestModelPOSMarkdownTags pins tags the BERT POS model got wrong when markdown blocks shared one sequence.
+func TestModelPOSMarkdownTags(t *testing.T) {
+	cases := []struct {
+		text string
+		want map[string]postag.PartOfSpeech
+	}{
+		{"- fast\n- light\n- open source\n- runs locally", map[string]postag.PartOfSpeech{"source": postag.NN, "runs": postag.VBZ}},
+		{"# Install\nDownload the release\n## Usage\nOpen files", map[string]postag.PartOfSpeech{"Usage": postag.NN}},
+	}
+	forEachModel(t, func(t *testing.T, m Predictor) {
+		if _, ok := m.(*POSModel); !ok {
+			t.Skip("not a POS model")
+		}
+		for _, tc := range cases {
+			toks, err := m.PredictChunk(tokenizer.BasicTokenize(tc.text))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, tok := range toks {
+				if want, ok := tc.want[tok.Word]; ok && tok.Tag != want {
+					t.Errorf("%q: %s tagged %s, want %s", tc.text, tok.Word, tok.Tag, want)
+				}
+			}
 		}
 	})
 }

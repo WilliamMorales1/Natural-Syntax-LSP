@@ -69,8 +69,8 @@ The cap is required because convergence slows when the second and third eigenval
 
 **Alignment.** PCA determines the plane but not the orientation of the axes within it. A refit may return the same plane rotated or reflected relative to the previous fit, which would shift every hue even if the document were unchanged. After each refit, the new axes $b_0, b_1$ are rotated or reflected to best match the previous axes $a_0, a_1$. With $M_{ij} = a_i \cdot b_j$:
 
-- optimal rotation angle: $\theta = \operatorname{atan2}(M_{10} - M_{01},\ M_{00} + M_{11})$
-- optimal reflection angle: $\varphi = \operatorname{atan2}(M_{01} + M_{10},\ M_{00} - M_{11})$
+- optimal rotation angle: $\theta = \mathrm{atan2}(M_{10} - M_{01},\ M_{00} + M_{11})$
+- optimal reflection angle: $\varphi = \mathrm{atan2}(M_{01} + M_{10},\ M_{00} - M_{11})$
 
 The candidate with the larger overlap $\sum_i a_i \cdot b'_i$ is applied (`alignPlane`). This is the closed-form solution of the 2D orthogonal Procrustes problem. Without alignment, 67–81% of word colors shifted by more than a quarter of the maximum color difference on each edit.
 
@@ -86,7 +86,7 @@ Colors are specified in OKLCH, a cylindrical form of the OKLab perceptual color 
 
 Projected positions are scaled by a factor $s$ and clamped to the unit disk:
 
-$$u = \operatorname{clamp}(s \cdot z), \qquad \text{chroma} = C_{\max} \cdot |u|, \qquad \text{hue} = \operatorname{atan2}(u_y, u_x)$$
+$$u = \mathrm{clamp}(s \cdot z), \qquad \text{chroma} = C_{\max} \cdot |u|, \qquad \text{hue} = \mathrm{atan2}(u_y, u_x)$$
 
 Words on the boundary of the disk receive the full configured chroma. Words near the document mean receive less: 1–8% of words in typical text are close to neutral gray.
 

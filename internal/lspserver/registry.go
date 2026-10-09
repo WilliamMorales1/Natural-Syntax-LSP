@@ -440,6 +440,10 @@ func chunkKey(words []tokenizer.WordSpan) string {
 		if i > 0 {
 			sb.WriteByte(0)
 		}
+		// Block starts change sentence splits, so they're part of the key.
+		if w.BlockStart {
+			sb.WriteByte(1)
+		}
 		sb.WriteString(w.Text)
 	}
 	return sb.String()
