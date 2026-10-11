@@ -12,6 +12,6 @@ pkgbase = natural-syntax-ls
 	optdepends = python: export ONNX models with export_model.py
 	optdepends = python-requests: export ONNX models with export_model.py
 	source = natural-syntax-ls-0.3.2.tar.gz::https://github.com/WilliamMorales1/Natural-Syntax-LSP/archive/refs/tags/v0.3.2.tar.gz
-	sha256sums = SKIP
+	sha256sums = 3cbc5f78d48d2cd8536182f4daf8383cd2a14414ea5ee36eab02340b8d5423aa
 
 pkgname = natural-syntax-ls
