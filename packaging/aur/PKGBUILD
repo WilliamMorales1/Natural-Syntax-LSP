@@ -1,0 +1,37 @@
+# Maintainer: William Morales <wsm5224 at gmail dot com>
+pkgname=natural-syntax-ls
+pkgver=0.3.2
+pkgrel=1
+pkgdesc="Part-of-speech, semantic, and dependency highlighting language server for prose"
+arch=('x86_64' 'aarch64')
+url="https://github.com/WilliamMorales1/Natural-Syntax-LSP"
+license=('MIT')
+depends=('glibc' 'onnxruntime')
+makedepends=('go')
+optdepends=('python: export ONNX models with export_model.py'
+            'python-requests: export ONNX models with export_model.py')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "Natural-Syntax-LSP-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  go mod download
+}
+
+build() {
+  cd "Natural-Syntax-LSP-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  export CGO_ENABLED=1 CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+  go build -ldflags "-linkmode=external" -o natural-syntax-ls ./cmd/natural-syntax-ls
+}
+
+package() {
+  cd "Natural-Syntax-LSP-$pkgver"
+  install -Dm755 natural-syntax-ls "$pkgdir/usr/bin/natural-syntax-ls"
+  install -Dm644 scripts/export_model.py "$pkgdir/usr/share/$pkgname/export_model.py"
+  install -Dm644 lsp/natural_syntax_ls.lua "$pkgdir/usr/share/nvim/site/lsp/natural_syntax_ls.lua"
+  install -Dm644 plugin/natural_syntax_ls.lua "$pkgdir/usr/share/nvim/site/plugin/natural_syntax_ls.lua"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"natural-syntax-ls/internal/inference"
@@ -22,9 +23,12 @@ func main() {
 	flag.Parse()
 
 	exe, _ := os.Executable()
+	// Package managers (Mason, Homebrew) launch through a symlink; bundled libs sit next to the real binary.
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
 	exeDir := filepath.Dir(exe)
-	userDir, _ := os.UserConfigDir()
-	dataDir := filepath.Join(userDir, "natural-syntax-ls")
+	dataDir := filepath.Join(configDir(), "natural-syntax-ls")
 
 	if *modelPath == "" {
 		*modelPath = findFile(
@@ -67,6 +71,8 @@ func main() {
 		filepath.Join(exeDir, "onnxruntime.dll"),
 		filepath.Join(exeDir, "libonnxruntime.so"),
 		filepath.Join(exeDir, "libonnxruntime.dylib"),
+		"/usr/lib/libonnxruntime.so",
+		"/usr/local/lib/libonnxruntime.so",
 	); ortLib != "" {
 		inference.SetORTLibPath(ortLib)
 	}
@@ -82,6 +88,19 @@ func main() {
 		fmt.Fprintf(os.Stderr, "natural-syntax-ls: lsp: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// configDir returns where setup.sh and the VS Code extension put models: XDG on macOS too, not ~/Library.
+func configDir() string {
+	if runtime.GOOS != "windows" && runtime.GOOS != "plan9" {
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			return xdg
+		}
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".config")
+	}
+	dir, _ := os.UserConfigDir()
+	return dir
 }
 
 // findFile returns the first existing path among candidates, or "" if none exist.

@@ -8,6 +8,17 @@ Export the models and install the binary first (see [Installation](../README.md#
 
 `scripts/setup.sh` installs the binary to `~/.local/bin` (`$XDG_BIN_HOME` if set); `scripts/setup.ps1` installs it to `%LOCALAPPDATA%\Programs\natural-syntax-ls` and adds that to your user `PATH`. With it on `PATH`, `cmd = { "natural-syntax-ls" }` is enough.
 
+**As a plugin (Neovim 0.11+, recommended).** This repo ships `lsp/natural_syntax_ls.lua` (default config plus the semantic-mode color handler) and `plugin/natural_syntax_ls.lua` (`:NlsMode`). Add it with any plugin manager, then enable the server:
+
+```lua
+-- lazy.nvim
+{ "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
+```
+
+The AUR package installs both files into `/usr/share/nvim/site`, so there `vim.lsp.enable("natural_syntax_ls")` alone is enough. Override any field with `vim.lsp.config("natural_syntax_ls", { ... })`.
+
+The manual setups below are only needed without the plugin.
+
 **Plain Neovim 0.11+** (built-in `vim.lsp.config`, no plugins required), e.g. in `init.lua`:
 
 ```lua

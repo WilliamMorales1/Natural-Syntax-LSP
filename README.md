@@ -10,9 +10,11 @@ Three modes:
 
 ## Installation
 
-### From a GitHub Release (recommended)
+Every install path needs the ONNX model files, which no package ships (they are 100-470 MB each). See [Exporting models](#exporting-models).
 
-Download the `.vsix` from the [latest release](../../releases/latest) and install:
+### VS Code / VSCodium
+
+Download the `.vsix` for your platform from the [latest release](../../releases/latest) and install:
 
 ```bash
 code --install-extension natural-syntax-ls-*.vsix
@@ -20,7 +22,50 @@ code --install-extension natural-syntax-ls-*.vsix
 
 The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for your platform (Windows x64, Linux x64, macOS arm64), so no Go toolchain is needed.
 
-You still need to export the ONNX model files (Python + pip):
+### Arch Linux (AUR)
+
+```bash
+yay -S natural-syntax-ls
+```
+
+Builds the server against the system `onnxruntime` package and installs the Neovim config into `/usr/share/nvim/site`, so Neovim only needs `vim.lsp.enable("natural_syntax_ls")`. The model exporter is installed to `/usr/share/natural-syntax-ls/export_model.py`.
+
+### Standalone binary
+
+Each release also has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server and ONNX Runtime side by side. Extract it anywhere and put the binary on your `PATH` (symlinks are fine; the server finds the library next to the real file).
+
+### Neovim
+
+The repo doubles as a Neovim 0.11+ plugin: it ships the LSP config, the semantic-mode color handler, and `:NlsMode`. With [lazy.nvim](https://github.com/folke/lazy.nvim):
+
+```lua
+{ "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
+```
+
+The server binary must be on your `PATH` (AUR package, standalone binary, or `scripts/setup.sh`). Manual setups for older Neovim and LazyVim: [docs/neovim.md](docs/neovim.md).
+
+### From source
+
+Requires Go, Python, Node.js.
+
+```bash
+scripts/setup.sh   # exports models, builds binary into ~/.local/bin
+
+cd vscode-extension
+npm install
+npx vsce package
+code --install-extension natural-syntax-ls-*.vsix
+```
+
+To use your own binary instead of the bundled one, set in VS Code settings:
+
+```json
+"naturalSyntaxLs.serverPath": "/path/to/natural-syntax-ls"
+```
+
+### Exporting models
+
+From a repo checkout (installs Python deps itself):
 
 ```bash
 scripts/setup.sh                     # BERT-base POS model (~430 MB)
@@ -33,30 +78,14 @@ scripts/setup.sh --model all         # all models
 
 (`scripts/setup.ps1 -Model <...>` on Windows, same values.)
 
-Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `~/.config/natural-syntax-ls/` (Linux/macOS).
-
-### From source
-
-Requires Go, Python, Node.js.
+From the AUR package, run the installed exporter with [uv](https://docs.astral.sh/uv/) (add `--with diaparser` for dependency models):
 
 ```bash
-scripts/setup.sh   # exports models, builds binary
-
-cd vscode-extension
-npm install
-npx vsce package
-code --install-extension natural-syntax-ls-0.1.0.vsix
+uv run --with transformers --with torch --with onnx --with onnxscript --with requests \
+  /usr/share/natural-syntax-ls/export_model.py ~/.config/natural-syntax-ls --model bert-base
 ```
 
-To use your own binary instead of the bundled one, set in VS Code settings:
-
-```json
-"naturalSyntaxLs.serverPath": "/path/to/natural-syntax-ls"
-```
-
-### Neovim
-
-The server is a standard stdio LSP, so it works in Neovim too: POS and dependency coloring, hover, mode switching, and (with a small handler) semantic-mode colors. Setup and snippets: [docs/neovim.md](docs/neovim.md).
+Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `$XDG_CONFIG_HOME/natural-syntax-ls/`, default `~/.config/natural-syntax-ls/` (Linux and macOS).
 
 ## Models
 

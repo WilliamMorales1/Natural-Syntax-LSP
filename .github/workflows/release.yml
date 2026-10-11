@@ -107,6 +107,29 @@ jobs:
           name: bin-${{ matrix.platform }}
           path: vscode-extension/bin/${{ matrix.platform }}/
 
+      # Standalone archives for Mason/AUR; the server finds the ORT lib next to its binary.
+      - name: Archive binary (unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          mkdir dist
+          cp LICENSE vscode-extension/bin/${{ matrix.platform }}/
+          chmod +x vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }}
+          tar czf dist/natural-syntax-ls_${{ matrix.platform }}.tar.gz -C vscode-extension/bin/${{ matrix.platform }} .
+
+      - name: Archive binary (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist
+          Copy-Item LICENSE vscode-extension/bin/${{ matrix.platform }}/
+          Compress-Archive -Path vscode-extension/bin/${{ matrix.platform }}/* -DestinationPath dist/natural-syntax-ls_${{ matrix.platform }}.zip
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: archive-${{ matrix.platform }}
+          path: dist/
+
   package:
     needs: build
     runs-on: ubuntu-latest
@@ -116,7 +139,14 @@ jobs:
       - uses: actions/download-artifact@v4.3.0
         with:
           path: vscode-extension/bin
+          pattern: bin-*
           merge-multiple: false
+
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          path: dist
+          pattern: archive-*
+          merge-multiple: true
 
       - name: Flatten artifact dirs
         shell: bash
@@ -153,5 +183,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.3.2
         with:
-          files: vscode-extension/*.vsix
+          files: |
+            vscode-extension/*.vsix
+            dist/*
           draft: false

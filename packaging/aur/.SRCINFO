@@ -1,0 +1,17 @@
+pkgbase = natural-syntax-ls
+	pkgdesc = Part-of-speech, semantic, and dependency highlighting language server for prose
+	pkgver = 0.3.2
+	pkgrel = 1
+	url = https://github.com/WilliamMorales1/Natural-Syntax-LSP
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = go
+	depends = glibc
+	depends = onnxruntime
+	optdepends = python: export ONNX models with export_model.py
+	optdepends = python-requests: export ONNX models with export_model.py
+	source = natural-syntax-ls-0.3.2.tar.gz::https://github.com/WilliamMorales1/Natural-Syntax-LSP/archive/refs/tags/v0.3.2.tar.gz
+	sha256sums = SKIP
+
+pkgname = natural-syntax-ls
