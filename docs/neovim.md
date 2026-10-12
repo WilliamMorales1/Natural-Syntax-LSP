@@ -15,7 +15,7 @@ Export the models and install the binary first (see [Installation](../README.md#
 { "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
 ```
 
-The AUR package installs both files into `/usr/share/nvim/site`, so there `vim.lsp.enable("natural_syntax_ls")` alone is enough. Override any field with `vim.lsp.config("natural_syntax_ls", { ... })`.
+Override any field with `vim.lsp.config("natural_syntax_ls", { ... })`.
 
 The manual setups below are only needed without the plugin.
 

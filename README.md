@@ -22,14 +22,6 @@ code --install-extension natural-syntax-ls-*.vsix
 
 The VSIX bundles the prebuilt server binary and ONNX Runtime shared library for your platform (Windows x64, Linux x64, macOS arm64), so no Go toolchain is needed.
 
-### Arch Linux (AUR)
-
-```bash
-yay -S natural-syntax-ls
-```
-
-Builds the server against the system `onnxruntime` package and installs the Neovim config into `/usr/share/nvim/site`, so Neovim only needs `vim.lsp.enable("natural_syntax_ls")`. The model exporter is installed to `/usr/share/natural-syntax-ls/export_model.py`.
-
 ### Standalone binary
 
 Each release also has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server and ONNX Runtime side by side. Extract it anywhere and put the binary on your `PATH` (symlinks are fine; the server finds the library next to the real file).
@@ -42,7 +34,7 @@ The repo doubles as a Neovim 0.11+ plugin: it ships the LSP config, the semantic
 { "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
 ```
 
-The server binary must be on your `PATH` (AUR package, standalone binary, or `scripts/setup.sh`). Manual setups for older Neovim and LazyVim: [docs/neovim.md](docs/neovim.md).
+The server binary must be on your `PATH` (standalone binary or `scripts/setup.sh`). Manual setups for older Neovim and LazyVim: [docs/neovim.md](docs/neovim.md).
 
 ### From source
 
@@ -77,13 +69,6 @@ scripts/setup.sh --model all         # all models
 ```
 
 (`scripts/setup.ps1 -Model <...>` on Windows, same values.)
-
-From the AUR package, run the installed exporter with [uv](https://docs.astral.sh/uv/) (add `--with diaparser` for dependency models):
-
-```bash
-uv run --with transformers --with torch --with onnx --with onnxscript --with requests \
-  /usr/share/natural-syntax-ls/export_model.py ~/.config/natural-syntax-ls --model bert-base
-```
 
 Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `$XDG_CONFIG_HOME/natural-syntax-ls/`, default `~/.config/natural-syntax-ls/` (Linux and macOS).
 
