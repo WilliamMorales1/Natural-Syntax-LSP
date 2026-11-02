@@ -10,6 +10,13 @@ Three modes:
 - **Semantic**: sentence-embedding model colors words by meaning in context; words used alike get similar colors.
 - **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …).
 
+## Dependencies
+
+- Prebuilt releases: none beyond the editor; ONNX Runtime is bundled.
+- Model export: Python with `torch`, `transformers`, `onnx`, `onnxscript`, `requests` (plus `diaparser` for dependency mode). `scripts/setup.sh` installs them.
+- Building from source: Go 1.26+ (`github.com/yalue/onnxruntime_go`, needs ONNX Runtime shared library), Node.js and npm for the VS Code extension (`vscode-languageclient`, packaged with `vsce`).
+- Neovim 0.11+ for the Neovim plugin.
+
 ## Installation
 
 Every install path needs the ONNX model files (100-470 MB each), which no package ships. Export them first: [docs/install.md](docs/install.md#exporting-models).
