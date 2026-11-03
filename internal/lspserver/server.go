@@ -63,6 +63,9 @@ type lspServer struct {
 	pendingMu sync.Mutex
 	pending   []*textItem // didOpen/didChange before model ready
 
+	documentsMu sync.Mutex
+	documents   map[string]trackedDocument
+
 	writerMu  sync.Mutex
 	writer    io.Writer // set in serve(); used to push server→client requests
 	nextReqID atomic.Int64
@@ -83,8 +86,14 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 		}
 		// Messages without a method are responses to our server→client requests; ignore them.
 		if msg.Method != "" {
-			// Dispatch in a goroutine so slow handlers don't block the read loop.
-			go s.handle(msg)
+			// Document notifications must be handled in wire order so incremental changes
+			// are applied to the document version they follow.
+			if msg.Method == "textDocument/didOpen" || msg.Method == "textDocument/didChange" || msg.Method == "textDocument/didClose" {
+				s.handle(msg)
+			} else {
+				// Dispatch slow handlers in a goroutine so they don't block the read loop.
+				go s.handle(msg)
+			}
 		}
 	}
 }
@@ -276,6 +285,26 @@ type didChangeParams struct {
 	ContentChanges []json.RawMessage `json:"contentChanges"`
 }
 
+type documentPosition struct {
+	Line      uint32 `json:"line"`
+	Character uint32 `json:"character"`
+}
+
+type textDocumentContentChange struct {
+	Range *contentChangeRange `json:"range"`
+	Text  string              `json:"text"`
+}
+
+type contentChangeRange struct {
+	Start documentPosition `json:"start"`
+	End   documentPosition `json:"end"`
+}
+
+type trackedDocument struct {
+	text    string
+	version int32
+}
+
 type didCloseParams struct {
 	TextDocument struct {
 		URI string `json:"uri"`
@@ -326,6 +355,12 @@ func (s *lspServer) handleDidOpen(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
+	s.documentsMu.Lock()
+	if s.documents == nil {
+		s.documents = make(map[string]trackedDocument)
+	}
+	s.documents[p.TextDocument.URI] = trackedDocument{text: p.TextDocument.Text, version: p.TextDocument.Version}
+	s.documentsMu.Unlock()
 	s.update(&textItem{uri: p.TextDocument.URI, text: p.TextDocument.Text, version: p.TextDocument.Version})
 }
 
@@ -334,23 +369,103 @@ func (s *lspServer) handleDidChange(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil || len(p.ContentChanges) == 0 {
 		return
 	}
-	// Full sync — last change is the whole document.
-	var change struct {
-		Text string `json:"text"`
+	changes := make([]textDocumentContentChange, len(p.ContentChanges))
+	for i, rawChange := range p.ContentChanges {
+		if err := json.Unmarshal(rawChange, &changes[i]); err != nil {
+			return
+		}
 	}
-	if err := json.Unmarshal(p.ContentChanges[len(p.ContentChanges)-1], &change); err != nil {
+
+	s.documentsMu.Lock()
+	if s.documents == nil {
+		s.documents = make(map[string]trackedDocument)
+	}
+	current, ok := s.documents[p.TextDocument.URI]
+	if ok && current.version >= p.TextDocument.Version {
+		s.documentsMu.Unlock()
 		return
 	}
-	s.update(&textItem{uri: p.TextDocument.URI, text: change.Text, version: p.TextDocument.Version})
+	text := current.text
+	for _, change := range changes {
+		if change.Range == nil {
+			text = change.Text
+			continue
+		}
+		var err error
+		text, err = applyContentChange(text, *change.Range, change.Text)
+		if err != nil {
+			s.documentsMu.Unlock()
+			return
+		}
+	}
+	s.documents[p.TextDocument.URI] = trackedDocument{text: text, version: p.TextDocument.Version}
+	s.documentsMu.Unlock()
+	s.update(&textItem{uri: p.TextDocument.URI, text: text, version: p.TextDocument.Version})
 }
 
 func (s *lspServer) handleDidClose(raw json.RawMessage) {
 	reg := s.registry.Load()
 	var p didCloseParams
-	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
+	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
-	reg.discard(p.TextDocument.URI)
+	s.documentsMu.Lock()
+	delete(s.documents, p.TextDocument.URI)
+	s.documentsMu.Unlock()
+	if reg != nil {
+		reg.discard(p.TextDocument.URI)
+	}
+}
+
+func applyContentChange(text string, r contentChangeRange, replacement string) (string, error) {
+	runes := []rune(text)
+	start, ok := positionToRuneOffset(runes, r.Start)
+	if !ok {
+		return "", fmt.Errorf("invalid content change start position")
+	}
+	end, ok := positionToRuneOffset(runes, r.End)
+	if !ok || end < start {
+		return "", fmt.Errorf("invalid content change end position")
+	}
+	runes = append(runes[:start:start], append([]rune(replacement), runes[end:]...)...)
+	return string(runes), nil
+}
+
+func positionToRuneOffset(runes []rune, pos documentPosition) (int, bool) {
+	line := int(pos.Line)
+	start := 0
+	for current := 0; current < line; current++ {
+		i := start
+		for i < len(runes) && runes[i] != '\n' {
+			i++
+		}
+		if i == len(runes) {
+			return 0, false
+		}
+		start = i + 1
+	}
+	end := start
+	for end < len(runes) && runes[end] != '\n' {
+		end++
+	}
+	units := uint32(0)
+	for i := start; i <= end; i++ {
+		if units == pos.Character {
+			return i, true
+		}
+		if i == end {
+			break
+		}
+		if runes[i] > 0xffff {
+			units += 2
+		} else {
+			units++
+		}
+		if units > pos.Character {
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 // --- hover ---

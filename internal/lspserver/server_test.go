@@ -103,6 +103,53 @@ func TestLineHelpers(t *testing.T) {
 	}
 }
 
+func TestApplyContentChange(t *testing.T) {
+	text := "one two\nthree four"
+	var err error
+	text, err = applyContentChange(text, contentChangeRange{
+		Start: documentPosition{Line: 0, Character: 3},
+		End:   documentPosition{Line: 0, Character: 7},
+	}, "")
+	if err != nil || text != "one\nthree four" {
+		t.Fatalf("delete line text: %q, %v", text, err)
+	}
+	text, err = applyContentChange(text, contentChangeRange{
+		Start: documentPosition{Line: 1, Character: 0},
+		End:   documentPosition{Line: 1, Character: 5},
+	}, "four three")
+	if err != nil || text != "one\nfour three four" {
+		t.Fatalf("move/replacement text: %q, %v", text, err)
+	}
+
+	text, err = applyContentChange("é😀z", contentChangeRange{
+		Start: documentPosition{Line: 0, Character: 1},
+		End:   documentPosition{Line: 0, Character: 3},
+	}, "x")
+	if err != nil || text != "éxz" {
+		t.Fatalf("UTF-16 text: %q, %v", text, err)
+	}
+	if _, err := applyContentChange("é😀z", contentChangeRange{
+		Start: documentPosition{Line: 0, Character: 2},
+		End:   documentPosition{Line: 0, Character: 2},
+	}, "x"); err == nil {
+		t.Error("accepted position inside a UTF-16 surrogate pair")
+	}
+}
+
+func TestDidChangeAppliesIncrementalEdits(t *testing.T) {
+	s := &lspServer{}
+	s.handleDidOpen(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":1,"text":"one two\nthree four"}}`))
+	s.handleDidChange(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":2},"contentChanges":[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}},"text":""}]}`))
+	s.handleDidChange(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":3},"contentChanges":[{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}},"text":"four three"}]}`))
+
+	s.documentsMu.Lock()
+	got := s.documents["file:///edit.txt"].text
+	s.documentsMu.Unlock()
+	if got != "one\nfour three four" {
+		t.Fatalf("incremental edits produced %q", got)
+	}
+}
+
 func TestEncodeSemanticTokens(t *testing.T) {
 	text := "the dog\nran é far"
 	doc := &document{text: text, tokens: []postag.Token{
