@@ -7,9 +7,12 @@ Every install path needs the ONNX model files, which no package ships (they are 
 ```bash
 scripts/setup.sh                     # BERT-base POS model (~430 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
-scripts/setup.sh --model mpnet       # semantic mode, all-mpnet-base-v2 (~440 MB)
-scripts/setup.sh --model minilm      # semantic mode, all-MiniLM-L6-v2 (~92 MB)
+scripts/setup.sh --model pos-es      # Spanish POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model pos-fr      # French POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model multilingual  # semantic mode, paraphrase-multilingual-MiniLM-L12-v2 (~470 MB)
 scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
+scripts/setup.sh --model dependency-es  # Spanish parser, fp32 (~750 MB)
+scripts/setup.sh --model dependency-fr  # French parser, int8 (~350 MB)
 scripts/setup.sh --model all         # all models
 ```
 

@@ -78,10 +78,10 @@ Mode and model are fixed when the server starts, picked by the `-mode`, `-model`
 | Mode         | `cmd`                                                                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `pos`        | `{ "natural-syntax-ls" }`                                                                                                              |
-| `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/mpnet.onnx") }`                      |
+| `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/multilingual_minilm.onnx") }` |
 | `dependency` | `{ "natural-syntax-ls", "-mode", "dependency", "-model", vim.fn.expand("~/.config/natural-syntax-ls/en_ewt_electra_base_dependency.onnx") }` |
 
-Swap `mpnet.onnx` for `minilm.onnx`, or `bert_base.onnx` for `mobilebert.onnx` (`-model` also works in `pos` mode), to use the lighter models.
+Swap `bert_base.onnx` for `mobilebert.onnx`, `xlmr_es.onnx`, or `xlmr_fr.onnx` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency.onnx` or `fr_sequoia_camembert_large_dependency.onnx`, to use other models.
 
 To switch at runtime, restart the server with a new `cmd`. On Neovim 0.11+, this adds `:NlsMode pos|semantic|dependency` (put it after the `vim.lsp.config` block above):
 
@@ -89,7 +89,7 @@ To switch at runtime, restart the server with a new `cmd`. On Neovim 0.11+, this
 local nls_dir = vim.fn.expand("~/.config/natural-syntax-ls/")
 local nls_models = {
   pos = "bert_base.onnx",
-  semantic = "mpnet.onnx",
+  semantic = "multilingual_minilm.onnx",
   dependency = "en_ewt_electra_base_dependency.onnx",
 }
 

@@ -106,7 +106,7 @@ func TestSplitChunksProperties(t *testing.T) {
 			}
 			last, next := c[len(c)-1], chunks[i+1][0]
 			gap := string(runes[last.End:next.Begin])
-			if !sentenceEnders[last.Text] && !next.BlockStart && strings.Count(gap, "\n") < 2 {
+			if !sentenceEnders[last.Text] && !cjkClosers[last.Text] && !next.BlockStart && strings.Count(gap, "\n") < 2 {
 				t.Fatalf("trial %d chunk %d: breaks mid-sentence after %q (gap %q)", trial, i, last.Text, gap)
 			}
 		}
@@ -119,6 +119,25 @@ func TestSplitSentences(t *testing.T) {
 	want := [][]string{{"Hi", "."}, {"How", "are", "you", "?"}, {"Fine", "!"}, {"trailing"}}
 	if !slices.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSplitSentencesMultilingual(t *testing.T) {
+	for _, tc := range []struct {
+		name, in string
+		want     []string
+	}{
+		{"spanish inverted marks", "¿Cómo estás? ¡Muy bien! Gracias.", []string{"¿ Cómo estás ?", "¡ Muy bien !", "Gracias ."}},
+		{"french apostrophe", "L'ami arrive. Qu'est-ce que c'est ?", []string{"L'ami arrive .", "Qu'est - ce que c'est ?"}},
+		{"japanese", "今日は晴れです。明日は雨？はい！", []string{"今日は晴れです 。", "明日は雨 ？", "はい ！"}},
+		{"japanese quote keeps closer", "彼は「行きます。」と言った。", []string{"彼は 「 行きます 。 」", "と言った 。"}},
+		{"chinese", "你好吗？我很好。", []string{"你好吗 ？", "我很好 。"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentenceTexts(splitSentences(tokenizer.BasicTokenize(tc.in))); !slices.Equal(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

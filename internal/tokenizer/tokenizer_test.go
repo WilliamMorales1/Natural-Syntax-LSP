@@ -186,3 +186,50 @@ func TestTokenizeWords(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSidecarCJK(t *testing.T) {
+	dir := t.TempDir()
+	vocab := filepath.Join(dir, "m_vocab.txt")
+	os.WriteFile(vocab, []byte("[UNK]\n[CLS]\n[SEP]\n今\n日\nは\n。\nhello\n"), 0o644)
+	plain, err := Load(vocab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(plain.Tokenize("今日は。hello")); got != 3 {
+		t.Errorf("no sidecar: got %d words, want 3 (unchanged default)", got)
+	}
+	os.WriteFile(filepath.Join(dir, "m_tokenizer.json"), []byte(`{"tokenize_chinese_chars": true}`), 0o644)
+	cjk, err := Load(vocab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := cjk.Tokenize("今日は。hello")
+	var texts []string
+	for _, w := range words {
+		texts = append(texts, w.Text)
+	}
+	if want := []string{"今", "日", "は", "。", "hello"}; !slices.Equal(texts, want) {
+		t.Errorf("got %q, want %q", texts, want)
+	}
+	if words[4].Begin != 4 || words[4].End != 9 {
+		t.Errorf("offsets of hello: %d-%d", words[4].Begin, words[4].End)
+	}
+}
+
+func TestSidecarSplitsApostrophes(t *testing.T) {
+	dir := t.TempDir()
+	vocab := filepath.Join(dir, "m_vocab.txt")
+	os.WriteFile(vocab, []byte("[UNK]\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "m_tokenizer.json"), []byte(`{}`), 0o644)
+	tk, err := Load(vocab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, w := range tk.Tokenize("L'ami 今日") {
+		got = append(got, w.Text)
+	}
+	if want := []string{"L", "'", "ami", "今", "日"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

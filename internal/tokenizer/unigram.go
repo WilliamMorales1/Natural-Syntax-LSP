@@ -1,0 +1,335 @@
+package tokenizer
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"slices"
+	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
+)
+
+// Tokenizer is what inference needs from any model tokenizer.
+type Tokenizer interface {
+	// Tokenize splits text into the words the model tags.
+	Tokenize(text string) []WordSpan
+	// WordIDs encodes one word from Tokenize into model vocab ids, without special tokens.
+	WordIDs(word string) []int64
+	// CLSID is the id opening every sequence.
+	CLSID() int
+	// SEPID is the id closing every sequence.
+	SEPID() int
+}
+
+// EncodeWords builds a special-token-wrapped id stream for pre-split words; wrapper entries get swWordIdx -1.
+func EncodeWords(t Tokenizer, words []WordSpan) (inputIDs, attMask, tokTypeIDs []int64, swWordIdx []int, swIsFirst []bool) {
+	inputIDs = []int64{int64(t.CLSID())}
+	swWordIdx = []int{-1}
+	swIsFirst = []bool{false}
+	for wi, w := range words {
+		for pi, id := range t.WordIDs(w.Text) {
+			inputIDs = append(inputIDs, id)
+			swWordIdx = append(swWordIdx, wi)
+			swIsFirst = append(swIsFirst, pi == 0)
+		}
+	}
+	inputIDs = append(inputIDs, int64(t.SEPID()))
+	swWordIdx = append(swWordIdx, -1)
+	swIsFirst = append(swIsFirst, false)
+
+	n := len(inputIDs)
+	attMask = make([]int64, n)
+	for i := range attMask {
+		attMask[i] = 1
+	}
+	return inputIDs, attMask, make([]int64, n), swWordIdx, swIsFirst
+}
+
+// UnigramTokenizer is a SentencePiece Unigram model loaded from a HF tokenizer.json.
+type UnigramTokenizer struct {
+	ids       map[string]int32
+	scores    []float64
+	pieces    []string
+	unkID     int
+	unkScore  float64
+	maxPiece  int
+	clsID     int
+	sepID     int
+	metaspace bool
+}
+
+// unigramFile is the subset of a HF tokenizer.json this package reads.
+type unigramFile struct {
+	Model struct {
+		Type  string            `json:"type"`
+		UnkID int               `json:"unk_id"`
+		Vocab []json.RawMessage `json:"vocab"`
+	} `json:"model"`
+	PreTokenizer  json.RawMessage `json:"pre_tokenizer"`
+	PostProcessor struct {
+		Single []struct {
+			SpecialToken *struct {
+				ID string `json:"id"`
+			} `json:"SpecialToken"`
+		} `json:"single"`
+	} `json:"post_processor"`
+}
+
+// isUnigramFile reports whether data is a full HF tokenizer.json with a Unigram model, as opposed to a tokenizer_config.json.
+func isUnigramFile(data []byte) bool {
+	var probe struct {
+		Model struct {
+			Type string `json:"type"`
+		} `json:"model"`
+	}
+	return json.Unmarshal(data, &probe) == nil && probe.Model.Type == "Unigram"
+}
+
+// LoadUnigram reads a HF tokenizer.json holding a Unigram model.
+func LoadUnigram(path string) (*UnigramTokenizer, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return parseUnigram(data)
+}
+
+func parseUnigram(data []byte) (*UnigramTokenizer, error) {
+	var f unigramFile
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, err
+	}
+	if f.Model.Type != "Unigram" {
+		return nil, fmt.Errorf("tokenizer model type %q, want Unigram", f.Model.Type)
+	}
+	t := &UnigramTokenizer{
+		ids:       make(map[string]int32, len(f.Model.Vocab)),
+		scores:    make([]float64, len(f.Model.Vocab)),
+		pieces:    make([]string, len(f.Model.Vocab)),
+		unkID:     f.Model.UnkID,
+		metaspace: strings.Contains(string(f.PreTokenizer), `"Metaspace"`),
+	}
+	minScore := 0.0
+	for i, raw := range f.Model.Vocab {
+		var entry []json.RawMessage
+		if err := json.Unmarshal(raw, &entry); err != nil || len(entry) != 2 {
+			return nil, fmt.Errorf("bad unigram vocab entry %d", i)
+		}
+		var piece string
+		var score float64
+		if json.Unmarshal(entry[0], &piece) != nil || json.Unmarshal(entry[1], &score) != nil {
+			return nil, fmt.Errorf("bad unigram vocab entry %d", i)
+		}
+		t.pieces[i], t.scores[i] = piece, score
+		if _, dup := t.ids[piece]; !dup {
+			t.ids[piece] = int32(i)
+		}
+		minScore = math.Min(minScore, score)
+		t.maxPiece = max(t.maxPiece, len([]rune(piece)))
+	}
+	// SentencePiece scores unknown characters ten below the worst real piece so they only win as a last resort.
+	t.unkScore = minScore - 10
+	special := func(i int) int {
+		if i < len(f.PostProcessor.Single) && f.PostProcessor.Single[i].SpecialToken != nil {
+			if id, ok := t.ids[f.PostProcessor.Single[i].SpecialToken.ID]; ok {
+				return int(id)
+			}
+		}
+		return -1
+	}
+	t.clsID = special(0)
+	t.sepID = special(len(f.PostProcessor.Single) - 1)
+	if t.clsID < 0 || t.sepID < 0 {
+		return nil, fmt.Errorf("tokenizer.json has no single-sequence special tokens")
+	}
+	return t, nil
+}
+
+// CLSID returns the id that opens a sequence ([CLS] or <s>).
+func (t *UnigramTokenizer) CLSID() int { return t.clsID }
+
+// SEPID returns the id that closes a sequence ([SEP] or </s>).
+func (t *UnigramTokenizer) SEPID() int { return t.sepID }
+
+// Pieces returns the surface strings of ids, for debugging.
+func (t *UnigramTokenizer) Pieces(ids []int64) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = t.pieces[id]
+	}
+	return out
+}
+
+// WordIDs encodes one pre-split word, with a leading ▁ for models that mark word starts.
+func (t *UnigramTokenizer) WordIDs(word string) []int64 {
+	norm, _ := normalizeRunes(word)
+	if t.metaspace {
+		norm = append([]rune{'▁'}, norm...)
+	}
+	segs := t.viterbi(norm)
+	out := make([]int64, len(segs))
+	for i, s := range segs {
+		out[i] = int64(s.id)
+	}
+	return out
+}
+
+type segment struct {
+	from, to int // rune range in the viterbi input
+	id       int
+}
+
+// viterbi finds the highest-scoring segmentation of runes into vocab pieces.
+func (t *UnigramTokenizer) viterbi(runes []rune) []segment {
+	n := len(runes)
+	if n == 0 {
+		return nil
+	}
+	best := make([]float64, n+1)
+	prev := make([]int, n+1)
+	prevID := make([]int, n+1)
+	for i := 1; i <= n; i++ {
+		best[i] = math.Inf(-1)
+	}
+	for end := 1; end <= n; end++ {
+		for start := max(0, end-t.maxPiece); start < end; start++ {
+			id, ok := t.ids[string(runes[start:end])]
+			if !ok || best[start] == math.Inf(-1) {
+				continue
+			}
+			if s := best[start] + t.scores[id]; s > best[end] {
+				best[end], prev[end], prevID[end] = s, start, int(id)
+			}
+		}
+		// Single unknown character as fallback, scored below any real piece.
+		if best[end] == math.Inf(-1) {
+			best[end], prev[end], prevID[end] = best[end-1]+t.unkScore, end-1, t.unkID
+		}
+	}
+	var segs []segment
+	for end := n; end > 0; end = prev[end] {
+		segs = append(segs, segment{prev[end], end, prevID[end]})
+	}
+	slices.Reverse(segs)
+	// HF fuses a run of unknown characters into a single unknown token.
+	fused := segs[:1]
+	for _, s := range segs[1:] {
+		if last := &fused[len(fused)-1]; s.id == t.unkID && last.id == t.unkID {
+			last.to = s.to
+		} else {
+			fused = append(fused, s)
+		}
+	}
+	return fused
+}
+
+// Tokenize splits text into words like the WordPiece path does, then breaks each CJK run into the Unigram pieces the model would see, since those scripts have no spaces.
+func (t *UnigramTokenizer) Tokenize(text string) []WordSpan {
+	runes := []rune(text)
+	var out []WordSpan
+	for _, w := range mergeElisions(runes, basicTokenize(text, false, true)) {
+		out = append(out, t.splitCJK(runes, w)...)
+	}
+	return out
+}
+
+// frenchElisions are clitics written with a trailing apostrophe that UD treats as their own word.
+var frenchElisions = map[string]bool{
+	"l": true, "d": true, "j": true, "m": true, "t": true, "s": true, "n": true, "c": true,
+	"qu": true, "jusqu": true, "lorsqu": true, "puisqu": true, "quoiqu": true,
+}
+
+// mergeElisions glues an elided clitic to its apostrophe, so "l ' ami" becomes "l'" and "ami", and rejoins "aujourd'hui".
+func mergeElisions(runes []rune, words []WordSpan) []WordSpan {
+	var out []WordSpan
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if i+2 < len(words) {
+			ap, next := words[i+1], words[i+2]
+			joined := (ap.Text == "'" || ap.Text == "’") && ap.Begin == w.End && next.Begin == ap.End
+			switch {
+			case joined && strings.EqualFold(w.Text, "aujourd") && strings.EqualFold(next.Text, "hui"):
+				w.Text, w.End = string(runes[w.Begin:next.End]), next.End
+				i += 2
+			case joined && frenchElisions[strings.ToLower(w.Text)] && unicode.IsLetter(runes[next.Begin]):
+				w.Text, w.End = w.Text+ap.Text, ap.End
+				i++
+			}
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// splitCJK cuts out maximal Han/kana runs from w and segments each with Unigram.
+func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan) []WordSpan {
+	src := runes[w.Begin:w.End]
+	hasCJK := false
+	for _, r := range src {
+		if isCJK(r) {
+			hasCJK = true
+			break
+		}
+	}
+	if !hasCJK {
+		return []WordSpan{w}
+	}
+	var parts []WordSpan
+	flush := func(from, to int) {
+		if to > from {
+			parts = append(parts, WordSpan{Text: string(src[from:to]), Begin: w.Begin + uint32(from), End: w.Begin + uint32(to)})
+		}
+	}
+	for i := 0; i < len(src); {
+		j := i
+		cjk := isCJK(src[i])
+		for j < len(src) && isCJK(src[j]) == cjk {
+			j++
+		}
+		if !cjk {
+			flush(i, j)
+			i = j
+			continue
+		}
+		norm, origin := normalizeRunes(string(src[i:j]))
+		for _, s := range t.viterbi(norm) {
+			flush(i+origin[s.from], i+originEnd(origin, s.to, j-i))
+		}
+		i = j
+	}
+	if len(parts) > 0 {
+		parts[0].BlockStart = w.BlockStart
+	}
+	return parts
+}
+
+// originEnd maps an exclusive normalized rune end back to an exclusive original rune end.
+func originEnd(origin []int, to, srcLen int) int {
+	if to >= len(origin) {
+		return srcLen
+	}
+	return origin[to]
+}
+
+// normalizeRunes applies NFKC cluster by cluster and returns the result with, for each output rune, the index of the source rune that produced it.
+func normalizeRunes(s string) (out []rune, origin []int) {
+	src := []rune(s)
+	for i := 0; i < len(src); {
+		j := i + 1
+		for j < len(src) && unicode.In(src[j], unicode.Mn, unicode.Me, unicode.Mc) {
+			j++
+		}
+		for _, r := range norm.NFKC.String(string(src[i:j])) {
+			if r == 0 || (unicode.IsControl(r) && !unicode.IsSpace(r)) {
+				continue
+			}
+			out = append(out, r)
+			origin = append(origin, i)
+		}
+		i = j
+	}
+	return out, origin
+}

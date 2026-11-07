@@ -4,6 +4,7 @@ const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 const vscode = require('vscode');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 
 function getDataDir() {
     return process.platform === 'win32'
@@ -138,7 +139,9 @@ async function activate(context) {
     const slug = slugify(modelName);
     const suffix = mode === 'dependency' ? '_dependency' : '';
     const modelFile = path.join(dataDir, `${slug}${suffix}.onnx`);
-    const vocabFile = path.join(dataDir, `${slug}${suffix}_vocab.txt`);
+    // SentencePiece models ship a tokenizer.json instead of a vocab.txt.
+    const vocabTxt = path.join(dataDir, `${slug}${suffix}_vocab.txt`);
+    const vocabFile = fs.existsSync(vocabTxt) ? vocabTxt : path.join(dataDir, `${slug}${suffix}_tokenizer.json`);
     console.log('[nls] model =', modelFile);
 
     const serverArgs = ['--mode', mode, '--model', modelFile, '--vocab', vocabFile];

@@ -14,9 +14,9 @@ import (
 )
 
 func main() {
-	// supported models: mpnet, minilm, mobilebert, bert_base, en_ewt.electra-base
+	// supported models: multilingual_minilm, mpnet, minilm, mobilebert, bert_base, xlmr_es, xlmr_fr, en_ewt.electra-base
 	modelPath := flag.String("model", "", "Path to a .onnx model file")
-	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt file (the model's own vocab, whatever mode)")
+	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt (or Unigram _tokenizer.json) file (the model's own tokenizer, whatever mode)")
 	mode := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
 	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
 	flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
@@ -36,21 +36,25 @@ func main() {
 			filepath.Join(dataDir, "mobilebert.onnx"),
 			filepath.Join(exeDir, "bert_base.onnx"),
 			filepath.Join(exeDir, "mobilebert.onnx"),
+			filepath.Join(dataDir, "multilingual_minilm.onnx"),
 			filepath.Join(dataDir, "mpnet.onnx"),
 			filepath.Join(dataDir, "minilm.onnx"),
+			filepath.Join(exeDir, "multilingual_minilm.onnx"),
 			filepath.Join(exeDir, "mpnet.onnx"),
 			filepath.Join(exeDir, "minilm.onnx"),
 		)
 	}
 
 	embedHiddenSize := 768
-	if strings.HasPrefix(filepath.Base(*modelPath), "minilm") {
+	if strings.Contains(strings.ToLower(filepath.Base(*modelPath)), "minilm") {
 		embedHiddenSize = 384
 	}
 
 	// The vocab must belong to the chosen model; any other vocab maps subwords to the wrong ids.
 	if *vocabPath == "" && *modelPath != "" {
-		*vocabPath = findFile(strings.TrimSuffix(*modelPath, ".onnx") + "_vocab.txt")
+		base := strings.TrimSuffix(*modelPath, ".onnx")
+		// Unigram models ship a tokenizer.json instead of a vocab.txt.
+		*vocabPath = findFile(base+"_vocab.txt", base+"_tokenizer.json")
 	}
 
 	if *mode == "semantic" {

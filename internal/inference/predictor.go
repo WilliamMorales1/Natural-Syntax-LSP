@@ -14,6 +14,11 @@ type Predictor interface {
 	Close()
 }
 
+// TextTokenizer is a Predictor that dictates its own word segmentation.
+type TextTokenizer interface {
+	Tokenize(text string) []tokenizer.WordSpan
+}
+
 // Embedder is a Predictor whose tokens come with unit embeddings, so they can be recolored per document.
 type Embedder interface {
 	Predictor

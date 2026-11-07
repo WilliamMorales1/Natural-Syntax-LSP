@@ -63,3 +63,30 @@ func TestFilterToken(t *testing.T) {
 		}
 	}
 }
+
+func TestParseLabel(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want PartOfSpeech
+		ok   bool
+	}{
+		{"NN", NN, true},
+		{"PRP$", PRPS, true},
+		{"NOUN", NN, true},
+		{"PROPN", NNP, true},
+		{"AUX", MD, true},
+		{"B-VERB", VB, true},
+		{"I-NOUN+ADP", NN, true},
+		{"VERB+AUX", VB, true},
+		{"NMS", 0, false},
+		{"", 0, false},
+	} {
+		got, ok := ParseLabel(tc.in)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("ParseLabel(%q) = %v, %v; want %v, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+	if !IsContinuation("I-NOUN") || IsContinuation("B-NOUN") || IsContinuation("NOUN") {
+		t.Error("IsContinuation misclassifies chunk prefixes")
+	}
+}

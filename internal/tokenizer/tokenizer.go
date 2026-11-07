@@ -3,6 +3,9 @@ package tokenizer
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -26,6 +29,32 @@ type BERTTokenizer struct {
 	sepID int
 	// uncased is true for "do_lower_case" BERT vocabs, which need input lowercased first or capitalized words wordpiece to [UNK].
 	uncased bool
+	// charCJK gives every Han/kana character its own word, as BERT's tokenize_chinese_chars and character-subword vocabs do.
+	charCJK bool
+	// hfPunct splits every apostrophe like HF BertTokenizer, instead of the English-specific contraction handling.
+	hfPunct bool
+}
+
+// tokenizerConfig is the subset of a HF tokenizer_config.json that changes how text is split.
+type tokenizerConfig struct {
+	TokenizeChineseChars *bool  `json:"tokenize_chinese_chars"`
+	SubwordTokenizerType string `json:"subword_tokenizer_type"`
+}
+
+// SidecarPath maps "x_vocab.txt" to "x_tokenizer.json"; a path already naming the sidecar is returned as is.
+func SidecarPath(vocabPath string) string {
+	if strings.HasSuffix(vocabPath, "_tokenizer.json") {
+		return vocabPath
+	}
+	return strings.TrimSuffix(vocabPath, "_vocab.txt") + "_tokenizer.json"
+}
+
+// Open loads the tokenizer a model ships with: a Unigram tokenizer.json sidecar if present, else the WordPiece vocab.txt.
+func Open(vocabPath string) (Tokenizer, error) {
+	if data, err := os.ReadFile(SidecarPath(vocabPath)); err == nil && isUnigramFile(data) {
+		return parseUnigram(data)
+	}
+	return Load(vocabPath)
 }
 
 // Load reads a BERT vocab.txt file and builds a tokenizer from it.
@@ -51,14 +80,32 @@ func Load(vocabPath string) (*BERTTokenizer, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
+	var cfg tokenizerConfig
+	hasSidecar := false
+	if data, err := os.ReadFile(SidecarPath(vocabPath)); err == nil {
+		hasSidecar = true
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
 	return &BERTTokenizer{
-		vocab: vocab,
-		unkID: vocab["[UNK]"],
-		clsID: vocab["[CLS]"],
-		sepID: vocab["[SEP]"],
+		// HF BertTokenizer defaults tokenize_chinese_chars to true when the config omits it.
+		charCJK: hasSidecar && (cfg.TokenizeChineseChars == nil || *cfg.TokenizeChineseChars) || cfg.SubwordTokenizerType == "character",
+		hfPunct: hasSidecar,
+		vocab:   vocab,
+		unkID:   vocab["[UNK]"],
+		clsID:   vocab["[CLS]"],
+		sepID:   vocab["[SEP]"],
 		// Cased vocabs have thousands of uppercase entries; uncased have essentially none outside special tokens, so 1% is a safe margin.
 		uncased: upperEntries < len(vocab)/100,
 	}, nil
+}
+
+// Tokenize splits text into word spans following this tokenizer's own pretokenization.
+func (t *BERTTokenizer) Tokenize(text string) []WordSpan {
+	return basicTokenize(text, t.charCJK, t.hfPunct)
 }
 
 // CLSID returns the vocab id of [CLS].
@@ -72,25 +119,22 @@ func (t *BERTTokenizer) VocabID(piece string) int {
 	return t.unkID
 }
 
+// SEPID returns the vocab id of [SEP].
+func (t *BERTTokenizer) SEPID() int { return t.sepID }
+
+// WordIDs encodes one word as WordPiece vocab ids.
+func (t *BERTTokenizer) WordIDs(word string) []int64 {
+	pieces := t.WordPiece(word)
+	ids := make([]int64, len(pieces))
+	for i, p := range pieces {
+		ids[i] = int64(t.VocabID(p))
+	}
+	return ids
+}
+
 // TokenizeWords encodes a pre-split word slice into a [CLS]-prefixed, [SEP]-suffixed subword stream; [CLS]/[SEP] entries get swWordIdx -1.
 func (t *BERTTokenizer) TokenizeWords(words []WordSpan) (inputIDs, attMask, tokTypeIDs []int64, swWordIdx []int, swIsFirst []bool) {
-	inputIDs = []int64{int64(t.clsID)}
-	swWordIdx = []int{-1}
-	swIsFirst = []bool{false}
-
-	for wi, w := range words {
-		for pi, piece := range t.WordPiece(w.Text) {
-			inputIDs = append(inputIDs, int64(t.VocabID(piece)))
-			swWordIdx = append(swWordIdx, wi)
-			swIsFirst = append(swIsFirst, pi == 0)
-		}
-	}
-	inputIDs = append(inputIDs, int64(t.sepID))
-	swWordIdx = append(swWordIdx, -1)
-	swIsFirst = append(swIsFirst, false)
-
-	n := len(inputIDs)
-	return inputIDs, slices.Repeat([]int64{1}, n), make([]int64, n), swWordIdx, swIsFirst
+	return EncodeWords(t, words)
 }
 
 // WordPiece splits a single word into WordPiece subword tokens.
@@ -125,7 +169,9 @@ func (t *BERTTokenizer) WordPiece(word string) []string {
 }
 
 // BasicTokenize splits text on whitespace/punctuation while tracking char offsets.
-func BasicTokenize(text string) []WordSpan {
+func BasicTokenize(text string) []WordSpan { return basicTokenize(text, false, false) }
+
+func basicTokenize(text string, charCJK, hfPunct bool) []WordSpan {
 	var words []WordSpan
 	runes := []rune(text)
 	n := len(runes)
@@ -151,7 +197,7 @@ func BasicTokenize(text string) []WordSpan {
 			i++
 		}
 		// Split run on punctuation boundaries.
-		spans := splitPunct(runes[start:i], uint32(start))
+		spans := splitPunct(runes[start:i], uint32(start), charCJK, hfPunct)
 		if lineFirst && blockLine && len(spans) > 0 {
 			spans[0].BlockStart = true
 		}
@@ -253,7 +299,7 @@ func isRule(s string) bool {
 }
 
 // splitPunct splits a whitespace-free run into words and punctuation, keeping "'s" and mid-word apostrophes attached.
-func splitPunct(runes []rune, offset uint32) []WordSpan {
+func splitPunct(runes []rune, offset uint32, charCJK, hfPunct bool) []WordSpan {
 	var spans []WordSpan
 	emit := func(from, to int) {
 		if to > from {
@@ -268,10 +314,10 @@ func splitPunct(runes []rune, offset uint32) []WordSpan {
 	n := len(runes)
 	for i := 0; i < n; {
 		r := runes[i]
-		isPossessiveApostrophe := r == '\'' &&
+		isPossessiveApostrophe := !hfPunct && r == '\'' &&
 			i+1 < n && (runes[i+1] == 's' || runes[i+1] == 'S') &&
 			(i+2 >= n || !unicode.IsLetter(runes[i+2]))
-		isMidWordApostrophe := r == '\'' && i > 0 && i+1 < n &&
+		isMidWordApostrophe := !hfPunct && r == '\'' && i > 0 && i+1 < n &&
 			unicode.IsLetter(runes[i-1]) && unicode.IsLetter(runes[i+1]) &&
 			!isPossessiveApostrophe
 		switch {
@@ -280,7 +326,7 @@ func splitPunct(runes []rune, offset uint32) []WordSpan {
 			emit(i, i+2)
 			i += 2
 			start = i
-		case (unicode.IsPunct(r) || unicode.IsSymbol(r)) && !isMidWordApostrophe:
+		case (unicode.IsPunct(r) || unicode.IsSymbol(r) || charCJK && isCJK(r)) && !isMidWordApostrophe:
 			emit(start, i)
 			emit(i, i+1)
 			i++
@@ -298,4 +344,9 @@ func IsAllPunct(s string) bool {
 	return s != "" && !strings.ContainsFunc(s, func(r rune) bool {
 		return !unicode.IsPunct(r) && !unicode.IsSymbol(r)
 	})
+}
+
+func isCJK(r rune) bool {
+	// U+30FC (prolonged sound mark) belongs to katakana words but is script-common.
+	return r == 'ー' || unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r)
 }

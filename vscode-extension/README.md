@@ -5,7 +5,7 @@ Colors prose by part of speech, contextual meaning, or dependency relation, usin
 ![color highlighting and hover](https://raw.githubusercontent.com/WilliamMorales1/Natural-Syntax-LSP/master/docs/screenshotExample.png)
 
 - **POS mode** (default): BERT/MobileBERT part-of-speech tags, colored by your theme.
-- **Semantic mode**: words used alike get similar colors (MPNet or MiniLM embeddings).
+- **Semantic mode**: words used alike get similar colors (multilingual MiniLM embeddings).
 - **Dependency mode**: Universal Dependencies relations from a biaffine parser.
 
 Everything runs locally. The server binary and ONNX Runtime are bundled (Windows x64, Linux x64, macOS arm64).
@@ -17,9 +17,12 @@ The models are too large to bundle. Export the ones you want once, from a checko
 ```bash
 scripts/setup.sh                     # POS, bert-base (~430 MB)
 scripts/setup.sh --model mobilebert  # POS, lighter (~105 MB)
-scripts/setup.sh --model mpnet       # semantic (~440 MB)
-scripts/setup.sh --model minilm      # semantic, lighter (~92 MB)
-scripts/setup.sh --model dependency  # dependency (~470 MB)
+scripts/setup.sh --model pos-es      # POS, Spanish (~280 MB)
+scripts/setup.sh --model pos-fr      # POS, French (~280 MB)
+scripts/setup.sh --model multilingual  # semantic, 50+ languages (~470 MB)
+scripts/setup.sh --model dependency  # dependency, English (~470 MB)
+scripts/setup.sh --model dependency-es  # dependency, Spanish (~750 MB)
+scripts/setup.sh --model dependency-fr  # dependency, French (~350 MB)
 ```
 
 On Windows use `scripts/setup.ps1 -Model <name>`. Models go to `%APPDATA%\natural-syntax-ls\` or `~/.config/natural-syntax-ls/`.

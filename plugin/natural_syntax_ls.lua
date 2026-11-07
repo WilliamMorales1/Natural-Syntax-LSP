@@ -5,7 +5,7 @@ vim.g.loaded_natural_syntax_ls = true
 
 local models = {
   pos = "bert_base.onnx",
-  semantic = "mpnet.onnx",
+  semantic = "multilingual_minilm.onnx",
   dependency = "en_ewt_electra_base_dependency.onnx",
 }
 

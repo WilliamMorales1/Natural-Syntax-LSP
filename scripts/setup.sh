@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|minilm|mpnet|dependency|all]
+# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|multilingual|dependency|dependency-es|dependency-fr|all]
 #   --model  Which model to export (default: bert-base)
 
 set -euo pipefail
@@ -18,8 +18,9 @@ done
 
 # Validate early.
 case "$MODEL" in
-    bert-base|mobilebert|all|minilm|mpnet|dependency) ;;
-    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, minilm, mpnet, dependency, or all." >&2; exit 1 ;;
+    bert-base|mobilebert|pos-es|pos-fr|multilingual|dependency|dependency-es|dependency-fr|all) ;;
+    minilm|mpnet) echo "ERROR: '$MODEL' was replaced by 'multilingual' (paraphrase-multilingual-MiniLM-L12-v2)." >&2; exit 1 ;;
+    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, multilingual, dependency, dependency-es, dependency-fr, or all." >&2; exit 1 ;;
 esac
 
 step() { echo; echo "==> $1"; }
@@ -62,10 +63,10 @@ ok "Data directory: $DATA_DIR"
 # a plain install, as on Arch, Debian 12+, Fedora, and other recent distros.
 # Without pip, fall back to uv, then conda, each into an env under the repo.
 
-step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
+step "Installing Python dependencies (transformers, torch, onnx, onnxscript, onnxruntime, requests)"
 
-PKGS=(transformers torch onnx onnxscript requests)
-if [[ "$MODEL" == "dependency" || "$MODEL" == "all" ]]; then
+PKGS=(transformers torch onnx onnxscript onnxruntime requests)
+if [[ "$MODEL" == dependency* || "$MODEL" == "all" ]]; then
     PKGS+=(diaparser)
 fi
 
@@ -115,48 +116,77 @@ ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
+slugify() { printf '%s' "$1" | tr '-./' '___'; }
+
+# has_tokenizer SLUG: WordPiece models ship _vocab.txt, SentencePiece ones only _tokenizer.json.
+has_tokenizer() {
+    [[ -f "$DATA_DIR/${1}_vocab.txt" || -f "$DATA_DIR/${1}_tokenizer.json" ]]
+}
+
+# export_pos_model NAME LABEL [export_model.py args...]
 export_pos_model() {
-    local model_name="$1" label="$2"
-    local slug="${model_name//-/_}"
-    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_vocab.txt" && -f "$DATA_DIR/${slug}_labels.json" ]]; then
+    local model_name="$1" label="$2"; shift 2
+    local slug; slug="$(slugify "$model_name")"
+    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_labels.json" ]] && has_tokenizer "$slug"; then
         ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
         ok "$label exported."
     fi
 }
 
 export_semantic_model() {
-    local model_name="$1" label="$2"
-    local slug="${model_name//-/_}"
-    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_vocab.txt" ]]; then
+    local model_name="$1" label="$2"; shift 2
+    local slug; slug="$(slugify "$model_name")"
+    if [[ -f "$DATA_DIR/${slug}.onnx" ]] && has_tokenizer "$slug"; then
         ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
         ok "$label exported."
     fi
 }
 
+# export_dependency_model CATALOG_NAME LABEL [export_model.py args...]
 export_dependency_model() {
-    step "Exporting en_ewt.electra-base dependency parser to ONNX"
-    "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model en_ewt.electra-base
-    ok "Dependency model exported."
+    local model_name="$1" label="$2"; shift 2
+    local slug; slug="$(slugify "$model_name")_dependency"
+    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_rels.json" ]] && has_tokenizer "$slug"; then
+        ok "${slug}.onnx already exists, skipping export."
+    else
+        step "Exporting $label dependency parser to ONNX"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
+        ok "Dependency model exported."
+    fi
 }
 
+# Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
+export_pos_es()  { export_pos_model xlmr-es "Spanish POS (XLM-R, int8, ~280 MB)" --int8; }
+export_pos_fr()  { export_pos_model xlmr-fr "French POS (XLM-R, int8, ~280 MB)" --int8; }
+export_multilingual() { export_semantic_model multilingual-minilm "multilingual MiniLM semantic (~470 MB)"; }
+export_dep_en()  { export_dependency_model en_ewt.electra-base "English (en_ewt.electra-base, ~470 MB)"; }
+export_dep_es()  { export_dependency_model es_ancora.mbert "Spanish (es_ancora.mbert, fp32, ~750 MB)"; }
+export_dep_fr()  { export_dependency_model fr_sequoia.camembert-large "French (fr_sequoia.camembert-large, int8, ~350 MB)" --int8; }
+
 case "$MODEL" in
-    bert-base)   export_pos_model  bert-base  "BERT-base POS (~400 MB)" ;;
-    mobilebert)  export_pos_model  mobilebert "MobileBERT POS (~100 MB)" ;;
-    minilm)      export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)" ;;
-    mpnet)       export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)" ;;
-    dependency)  export_dependency_model ;;
+    bert-base)       export_pos_model bert-base  "BERT-base POS (~400 MB)" ;;
+    mobilebert)      export_pos_model mobilebert "MobileBERT POS (~100 MB)" ;;
+    pos-es)          export_pos_es ;;
+    pos-fr)          export_pos_fr ;;
+    multilingual)    export_multilingual ;;
+    dependency)      export_dep_en ;;
+    dependency-es)   export_dep_es ;;
+    dependency-fr)   export_dep_fr ;;
     all)
-        export_pos_model  bert-base  "BERT-base POS (~400 MB)"
-        export_pos_model  mobilebert "MobileBERT POS (~100 MB)"
-        export_semantic_model minilm "all-MiniLM-L6-v2 (~22 MB)"
-        export_semantic_model mpnet  "all-mpnet-base-v2 (~110 MB)"
-        export_dependency_model
+        export_pos_model bert-base  "BERT-base POS (~400 MB)"
+        export_pos_model mobilebert "MobileBERT POS (~100 MB)"
+        export_pos_es
+        export_pos_fr
+        export_multilingual
+        export_dep_en
+        export_dep_es
+        export_dep_fr
         ;;
 esac
 

@@ -17,7 +17,7 @@ import (
 // DependencyModel runs a biaffine dependency-parsing ONNX model (BERT + BiLSTM + biaffine arc/relation scorers; see scripts/export_model.py).
 type DependencyModel struct {
 	session   *ort.DynamicAdvancedSession
-	tokenizer *tokenizer.BERTTokenizer
+	tokenizer tokenizer.Tokenizer
 	rels      []postag.Deprel // index → decoded Deprel, loaded from _dependency_rels.json; index 0 is the unused "<bos>" placeholder
 }
 
@@ -79,12 +79,10 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 	bounds := []wordPieces{{0, 1}} // root word = [CLS] alone
 
 	for _, w := range words {
-		pieces := m.tokenizer.WordPiece(w.Text)
+		ids := m.tokenizer.WordIDs(w.Text)
 		start := len(pieceIDs)
-		for _, piece := range pieces {
-			pieceIDs = append(pieceIDs, int64(m.tokenizer.VocabID(piece)))
-		}
-		bounds = append(bounds, wordPieces{start, len(pieces)})
+		pieceIDs = append(pieceIDs, ids...)
+		bounds = append(bounds, wordPieces{start, len(ids)})
 	}
 
 	// Truncate to maxSeqLen subwords, dropping any word whose pieces don't fully fit.
@@ -113,7 +111,13 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 }
 
 // sentenceEnders are word texts that end a sentence for chunking purposes (the biaffine model was trained one sentence per synthetic root).
-var sentenceEnders = map[string]bool{".": true, "!": true, "?": true}
+var sentenceEnders = map[string]bool{
+	".": true, "!": true, "?": true,
+	"。": true, "！": true, "？": true, "｡": true, "‼": true, "⁇": true, "⁈": true, "⁉": true,
+}
+
+// cjkClosers are closing brackets that stay with the sentence they close, as in 「行きます。」.
+var cjkClosers = map[string]bool{"」": true, "』": true, "）": true, "】": true, "〕": true, "｣": true}
 
 // splitSentences groups words into sentences: markdown blocks, each further split right after any sentenceEnders token.
 func splitSentences(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
@@ -121,10 +125,15 @@ func splitSentences(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
 	for _, block := range splitBlocks(words) {
 		start := 0
 		for i, w := range block {
-			if sentenceEnders[w.Text] && !isOrderedListMarker(block[start:i+1]) {
-				sentences = append(sentences, block[start:i+1])
-				start = i + 1
+			if i < start || !sentenceEnders[w.Text] || isOrderedListMarker(block[start:i+1]) {
+				continue
 			}
+			end := i + 1
+			for end < len(block) && cjkClosers[block[end].Text] {
+				end++
+			}
+			sentences = append(sentences, block[start:end])
+			start = end
 		}
 		if start < len(block) {
 			sentences = append(sentences, block[start:])
@@ -276,4 +285,9 @@ func softmaxAt(v []float32, idx int) float32 {
 		return 0
 	}
 	return float32(math.Exp(float64(v[idx]-peak)) / sum)
+}
+
+// Tokenize splits text using the model's own tokenizer rules.
+func (m *DependencyModel) Tokenize(text string) []tokenizer.WordSpan {
+	return m.tokenizer.Tokenize(text)
 }

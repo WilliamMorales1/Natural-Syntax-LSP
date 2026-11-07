@@ -15,7 +15,7 @@ Semantic mode assigns each word a color derived from its contextual embedding, s
 
 > A fox found some bread near the old computer and seemed happy. Later a deer ate an apple beside the printer, looking scared. …
 
-The groups are interleaved, so any color grouping comes from the words' meanings rather than their position in the text. With `all-mpnet-base-v2` and the default settings:
+The groups are interleaved, so any color grouping comes from the words' meanings rather than their position in the text. With `all-mpnet-base-v2` and the default settings (measured before the default semantic model became `paraphrase-multilingual-MiniLM-L12-v2`):
 
 | group      | words                                                    | color               |
 | ---------- | -------------------------------------------------------- | ------------------- |

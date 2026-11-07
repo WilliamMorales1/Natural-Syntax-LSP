@@ -17,18 +17,21 @@ const ChunkSize = 200
 // baseModel holds the ONNX session shared by BERT-style token models (POSModel, EmbeddingModel); inputs are sized to each chunk, never padded.
 type baseModel struct {
 	session    *ort.DynamicAdvancedSession
-	tokenizer  *tokenizer.BERTTokenizer
+	tokenizer  tokenizer.Tokenizer
 	outputName string
 	lastDim    int64
 }
 
+// Tokenize splits text using the model's own tokenizer rules.
+func (b *baseModel) Tokenize(text string) []tokenizer.WordSpan { return b.tokenizer.Tokenize(text) }
+
 // initEnvAndTokenizer inits the ORT env and loads the BERT tokenizer; callers must call ort.DestroyEnvironment() on later errors and on Close().
-func initEnvAndTokenizer(vocabPath string) (*tokenizer.BERTTokenizer, error) {
+func initEnvAndTokenizer(vocabPath string) (tokenizer.Tokenizer, error) {
 	if err := ort.InitializeEnvironment(ort.WithLogLevelError()); err != nil {
 		return nil, fmt.Errorf("init ort env: %w", err)
 	}
 
-	tok, err := tokenizer.Load(vocabPath)
+	tok, err := tokenizer.Open(vocabPath)
 	if err != nil {
 		ort.DestroyEnvironment()
 		return nil, fmt.Errorf("load tokenizer: %w", err)
@@ -104,7 +107,7 @@ func decodeEnumList[T any](raw []string, decode func(string) (T, bool), fallback
 
 // runWords tokenizes words, runs the session on exactly that many subwords, and returns the flat [seqLen x lastDim] output plus subword bookkeeping.
 func (m *baseModel) runWords(words []tokenizer.WordSpan) (out []float32, seqLen int, swWordIdx []int, swIsFirst []bool, err error) {
-	ids, mask, tti, swWordIdx, swIsFirst := m.tokenizer.TokenizeWords(words)
+	ids, mask, tti, swWordIdx, swIsFirst := tokenizer.EncodeWords(m.tokenizer, words)
 	seqLen = min(len(ids), maxSeqLen)
 	shape := ort.NewShape(1, int64(seqLen))
 

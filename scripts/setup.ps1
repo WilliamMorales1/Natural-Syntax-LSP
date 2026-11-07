@@ -3,10 +3,10 @@
 .SYNOPSIS
     Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 .PARAMETER Model
-    Which model to export: bert-base (default), mobilebert, minilm, mpnet, dependency, or all.
+    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, multilingual, dependency, dependency-es, dependency-fr, or all.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","minilm","mpnet","dependency","all")]
+    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","multilingual","dependency","dependency-es","dependency-fr","all")]
     [string]$Model = "bert-base"
 )
 
@@ -48,8 +48,8 @@ Ok "Data directory: $DATA_DIR"
 
 Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
 
-$PKGS = @("transformers","torch","onnx","onnxscript","requests")
-if ($Model -eq "dependency" -or $Model -eq "all") { $PKGS += "diaparser" }
+$PKGS = @("transformers","torch","onnx","onnxscript","onnxruntime","requests")
+if ($Model -like "dependency*" -or $Model -eq "all") { $PKGS += "diaparser" }
 
 # Native stderr can throw under ErrorActionPreference=Stop in Windows PowerShell 5, so probes go through try/catch.
 function Test-Native([scriptblock]$cmd) {
@@ -105,54 +105,73 @@ Ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────────
 
-function Export-POSModel($modelName, $label) {
-    $slug = $modelName -replace "-", "_"
-    $o = Join-Path $DATA_DIR "$slug.onnx"
-    $v = Join-Path $DATA_DIR "${slug}_vocab.txt"
-    $l = Join-Path $DATA_DIR "${slug}_labels.json"
-    if ((Test-Path $o) -and (Test-Path $v) -and (Test-Path $l)) {
+function Get-Slug($name) { return ($name -replace "[-./]", "_") }
+
+# SentencePiece models ship _tokenizer.json instead of _vocab.txt.
+function Test-Tokenizer($slug) {
+    return (Test-Path (Join-Path $DATA_DIR "${slug}_vocab.txt")) -or (Test-Path (Join-Path $DATA_DIR "${slug}_tokenizer.json"))
+}
+
+function Invoke-Export($modelName, $label, $extra) {
+    Step "Exporting $label to ONNX"
+    & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName @extra
+    if ($LASTEXITCODE -ne 0) { Fail "Export failed for $label." }
+    Ok "$label exported."
+}
+
+function Export-POSModel($modelName, $label, $extra = @()) {
+    $slug = Get-Slug $modelName
+    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_labels.json")) -and (Test-Tokenizer $slug)) {
         Ok "$slug.onnx already exists, skipping export."
     } else {
-        Step "Exporting $label to ONNX"
-        & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName
-        if ($LASTEXITCODE -ne 0) { Fail "Export failed for $label." }
-        Ok "$label exported."
+        Invoke-Export $modelName $label $extra
     }
 }
 
-function Export-SemanticModel($modelName, $label) {
-    $slug = $modelName -replace "-", "_"
-    $o = Join-Path $DATA_DIR "$slug.onnx"
-    $v = Join-Path $DATA_DIR "${slug}_vocab.txt"
-    if ((Test-Path $o) -and (Test-Path $v)) {
+function Export-SemanticModel($modelName, $label, $extra = @()) {
+    $slug = Get-Slug $modelName
+    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Tokenizer $slug)) {
         Ok "$slug.onnx already exists, skipping export."
     } else {
-        Step "Exporting $label to ONNX"
-        & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName
-        if ($LASTEXITCODE -ne 0) { Fail "Export failed for $label." }
-        Ok "$label exported."
+        Invoke-Export $modelName $label $extra
     }
 }
 
-function Export-DependencyModel {
-    Step "Exporting en_ewt.electra-base dependency parser to ONNX"
-    & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model en_ewt.electra-base
-    if ($LASTEXITCODE -ne 0) { Fail "Dependency model export failed." }
-    Ok "Dependency model exported."
+function Export-DependencyModel($modelName, $label, $extra = @()) {
+    $slug = (Get-Slug $modelName) + "_dependency"
+    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_rels.json")) -and (Test-Tokenizer $slug)) {
+        Ok "$slug.onnx already exists, skipping export."
+    } else {
+        Invoke-Export $modelName "$label dependency parser" $extra
+    }
 }
+
+# The Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
+function Export-POSEs  { Export-POSModel "xlmr-es" "Spanish POS (XLM-R, int8, ~280 MB)" @("--int8") }
+function Export-POSFr  { Export-POSModel "xlmr-fr" "French POS (XLM-R, int8, ~280 MB)" @("--int8") }
+function Export-Multilingual { Export-SemanticModel "multilingual-minilm" "multilingual MiniLM semantic (~470 MB)" }
+function Export-DepEn  { Export-DependencyModel "en_ewt.electra-base" "English (~470 MB)" }
+function Export-DepEs  { Export-DependencyModel "es_ancora.mbert" "Spanish (fp32, ~750 MB)" }
+function Export-DepFr  { Export-DependencyModel "fr_sequoia.camembert-large" "French (int8, ~350 MB)" @("--int8") }
 
 switch ($Model) {
-    "bert-base"  { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)" }
-    "mobilebert" { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" }
-    "minilm"     { Export-SemanticModel "minilm" "all-MiniLM-L6-v2 (~22 MB)" }
-    "mpnet"      { Export-SemanticModel "mpnet"  "all-mpnet-base-v2 (~110 MB)" }
-    "dependency" { Export-DependencyModel }
-    "all"        {
+    "bert-base"     { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)" }
+    "mobilebert"    { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" }
+    "pos-es"        { Export-POSEs }
+    "pos-fr"        { Export-POSFr }
+    "multilingual"  { Export-Multilingual }
+    "dependency"    { Export-DepEn }
+    "dependency-es" { Export-DepEs }
+    "dependency-fr" { Export-DepFr }
+    "all"           {
         Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"
         Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)"
-        Export-SemanticModel "minilm" "all-MiniLM-L6-v2 (~22 MB)"
-        Export-SemanticModel "mpnet"  "all-mpnet-base-v2 (~110 MB)"
-        Export-DependencyModel
+        Export-POSEs
+        Export-POSFr
+        Export-Multilingual
+        Export-DepEn
+        Export-DepEs
+        Export-DepFr
     }
 }
 

@@ -5,18 +5,31 @@ Export a POS-tagging, sentence-transformer, or dependency-parsing model to ONNX.
 Supported models:
   mobilebert  mrm8488/mobilebert-finetuned-pos  (fast, ~100 MB)
   bert-base   QCRI/bert-base-multilingual-cased-pos-english  (~400 MB)
-  minilm      sentence-transformers/all-MiniLM-L6-v2   22 MB, 384-dim, 6-layer
-  mpnet       sentence-transformers/all-mpnet-base-v2  110 MB, 768-dim, 12-layer
+  xlmr-es     wietsedv/xlm-roberta-base-ft-udpos28-es  Spanish UPOS (XLM-R base)
+  xlmr-fr     wietsedv/xlm-roberta-base-ft-udpos28-fr  French UPOS (XLM-R base)
+  multilingual-minilm
+              sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+              384-dim, 12-layer, 50+ languages (semantic mode)
 
---model values other than mobilebert/bert-base/minilm/mpnet are treated as a
+--model values other than the names above are treated as a
 diaparser (github.com/Unipisa/diaparser) catalog name and export a biaffine
 UD dependency parser (default en_ewt.electra-base) as a 3-input/2-output
 ONNX graph: input_ids, attention_mask, pool_matrix -> arc_logits, rel_logits.
 See _export_dependency() below for why this needs a custom wrapper rather
 than exporting the diaparser checkpoint directly.
 
+Any Hugging Face repo id can be exported with an explicit --mode:
+  --mode pos       token-classification model (e.g. wietsedv/xlm-roberta-base-ft-udpos28-es)
+  --mode semantic  encoder used for sentence embeddings
+Models with a SentencePiece Unigram tokenizer ship their HF tokenizer.json as
+{slug}_tokenizer.json instead of a vocab.txt; WordPiece models also get their
+tokenizer_config.json copied to {slug}_tokenizer.json when one exists.
+
+--int8 quantizes the exported weights to int8 in place (about 4x smaller; the
+Spanish dependency parser loses accuracy when quantized, so leave it fp32).
+
 Usage:
-    python export_model.py [output_dir] [--model mobilebert|bert-base|minilm|mpnet|en_ewt.electra-base]
+    python export_model.py [output_dir] [--model mobilebert|bert-base|xlmr-es|xlmr-fr|multilingual-minilm|en_ewt.electra-base|<hf repo id>] [--mode pos|semantic|dependency] [--int8]
 """
 import sys
 import os
@@ -59,10 +72,11 @@ class _DropsTokenTypeIds(torch.nn.Module):
 POS_MODELS = {
     "mobilebert": "mrm8488/mobilebert-finetuned-pos",
     "bert-base":  "QCRI/bert-base-multilingual-cased-pos-english",
+    "xlmr-es":    "wietsedv/xlm-roberta-base-ft-udpos28-es",
+    "xlmr-fr":    "wietsedv/xlm-roberta-base-ft-udpos28-fr",
 }
 SEMANTIC_MODELS = {
-    "minilm": "sentence-transformers/all-MiniLM-L6-v2",
-    "mpnet": "sentence-transformers/all-mpnet-base-v2",
+    "multilingual-minilm": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
 }
 MODELS = {**POS_MODELS, **SEMANTIC_MODELS}
 
@@ -76,7 +90,14 @@ parser.add_argument("--model", default=None,
                      help=f"One of {list(MODELS.keys())} (pos/semantic), "
                           f"or a diaparser catalog name for dependency parsing "
                           f"(default: {DEFAULT_DEPENDENCY_MODEL}).")
+parser.add_argument("--mode", choices=["pos", "semantic", "dependency"], default=None,
+                     help="Force the export mode; required for Hugging Face repo ids.")
+parser.add_argument("--int8", action="store_true",
+                     help="Quantize the exported weights to int8 in place.")
 args = parser.parse_args()
+
+if args.model in ("minilm", "mpnet") and args.mode is None:
+    raise SystemExit(f"--model {args.model} was removed; use multilingual-minilm for semantic mode.")
 
 out_dir = args.out_dir
 os.makedirs(out_dir, exist_ok=True)
@@ -85,7 +106,9 @@ os.makedirs(out_dir, exist_ok=True)
 # anything else (including no --model at all) falls through to pos's
 # default bert-base, except when the name isn't a known model at all, which
 # means it's a diaparser catalog name for dependency mode.
-if args.model is None:
+if args.mode is not None:
+    mode = args.mode
+elif args.model is None:
     mode = "pos"
 elif args.model in POS_MODELS:
     mode = "pos"
@@ -93,6 +116,54 @@ elif args.model in SEMANTIC_MODELS:
     mode = "semantic"
 else:
     mode = "dependency"
+
+
+def _quantize_int8(onnx_path):
+    """Replace onnx_path with a dynamically int8-quantized copy and drop its external data file."""
+    try:
+        from onnxruntime.quantization import quantize_dynamic, QuantType
+    except ImportError as e:
+        raise SystemExit(f"--int8 needs onnxruntime: {e}")
+    tmp = onnx_path + ".int8.tmp"
+    quantize_dynamic(onnx_path, tmp, weight_type=QuantType.QInt8, use_external_data_format=False)
+    os.replace(tmp, onnx_path)
+    data = onnx_path + ".data"
+    if os.path.exists(data):
+        os.remove(data)
+    print(f"Quantized {onnx_path} to int8 ({os.path.getsize(onnx_path) / 1e6:.0f} MB)")
+
+
+def _fetch(repo, name):
+    r = requests.get(f"https://huggingface.co/{repo}/resolve/main/{name}")
+    return r.content if r.status_code == 200 else None
+
+
+def _write_tokenizer_files(repo, slug, out_dir):
+    """Save the tokenizer the Go side needs next to the model: tokenizer.json for Unigram, else vocab.txt (+ tokenizer_config.json)."""
+    tok_json = _fetch(repo, "tokenizer.json")
+    if tok_json is not None and json.loads(tok_json).get("model", {}).get("type") == "Unigram":
+        path = os.path.join(out_dir, f"{slug}_tokenizer.json")
+        with open(path, "wb") as f:
+            f.write(tok_json)
+        print(f"Unigram tokenizer saved to {path}")
+        return [path]
+    saved = []
+    vocab = _fetch(repo, "vocab.txt")
+    if vocab is None:
+        raise SystemExit(f"{repo} has neither a Unigram tokenizer.json nor a WordPiece vocab.txt; unsupported tokenizer.")
+    path = os.path.join(out_dir, f"{slug}_vocab.txt")
+    with open(path, "wb") as f:
+        f.write(vocab)
+    print(f"vocab saved to {path}")
+    saved.append(path)
+    cfg = _fetch(repo, "tokenizer_config.json")
+    if cfg is not None:
+        path = os.path.join(out_dir, f"{slug}_tokenizer.json")
+        with open(path, "wb") as f:
+            f.write(cfg)
+        print(f"tokenizer config saved to {path}")
+        saved.append(path)
+    return saved
 
 
 def _export_dependency(model_name, out_dir):
@@ -243,16 +314,12 @@ def _export_dependency(model_name, out_dir):
         dynamo=False,
     )
     print("ONNX export done.")
+    if args.int8:
+        _quantize_int8(onnx_path)
 
     bert_model_id = m.feat_embed.model
-    vocab_path = os.path.join(out_dir, f"{slug}_dependency_vocab.txt")
-    vocab_url = f"https://huggingface.co/{bert_model_id}/resolve/main/vocab.txt"
-    print(f"Downloading vocab.txt from {bert_model_id}...")
-    r = requests.get(vocab_url)
-    r.raise_for_status()
-    with open(vocab_path, "wb") as f:
-        f.write(r.content)
-    print(f"vocab saved to {vocab_path}")
+    print(f"Fetching tokenizer from {bert_model_id}...")
+    vocab_path = ", ".join(_write_tokenizer_files(bert_model_id, f"{slug}_dependency", out_dir))
 
     rel_vocab = p.transform.DEPREL.vocab
     rels = [rel_vocab.itos[i] for i in range(len(rel_vocab))]
@@ -330,15 +397,11 @@ else:
 )
 
 print("ONNX export done.")
+if args.int8:
+    _quantize_int8(onnx_path)
 
-vocab_path = os.path.join(out_dir, f"{slug}_vocab.txt")
-vocab_url = f"https://huggingface.co/{model_id}/resolve/main/vocab.txt"
-print(f"Downloading vocab.txt...")
-r = requests.get(vocab_url)
-r.raise_for_status()
-with open(vocab_path, "wb") as f:
-    f.write(r.content)
-print(f"vocab saved to {vocab_path}")
+tokenizer_files = _write_tokenizer_files(model_id, slug, out_dir)
+vocab_path = ", ".join(tokenizer_files)
 
 if mode == "pos":
     labels_path = os.path.join(out_dir, f"{slug}_labels.json")

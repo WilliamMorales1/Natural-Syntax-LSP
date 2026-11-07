@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"natural-syntax-ls/internal/inference"
 	"natural-syntax-ls/internal/postag"
@@ -344,6 +345,37 @@ func hexDist(a, b string) int {
 		d = max(d, int(x)-int(y), int(y)-int(x))
 	}
 	return d
+}
+
+func TestModelEditLatency(t *testing.T) {
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		t.Skipf("no user config dir: %v", err)
+	}
+	dir := filepath.Join(cfg, "natural-syntax-ls")
+	lib := filepath.Join(dir, "libonnxruntime.so")
+	if _, err := os.Stat(lib); err != nil {
+		t.Skipf("missing %s", lib)
+	}
+	inference.SetORTLibPath(lib)
+	inference.InitSemantic(768)
+	model, err := inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
+	if err != nil {
+		t.Skipf("mpnet model unavailable: %v", err)
+	}
+	defer model.Close()
+
+	reg := newDocumentRegistry(model)
+	text := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 12)
+	syncTokens(reg, text, 1) // Load model and warm up inference before measuring.
+
+	started := time.Now()
+	syncTokens(reg, strings.Replace(text, "fox", "wolf", 1), 2)
+	elapsed := time.Since(started)
+	const maxEditLatency = 2 * time.Second
+	if elapsed > maxEditLatency {
+		t.Fatalf("single-chunk mpnet edit took %v; maximum is %v", elapsed, maxEditLatency)
+	}
 }
 
 func TestRegistrySemanticColorsStableAcrossEdits(t *testing.T) {

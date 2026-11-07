@@ -182,7 +182,12 @@ func (dr *documentRegistry) handleItem(item *textItem) {
 		return
 	}
 	store.latestVersion = item.version
-	words := tokenizer.BasicTokenize(item.text)
+	var words []tokenizer.WordSpan
+	if tt, ok := dr.model.(inference.TextTokenizer); ok {
+		words = tt.Tokenize(item.text)
+	} else {
+		words = tokenizer.BasicTokenize(item.text)
+	}
 	dr.scheduleProcessing(item, words, store)
 }
 

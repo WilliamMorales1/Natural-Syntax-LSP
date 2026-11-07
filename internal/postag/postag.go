@@ -1,7 +1,10 @@
 // Package postag holds the linguistic tag types (POS, UD deprel) shared across inference, token-mapping, and LSP layers.
 package postag
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // PartOfSpeech is a Penn Treebank part-of-speech tag.
 type PartOfSpeech int
@@ -131,3 +134,26 @@ func (p *PartOfSpeech) UnmarshalText(text []byte) error {
 	*p = v
 	return nil
 }
+
+// upos maps Universal POS tags onto the nearest Penn tag, so UD-trained models reuse the existing token types.
+var upos = map[string]PartOfSpeech{
+	"ADJ": JJ, "ADP": IN, "ADV": RB, "AUX": MD, "CCONJ": CC, "DET": DT, "INTJ": UH,
+	"NOUN": NN, "NUM": CD, "PART": RP, "PRON": PRP, "PROPN": NNP, "PUNCT": O,
+	"SCONJ": IN, "SYM": SYM, "VERB": VB, "X": FW,
+}
+
+// ParseLabel maps a model label, Penn or Universal, to a PartOfSpeech; a B-/I- chunk prefix is ignored and compound labels such as "VERB+AUX" use their first part.
+func ParseLabel(label string) (PartOfSpeech, bool) {
+	if p, ok := ParsePartOfSpeech(label); ok {
+		return p, true
+	}
+	if len(label) > 2 && (label[:2] == "B-" || label[:2] == "I-") {
+		label = label[2:]
+	}
+	head, _, _ := strings.Cut(label, "+")
+	p, ok := upos[head]
+	return p, ok
+}
+
+// IsContinuation reports whether label is an I- chunk label, which extends the previous word.
+func IsContinuation(label string) bool { return strings.HasPrefix(label, "I-") }

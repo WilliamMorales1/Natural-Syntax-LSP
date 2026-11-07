@@ -2,7 +2,9 @@ package inference
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"slices"
@@ -47,14 +49,17 @@ func loadLabels(labelsPath string) ([]postag.PartOfSpeech, error) {
 		tags[idx] = tag
 	}
 	// unknown tags treated as O
-	return decodeEnumList(tags, postag.ParsePartOfSpeech, postag.O), nil
+	return decodeEnumList(tags, postag.ParseLabel, postag.O), nil
 }
 
 // NewPOSModel loads a POS model and its labels sidecar, falling back to the default label order.
 func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 	labels, err := loadLabels(labelsPathFor(modelPath))
 	if err != nil {
-		// Fall back to default mobilebert label order if no sidecar found.
+		// The default English order is only safe for the bundled English WordPiece models, which export no sidecar tokenizer.
+		if _, statErr := os.Stat(tokenizer.SidecarPath(vocabPath)); statErr == nil || !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("load pos labels: %w", err)
+		}
 		labels = make([]postag.PartOfSpeech, postag.NumPartsOfSpeech)
 		for i := range labels {
 			labels[i] = postag.PartOfSpeech(i)
