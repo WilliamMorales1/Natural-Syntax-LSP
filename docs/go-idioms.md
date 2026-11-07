@@ -34,6 +34,16 @@ Behavior changes worth knowing:
 - `Content-Length: 0` is no longer treated as missing. A missing or malformed header is an error.
 - Transport write errors end the session at the next read.
 
+## Decisions
+
+Chosen 2026-11-07. Implementation pending unless marked done.
+
+- 1: replace the actor with a mutex-guarded store and a per-version `chan struct{}` ready signal. Replies carry `(data, error)` with `errSuperseded`, so `nil` no longer has three meanings. Keep `Close()` and `awaitReply`. Do it with `-race` tests in place.
+- 5 (wiktionary): add `wiktionary.Client` holding the HTTP client, bounded cache and fetch function. Remove the `cache`, `client` and `fetchPayload` globals. Tests build their own client and may use `t.Parallel`.
+- 22, 23: typed `*StatusError`. Cache 404 only, with a 10 minute TTL. Never cache timeouts or 429. Lands with the `Client` change.
+- 25: `chunkKey` becomes a 128-bit digest. `replyQueue` becomes a slice. `pending` queue stays.
+- 5 (rest): `SetORTLibPath` and the Japanese segmenter global stay as is.
+
 ## High value
 
 ### 1. Hand-rolled actor loop with `chan func()` and unbuffered replies
