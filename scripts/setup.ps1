@@ -3,10 +3,10 @@
 .SYNOPSIS
     Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 .PARAMETER Model
-    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, multilingual, dependency, dependency-es, dependency-fr, or all.
+    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, or all.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","multilingual","dependency","dependency-es","dependency-fr","all")]
+    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","pos-ru","pos-ar","multilingual","dependency","dependency-es","dependency-fr","all")]
     [string]$Model = "bert-base"
 )
 
@@ -149,6 +149,8 @@ function Export-DependencyModel($modelName, $label, $extra = @()) {
 # The Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
 function Export-POSEs  { Export-POSModel "xlmr-es" "Spanish POS (XLM-R, int8, ~280 MB)" @("--int8") }
 function Export-POSFr  { Export-POSModel "xlmr-fr" "French POS (XLM-R, int8, ~280 MB)" @("--int8") }
+function Export-POSRu  { Export-POSModel "xlmr-ru" "Russian POS (XLM-R, int8, ~280 MB)" @("--int8") }
+function Export-POSAr  { Export-POSModel "xlmr-ar" "Arabic POS (XLM-R, int8, ~280 MB)" @("--int8") }
 function Export-Multilingual { Export-SemanticModel "multilingual-minilm" "multilingual MiniLM semantic (~470 MB)" }
 function Export-DepEn  { Export-DependencyModel "en_ewt.electra-base" "English (~470 MB)" }
 function Export-DepEs  { Export-DependencyModel "es_ancora.mbert" "Spanish (fp32, ~750 MB)" }
@@ -159,6 +161,8 @@ switch ($Model) {
     "mobilebert"    { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" }
     "pos-es"        { Export-POSEs }
     "pos-fr"        { Export-POSFr }
+    "pos-ru"        { Export-POSRu }
+    "pos-ar"        { Export-POSAr }
     "multilingual"  { Export-Multilingual }
     "dependency"    { Export-DepEn }
     "dependency-es" { Export-DepEs }
@@ -168,6 +172,8 @@ switch ($Model) {
         Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)"
         Export-POSEs
         Export-POSFr
+        Export-POSRu
+        Export-POSAr
         Export-Multilingual
         Export-DepEn
         Export-DepEs

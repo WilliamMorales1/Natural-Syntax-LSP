@@ -1,9 +1,12 @@
 package lspserver
 
 import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"io"
 	"math"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -15,41 +18,17 @@ import (
 
 const defaultScoreThreshold = 1.0 / 3.0
 
-// replyQueue holds at most two pending semantic-token replies: one for the in-flight run and one for a queued run.
-type replyQueue struct {
-	items [2]chan []uint32
-	n     int
-}
+var (
+	// errSuperseded reports that the document was closed before the awaited run finished.
+	errSuperseded = errors.New("lspserver: document closed before run finished")
+	// errClosed reports that the registry was closed.
+	errClosed = errors.New("lspserver: registry closed")
+)
 
-// push adds c, evicting and returning the oldest reply when full.
-func (q *replyQueue) push(c chan []uint32) chan []uint32 {
-	if q.n < 2 {
-		q.items[q.n] = c
-		q.n++
-		return nil
-	}
-	evicted := q.items[0]
-	q.items = [2]chan []uint32{q.items[1], c}
-	return evicted
-}
-
-// take returns the older reply when a run is queued (the newer one waits for it), otherwise the newest reply, clearing the queue.
-func (q *replyQueue) take(queued bool) chan []uint32 {
-	if queued {
-		if q.n < 2 {
-			return nil
-		}
-		c := q.items[0]
-		q.items = [2]chan []uint32{q.items[1], nil}
-		q.n--
-		return c
-	}
-	if q.n == 0 {
-		return nil
-	}
-	c := q.items[q.n-1]
-	*q = replyQueue{}
-	return c
+// run is one prediction pass; done closes when it finishes, with doc set unless the document was discarded first.
+type run struct {
+	done chan struct{}
+	doc  *document
 }
 
 // document holds a processed document.
@@ -69,11 +48,6 @@ func (d *document) lineIndex() *lineIndex {
 	return d.lines.Load()
 }
 
-type hoverRequest struct {
-	line, char uint32
-	reply      chan *hoverQueryResult
-}
-
 // dependent is a token headed on the hovered token.
 type dependent struct {
 	tok     postag.Token
@@ -88,7 +62,7 @@ type hoverQueryResult struct {
 
 // chunkResult holds per-chunk prediction results and the word spans used.
 type chunkResult struct {
-	key    string               // chunkKey of words, for reuse detection
+	key    chunkDigest          // chunkKey of words, for reuse detection
 	words  []tokenizer.WordSpan // full spans for offset patching
 	tokens []postag.Token
 	embeds [][]float32 // unit embedding per token; semantic mode only
@@ -96,13 +70,12 @@ type chunkResult struct {
 
 // documentStore tracks per-URI state.
 type documentStore struct {
-	queued         *textItem
-	queuedWords    []tokenizer.WordSpan
-	processing     bool
-	doc            *document
-	pendingReplies replyQueue
-	pendingHover   *hoverRequest
-	latestVersion  int32
+	queued        *textItem
+	queuedWords   []tokenizer.WordSpan
+	processing    bool
+	doc           *document
+	run           *run // in-flight pass while processing
+	latestVersion int32
 
 	// incremental prediction state (valid while processing == true)
 	processingText    string
@@ -119,10 +92,10 @@ type textItem struct {
 	version int32
 }
 
-// documentRegistry serialises all document state on a single goroutine; its methods queue work onto it.
+// documentRegistry guards all document state with one mutex; requests that need an in-flight pass wait on its run.
 type documentRegistry struct {
-	ch         chan func()
-	done       chan struct{} // closed by Close; stops loop and releases waiters
+	mu         sync.Mutex
+	done       chan struct{} // closed by Close; releases waiters
 	closeOnce  sync.Once
 	model      predictor
 	embedder   embedder // non-nil in semantic mode: tokens are recolored per document
@@ -142,7 +115,6 @@ func newDocumentRegistry(model predictor) *documentRegistry {
 	_, workers := inference.Concurrency()
 	dr := &documentRegistry{
 		workers:   workers,
-		ch:        make(chan func(), 64),
 		done:      make(chan struct{}),
 		model:     model,
 		embedder:  emb,
@@ -151,42 +123,47 @@ func newDocumentRegistry(model predictor) *documentRegistry {
 		threshold: defaultScoreThreshold,
 		stores:    make(map[string]*documentStore),
 	}
-	go dr.loop()
 	return dr
 }
 
-func (dr *documentRegistry) loop() {
-	for {
-		select {
-		case f := <-dr.ch:
-			f()
-		case <-dr.done:
-			return
-		}
-	}
-}
-
-// Close stops the registry goroutine; later work is dropped.
+// Close releases waiters; later work is dropped.
 func (dr *documentRegistry) Close() {
 	dr.closeOnce.Do(func() { close(dr.done) })
 }
 
-// do runs f on the registry goroutine, or drops it once the registry is closed.
-func (dr *documentRegistry) do(f func()) {
+// do runs f under the registry lock and reports whether it ran; it does not once the registry is closed.
+func (dr *documentRegistry) do(f func()) bool {
 	select {
-	case dr.ch <- f:
 	case <-dr.done:
+		return false
+	default:
 	}
+	dr.mu.Lock()
+	defer dr.mu.Unlock()
+	f()
+	return true
 }
 
 // update queues a new document version for prediction.
 func (dr *documentRegistry) update(item *textItem) {
-	dr.do(func() { dr.handleItem(item) })
+	var words []tokenizer.WordSpan
+	if tt, ok := dr.model.(textTokenizer); ok {
+		words = tt.Tokenize(item.text)
+	} else {
+		words = tokenizer.BasicTokenize(item.text)
+	}
+	dr.do(func() { dr.handleItem(item, words) })
 }
 
-// discard drops all state for uri.
+// discard drops all state for uri and releases requests waiting on it.
 func (dr *documentRegistry) discard(uri string) {
-	dr.do(func() { delete(dr.stores, uri) })
+	dr.do(func() {
+		if store := dr.stores[uri]; store != nil && store.run != nil {
+			close(store.run.done)
+			store.run = nil
+		}
+		delete(dr.stores, uri)
+	})
 }
 
 // extendTokenMap applies per-POS token-map overrides.
@@ -199,28 +176,80 @@ func (dr *documentRegistry) setThreshold(t float64) {
 	dr.do(func() { dr.threshold = t })
 }
 
-// semanticTokens sends uri's encoded tokens on reply once its latest version is predicted; reply is closed if a newer request supersedes it.
-func (dr *documentRegistry) semanticTokens(uri string, reply chan []uint32) {
-	dr.do(func() { dr.handleSemanticTokensCall(uri, reply) })
+// wait blocks until r finishes and returns its document.
+func (dr *documentRegistry) wait(ctx context.Context, r *run) (*document, error) {
+	select {
+	case <-r.done:
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case <-dr.done:
+		return nil, errClosed
+	}
+	if r.doc == nil {
+		return nil, errSuperseded
+	}
+	return r.doc, nil
 }
 
-// hover sends the token at line/character in uri on reply, or nil if there is none.
-func (dr *documentRegistry) hover(uri string, line, character uint32, reply chan *hoverQueryResult) {
-	dr.do(func() { dr.handleHoverQuery(uri, line, character, reply) })
+// semanticTokens returns uri's encoded tokens once its latest version is predicted; an unknown uri yields nil.
+func (dr *documentRegistry) semanticTokens(ctx context.Context, uri string) ([]uint32, error) {
+	var r *run
+	var data []uint32
+	if !dr.do(func() {
+		store := dr.stores[uri]
+		switch {
+		case store == nil:
+		case !store.processing && store.doc != nil:
+			data = encodeSemanticTokens(store.doc, &dr.tokenMap, dr.useDeprel)
+		default:
+			r = store.run
+		}
+	}) {
+		return nil, errClosed
+	}
+	if r == nil {
+		return data, nil
+	}
+	doc, err := dr.wait(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	dr.do(func() { data = encodeSemanticTokens(doc, &dr.tokenMap, dr.useDeprel) })
+	return data, nil
 }
 
-func (dr *documentRegistry) handleItem(item *textItem) {
+// hover returns the token at line/character in uri, or nil if there is none.
+func (dr *documentRegistry) hover(ctx context.Context, uri string, line, character uint32) (*hoverQueryResult, error) {
+	var r *run
+	var doc *document
+	if !dr.do(func() {
+		if store := dr.stores[uri]; store != nil {
+			doc = store.doc
+			if doc == nil && store.processing {
+				r = store.run
+			}
+		}
+	}) {
+		return nil, errClosed
+	}
+	if r != nil {
+		var err error
+		if doc, err = dr.wait(ctx, r); err != nil {
+			return nil, err
+		}
+	}
+	if doc == nil {
+		return nil, nil
+	}
+	return tokenAt(doc, line, character), nil
+}
+
+func (dr *documentRegistry) handleItem(item *textItem, words []tokenizer.WordSpan) {
 	store := dr.storeFor(item.uri)
 	if store.latestVersion >= item.version {
 		return
 	}
 	store.latestVersion = item.version
-	var words []tokenizer.WordSpan
-	if tt, ok := dr.model.(textTokenizer); ok {
-		words = tt.Tokenize(item.text)
-	} else {
-		words = tokenizer.BasicTokenize(item.text)
-	}
 	dr.scheduleProcessing(item, words, store)
 }
 
@@ -261,13 +290,10 @@ func (dr *documentRegistry) finalize(uri string, store *documentStore) {
 		version: store.processingVersion,
 	}
 	store.doc = doc
-
-	if reply := store.pendingReplies.take(store.queued != nil); reply != nil {
-		reply <- encodeSemanticTokens(doc, &dr.tokenMap, dr.useDeprel)
-	}
-	if ph := store.pendingHover; ph != nil {
-		store.pendingHover = nil
-		dr.handleHoverQuery(uri, ph.line, ph.char, ph.reply)
+	if r := store.run; r != nil {
+		r.doc = doc
+		close(r.done)
+		store.run = nil
 	}
 	if dr.onDocReady != nil {
 		go dr.onDocReady(uri, doc)
@@ -278,33 +304,6 @@ func (dr *documentRegistry) finalize(uri string, store *documentStore) {
 		store.queued, store.queuedWords = nil, nil
 		dr.scheduleProcessing(queued, words, store)
 	}
-}
-
-func (dr *documentRegistry) handleSemanticTokensCall(uri string, reply chan []uint32) {
-	store := dr.storeFor(uri)
-	if !store.processing && store.doc != nil {
-		reply <- encodeSemanticTokens(store.doc, &dr.tokenMap, dr.useDeprel)
-		return
-	}
-	if evicted := store.pendingReplies.push(reply); evicted != nil {
-		close(evicted) // signal caller that this reply was dropped
-	}
-}
-
-func (dr *documentRegistry) handleHoverQuery(uri string, line, character uint32, reply chan *hoverQueryResult) {
-	store, ok := dr.stores[uri]
-	if ok && store.doc == nil && store.processing {
-		if store.pendingHover != nil {
-			store.pendingHover.reply <- nil
-		}
-		store.pendingHover = &hoverRequest{line: line, char: character, reply: reply}
-		return
-	}
-	if !ok || store.doc == nil {
-		reply <- nil
-		return
-	}
-	reply <- tokenAt(store.doc, line, character)
 }
 
 // tokenAt returns the token at the position and its direct dependents, or nil if none.
@@ -343,6 +342,7 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 		return
 	}
 	store.processing = true
+	store.run = &run{done: make(chan struct{})}
 	store.queued, store.queuedWords = nil, nil
 	store.processingText = item.text
 	store.processingVersion = item.version
@@ -350,7 +350,7 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 	chunks := inference.SplitChunks(item.text, words)
 
 	// Reuse any previous chunk with identical words, wherever it moved; inference only sees a chunk's own words, so this matches a fresh run exactly.
-	cache := make(map[string]*chunkResult, len(store.chunkResults))
+	cache := make(map[chunkDigest]*chunkResult, len(store.chunkResults))
 	for _, old := range store.chunkResults {
 		if old != nil {
 			cache[old.key] = old
@@ -470,20 +470,23 @@ func (dr *documentRegistry) storeFor(uri string) *documentStore {
 	return s
 }
 
-// chunkKey identifies a chunk by its word texts.
-func chunkKey(words []tokenizer.WordSpan) string {
-	var sb strings.Builder
-	for i, w := range words {
-		if i > 0 {
-			sb.WriteByte(0)
-		}
+// chunkDigest is a 128-bit hash of a chunk's words; collisions are negligible next to hardware error.
+type chunkDigest [16]byte
+
+// chunkKey identifies a chunk by its word texts and block starts.
+func chunkKey(words []tokenizer.WordSpan) chunkDigest {
+	h := sha256.New()
+	for _, w := range words {
 		// Block starts change sentence splits, so they're part of the key.
 		if w.BlockStart {
-			sb.WriteByte(1)
+			h.Write([]byte{1})
 		}
-		sb.WriteString(w.Text)
+		_, _ = io.WriteString(h, w.Text)
+		h.Write([]byte{0})
 	}
-	return sb.String()
+	var d chunkDigest
+	copy(d[:], h.Sum(nil))
+	return d
 }
 
 // patchChunkOffsets returns a new chunkResult with offsets updated from newWords (assumed same order/texts as old).

@@ -2,8 +2,9 @@ package wiktionary
 
 import (
 	"context"
-	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	"natural-syntax-ls/internal/postag"
 )
@@ -48,6 +49,7 @@ func TestCategories(t *testing.T) {
 }
 
 func TestFetchDefSentenceInitialVerb(t *testing.T) {
+	t.Parallel()
 	def := func(pos, text string) entry {
 		return entry{PartOfSpeech: pos, Language: "English", Definitions: []sense{{text}}}
 	}
@@ -58,13 +60,12 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 		"sure": {"en": {def("Adjective", "Certain.")}},
 		"to":   {"en": {def("Preposition", "Toward.")}},
 	}
-	orig := fetchPayload
-	t.Cleanup(func() { fetchPayload = orig })
-	fetchPayload = func(_ context.Context, word string) (map[string][]entry, error) {
+	c := NewClient()
+	c.fetch = func(_ context.Context, word string) (map[string][]entry, error) {
 		if p, ok := pages[word]; ok {
 			return p, nil
 		}
-		return nil, errors.New("not found")
+		return nil, ErrNotFound
 	}
 
 	// "Said to make sure": sentence-initial "Said" tagged VBD must get the verb sense of "said".
@@ -80,14 +81,15 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 		{"sure", postag.JJ, "Certain.", "https://en.wiktionary.org/wiki/sure"},
 		{"Said", postag.NNP, "A male given name from Arabic.", "https://en.wiktionary.org/wiki/Said"},
 	} {
-		got, url, ok := fetchDefUncached(t.Context(), tc.word, "en", "", tc.pos, postag.DepRoot)
+		got, url, ok, _ := c.lookup(t.Context(), tc.word, "en", "", tc.pos, postag.DepRoot)
 		if !ok || got != tc.wantDef || url != tc.wantURL {
-			t.Errorf("fetchDefUncached(t.Context(), %q, %v) = %q, %q, %v; want %q, %q", tc.word, tc.pos, got, url, ok, tc.wantDef, tc.wantURL)
+			t.Errorf("lookup(t.Context(), %q, %v) = %q, %q, %v; want %q, %q", tc.word, tc.pos, got, url, ok, tc.wantDef, tc.wantURL)
 		}
 	}
 }
 
 func TestLanguageSelection(t *testing.T) {
+	t.Parallel()
 	ent := func(lang, pos, text string) entry {
 		return entry{PartOfSpeech: pos, Language: lang, Definitions: []sense{{text}}}
 	}
@@ -100,15 +102,12 @@ func TestLanguageSelection(t *testing.T) {
 		"7": {"en": {ent("Translingual", "Symbol", "The digit seven.")}},
 		"私": {"ja": {ent("Japanese", "Pronoun", "I")}},
 	}
-	orig := fetchPayload
-	t.Cleanup(func() { fetchPayload = orig })
-	var asked []string
-	fetchPayload = func(_ context.Context, word string) (map[string][]entry, error) {
-		asked = append(asked, word)
+	c := NewClient()
+	c.fetch = func(_ context.Context, word string) (map[string][]entry, error) {
 		if p, ok := pages[word]; ok {
 			return p, nil
 		}
-		return nil, errors.New("not found")
+		return nil, ErrNotFound
 	}
 
 	for _, tc := range []struct {
@@ -126,24 +125,23 @@ func TestLanguageSelection(t *testing.T) {
 		{"translingual under es", "7", "es", "", postag.CD, "The digit seven.", "https://en.wiktionary.org/wiki/7", true},
 		{"non-latin", "私", "ja", "", postag.PRP, "*(Japanese)* I", "https://en.wiktionary.org/wiki/%E7%A7%81#Japanese", true},
 	} {
-		got, url, ok := fetchDefUncached(t.Context(), tc.word, tc.lang, tc.model, tc.pos, postag.DepRoot)
+		got, url, ok, _ := c.lookup(t.Context(), tc.word, tc.lang, tc.model, tc.pos, postag.DepRoot)
 		if ok != tc.ok || got != tc.want || url != tc.wantURL {
 			t.Errorf("%s: got %q, %q, %v; want %q, %q, %v", tc.name, got, url, ok, tc.want, tc.wantURL, tc.ok)
 		}
 	}
-	_ = asked
 }
 
 func TestCacheSeparatesLanguages(t *testing.T) {
+	t.Parallel()
 	pages := map[string][]entry{
 		"en": {{PartOfSpeech: "Noun", Language: "English", Definitions: []sense{{"english sense"}}}},
 		"es": {{PartOfSpeech: "Noun", Language: "Spanish", Definitions: []sense{{"sentido"}}}},
 	}
-	orig := fetchPayload
-	t.Cleanup(func() { fetchPayload = orig })
-	fetchPayload = func(context.Context, string) (map[string][]entry, error) { return pages, nil }
-	en, _, _ := FetchDef(t.Context(), "cachetestword", "en", "", postag.NN, postag.DepRoot)
-	es, _, _ := FetchDef(t.Context(), "cachetestword", "es", "", postag.NN, postag.DepRoot)
+	c := NewClient()
+	c.fetch = func(context.Context, string) (map[string][]entry, error) { return pages, nil }
+	en, _, _ := c.FetchDef(t.Context(), "cachetestword", "en", "", postag.NN, postag.DepRoot)
+	es, _, _ := c.FetchDef(t.Context(), "cachetestword", "es", "", postag.NN, postag.DepRoot)
 	if en == es || en != "english sense" {
 		t.Errorf("cache mixed languages: en=%q es=%q", en, es)
 	}
@@ -159,5 +157,42 @@ func TestParticipleMatchesVerbAndAdjective(t *testing.T) {
 		if !matched || def != "past participle of recibir" {
 			t.Errorf("%s: got %q, %v", target, def, matched)
 		}
+	}
+}
+
+func TestNegativeCache(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0)
+	c := NewClient()
+	c.now = func() time.Time { return now }
+	var calls int
+	err := error(ErrNotFound)
+	c.fetch = func(context.Context, string) (map[string][]entry, error) {
+		calls++
+		return nil, err
+	}
+	look := func() bool {
+		_, _, ok := c.FetchDef(t.Context(), "nowordhere", "en", "", postag.NN, postag.DepRoot)
+		return ok
+	}
+
+	look()
+	look()
+	if calls != 1 {
+		t.Fatalf("404 not cached: %d fetches", calls)
+	}
+	now = now.Add(missTTL + time.Second)
+	look()
+	if calls != 2 {
+		t.Errorf("miss did not expire: %d fetches", calls)
+	}
+
+	err = &StatusError{Word: "x", StatusCode: http.StatusTooManyRequests, Status: "429 Too Many Requests"}
+	c.misses = map[string]time.Time{}
+	calls = 0
+	look()
+	look()
+	if calls != 2 {
+		t.Errorf("transient failure cached: %d fetches", calls)
 	}
 }

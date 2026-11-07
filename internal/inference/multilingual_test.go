@@ -43,11 +43,11 @@ func TestMultilingualPOS(t *testing.T) {
 	} {
 		t.Run(tc.lang+"/"+tc.text, func(t *testing.T) {
 			base := filepath.Join(dir, udposPrefix+tc.lang)
-			m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json")
+			m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 			if err != nil {
 				t.Skip(err)
 			}
-			defer m.Close()
+			t.Cleanup(func() { m.Close() })
 			words := m.Tokenize(tc.text)
 			toks, err := m.PredictChunk(words)
 			if err != nil {
@@ -76,11 +76,11 @@ const yasukoZHPrefix = "KoichiYasuoka_chinese_roberta_base_upos"
 func TestChineseCharPOS(t *testing.T) {
 	dir := multilingualDir(t)
 	base := filepath.Join(dir, yasukoZHPrefix)
-	m, err := NewPOSModel(base+".onnx", base+"_vocab.txt")
+	m, err := NewPOSModel(base+".onnx", base+"_vocab.txt", testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	text := "我喜欢在北京大学学习自然语言处理。"
 	toks, err := m.PredictChunk(m.Tokenize(text))
 	if err != nil {
@@ -105,13 +105,13 @@ func TestChineseCharPOS(t *testing.T) {
 // TestMultilingualSemantic checks that word embeddings of one concept sit closer across languages than embeddings of different concepts.
 func TestMultilingualSemantic(t *testing.T) {
 	dir := multilingualDir(t)
-	base := filepath.Join(dir, "sentence_transformers_paraphrase_multilingual_MiniLM_L12_v2")
+	base := filepath.Join(dir, "multilingual_minilm")
 	InitSemantic(384)
-	m, err := NewEmbeddingModel(base+".onnx", base+"_tokenizer.json", 384)
+	m, err := NewEmbeddingModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 
 	// Each concept lists, per language, a sentence and the substring of the word that carries the concept.
 	type form struct{ text, word string }
@@ -119,10 +119,12 @@ func TestMultilingualSemantic(t *testing.T) {
 		"cat": {
 			"en": {"The cat sleeps on the sofa.", "cat"}, "es": {"El gato duerme en el sofá.", "gato"},
 			"fr": {"Le chat dort sur le canapé.", "chat"}, "ja": {"猫はソファで寝ています。", "猫"}, "zh": {"猫在沙发上睡觉。", "猫"},
+			"ru": {"Кошка спит на диване.", "Кошка"}, "ar": {"القطة تنام على الأريكة.", "القطة"},
 		},
 		"car": {
 			"en": {"The car stops on the street.", "car"}, "es": {"El coche para en la calle.", "coche"},
 			"fr": {"La voiture s'arrête dans la rue.", "voiture"}, "ja": {"車は道路で止まります。", "車"}, "zh": {"汽车在街上停下。", "汽车"},
+			"ru": {"Машина стоит на улице.", "Машина"}, "ar": {"السيارة تقف في الشارع.", "السيارة"},
 		},
 	}
 	embed := func(f form) []float32 {
@@ -151,7 +153,7 @@ func TestMultilingualSemantic(t *testing.T) {
 		}
 		return s
 	}
-	langs := []string{"en", "es", "fr", "ja", "zh"}
+	langs := []string{"en", "es", "fr", "ja", "zh", "ru", "ar"}
 	for _, l1 := range langs {
 		for _, l2 := range langs {
 			if l1 == l2 {
@@ -171,11 +173,11 @@ func TestMultilingualSemantic(t *testing.T) {
 func TestMultilingualLongCJK(t *testing.T) {
 	dir := multilingualDir(t)
 	base := filepath.Join(dir, udposPrefix+"ja")
-	m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json")
+	m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
 	}
-	defer m.Close()
+	t.Cleanup(func() { m.Close() })
 	text := strings.Repeat("今日は晴れです。明日は雨かもしれません。\n\n", 120)
 	words := m.Tokenize(text)
 	chunks := SplitChunks(text, words)
@@ -222,11 +224,11 @@ func TestMultilingualDependency(t *testing.T) {
 			if _, err := os.Stat(vocab); err != nil {
 				vocab = base + "_tokenizer.json"
 			}
-			m, err := NewDependencyModel(base+".onnx", vocab)
+			m, err := NewDependencyModel(base+".onnx", vocab, testTokOpts()...)
 			if err != nil {
 				t.Skip(err)
 			}
-			defer m.Close()
+			t.Cleanup(func() { m.Close() })
 			words := m.Tokenize(tc.text)
 			toks, err := m.PredictChunk(words)
 			if err != nil {

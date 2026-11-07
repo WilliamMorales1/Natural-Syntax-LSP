@@ -6,6 +6,8 @@
 | `mobilebert` | `mobilebert` | ~105 MB | POS | en | Faster startup |
 | `pos-es` | `xlmr-es` | ~280 MB | POS | es | XLM-R UPOS, int8; 96.7% on AnCora |
 | `pos-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
+| `pos-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
+| `pos-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS (Apache-2.0), int8; 93.6% on PADT (fp32 93.7%); clitic-attached words are not scored |
 | `multilingual` (default for semantic) | `multilingual-minilm` | ~470 MB | Semantic | 50+ | `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim |
 | `dependency` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
 | `dependency-es` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
@@ -25,6 +27,7 @@ Measured through Neovim (`internal/e2e`, `NSLS_NVIM_BENCH=1`): time to first res
 | ----- | ----- | ---- | --- |
 | en `bert-base` POS | 0.45 s | 93 ms | 397 MB |
 | es / fr POS (int8) | 1.1 s | 62 ms | 450 MB |
+| ru / ar POS (int8) | 1.0 s | 51-60 ms | 451-457 MB |
 | en `mpnet` semantic (removed) | 0.42 s | 90 ms | 385 MB |
 | multilingual MiniLM semantic | 0.8 s | 26-43 ms | 203 MB |
 | en electra dependency | 0.8 s | 130 ms | 684 MB |
@@ -35,7 +38,7 @@ Start-up is slower than English because of the 250k-piece vocabulary and tokeniz
 
 ## Semantic quality across languages
 
-`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQuality -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
+`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQuality -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
 
 | Model / language | sep | colsep | grp |
 | ---------------- | --- | ------ | --- |

@@ -40,6 +40,8 @@ var udTreebanks = map[string]string{
 	"fr": "UD_French-GSD/master/fr_gsd-ud-test.conllu",
 	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
 	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
+	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
+	"ar": "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
 }
 
 func udDir(t *testing.T) string {
@@ -178,13 +180,15 @@ func TestEvalPOS(t *testing.T) {
 		{"fr", udposPrefix + "fr", "_tokenizer.json"},
 		{"ja", udposPrefix + "ja", "_tokenizer.json"},
 		{"zh", udposPrefix + "zh", "_tokenizer.json"},
+		{"ru", "xlmr_ru", "_tokenizer.json"},
+		{"ar", "xlmr_ar", "_tokenizer.json"},
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
 		lang, _, _ := strings.Cut(tc.lang, "-")
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := filepath.Join(dir, tc.prefix)
-			m, err := NewPOSModel(base+".onnx", base+tc.vocab)
+			m, err := NewPOSModel(base+".onnx", base+tc.vocab, testTokOpts()...)
 			if err != nil {
 				t.Logf("%s %s: skipped: %v", tc.lang, variant, err)
 				continue
@@ -236,7 +240,7 @@ func TestEvalDependency(t *testing.T) {
 			if _, err := os.Stat(vocab); err != nil {
 				vocab = base + "_tokenizer.json"
 			}
-			m, err := NewDependencyModel(base+".onnx", vocab)
+			m, err := NewDependencyModel(base+".onnx", vocab, testTokOpts()...)
 			if err != nil {
 				t.Logf("%s %s: skipped: %v", lang, variant, err)
 				continue

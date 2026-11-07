@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|multilingual|dependency|dependency-es|dependency-fr|all]
+# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|pos-ru|pos-ar|multilingual|dependency|dependency-es|dependency-fr|all]
 #   --model  Which model to export (default: bert-base)
 
 set -euo pipefail
@@ -11,21 +11,39 @@ MODEL="bert-base"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --model) MODEL="$2"; shift 2 ;;
-        *) echo "Unknown arg: $1"; exit 1 ;;
+    --model)
+        MODEL="$2"
+        shift 2
+        ;;
+    *)
+        echo "Unknown arg: $1"
+        exit 1
+        ;;
     esac
 done
 
 # Validate early.
 case "$MODEL" in
-    bert-base|mobilebert|pos-es|pos-fr|multilingual|dependency|dependency-es|dependency-fr|all) ;;
-    minilm|mpnet) echo "ERROR: '$MODEL' was replaced by 'multilingual' (paraphrase-multilingual-MiniLM-L12-v2)." >&2; exit 1 ;;
-    *) echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, multilingual, dependency, dependency-es, dependency-fr, or all." >&2; exit 1 ;;
+bert-base | mobilebert | pos-es | pos-fr | pos-ru | pos-ar | multilingual | dependency | dependency-es | dependency-fr | all) ;;
+minilm | mpnet)
+    echo "ERROR: '$MODEL' was replaced by 'multilingual' (paraphrase-multilingual-MiniLM-L12-v2)." >&2
+    exit 1
+    ;;
+*)
+    echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, or all." >&2
+    exit 1
+    ;;
 esac
 
-step() { echo; echo "==> $1"; }
-ok()   { echo "    $1"; }
-fail() { echo "ERROR: $1" >&2; exit 1; }
+step() {
+    echo
+    echo "==> $1"
+}
+ok() { echo "    $1"; }
+fail() {
+    echo "ERROR: $1" >&2
+    exit 1
+}
 
 # ── 1. Check prerequisites ─────────────────────────────────────────────────
 
@@ -99,13 +117,13 @@ elif command -v uv &>/dev/null; then
     [[ -d "$VENV_DIR" ]] || uv venv --quiet --python "$PYTHON" "$VENV_DIR"
     PYTHON="$(env_python "$VENV_DIR")"
     ok "Using venv: $VENV_DIR"
-    uv pip install --quiet --python "$PYTHON" "${PKGS[@]}" \
-        || fail "Failed to install Python dependencies with uv."
+    uv pip install --quiet --python "$PYTHON" "${PKGS[@]}" ||
+        fail "Failed to install Python dependencies with uv."
 elif command -v conda &>/dev/null; then
     step "pip and uv not found, using conda"
     CONDA_ENV="$ROOT/.conda-env"
-    [[ -d "$CONDA_ENV" ]] || conda create --quiet --yes --prefix "$CONDA_ENV" python=3.12 pip \
-        || fail "Failed to create conda env at $CONDA_ENV."
+    [[ -d "$CONDA_ENV" ]] || conda create --quiet --yes --prefix "$CONDA_ENV" python=3.12 pip ||
+        fail "Failed to create conda env at $CONDA_ENV."
     PYTHON="$(env_python "$CONDA_ENV")"
     ok "Using conda env: $CONDA_ENV"
     pip_install || fail "Failed to install Python dependencies inside the conda env."
@@ -125,8 +143,10 @@ has_tokenizer() {
 
 # export_pos_model NAME LABEL [export_model.py args...]
 export_pos_model() {
-    local model_name="$1" label="$2"; shift 2
-    local slug; slug="$(slugify "$model_name")"
+    local model_name="$1" label="$2"
+    shift 2
+    local slug
+    slug="$(slugify "$model_name")"
     if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_labels.json" ]] && has_tokenizer "$slug"; then
         ok "${slug}.onnx already exists, skipping export."
     else
@@ -137,8 +157,10 @@ export_pos_model() {
 }
 
 export_semantic_model() {
-    local model_name="$1" label="$2"; shift 2
-    local slug; slug="$(slugify "$model_name")"
+    local model_name="$1" label="$2"
+    shift 2
+    local slug
+    slug="$(slugify "$model_name")"
     if [[ -f "$DATA_DIR/${slug}.onnx" ]] && has_tokenizer "$slug"; then
         ok "${slug}.onnx already exists, skipping export."
     else
@@ -150,8 +172,10 @@ export_semantic_model() {
 
 # export_dependency_model CATALOG_NAME LABEL [export_model.py args...]
 export_dependency_model() {
-    local model_name="$1" label="$2"; shift 2
-    local slug; slug="$(slugify "$model_name")_dependency"
+    local model_name="$1" label="$2"
+    shift 2
+    local slug
+    slug="$(slugify "$model_name")_dependency"
     if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_rels.json" ]] && has_tokenizer "$slug"; then
         ok "${slug}.onnx already exists, skipping export."
     else
@@ -162,32 +186,38 @@ export_dependency_model() {
 }
 
 # Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
-export_pos_es()  { export_pos_model xlmr-es "Spanish POS (XLM-R, int8, ~280 MB)" --int8; }
-export_pos_fr()  { export_pos_model xlmr-fr "French POS (XLM-R, int8, ~280 MB)" --int8; }
+export_pos_es() { export_pos_model xlmr-es "Spanish POS (XLM-R, int8, ~280 MB)" --int8; }
+export_pos_fr() { export_pos_model xlmr-fr "French POS (XLM-R, int8, ~280 MB)" --int8; }
+export_pos_ru() { export_pos_model xlmr-ru "Russian POS (XLM-R, int8, ~280 MB)" --int8; }
+export_pos_ar() { export_pos_model xlmr-ar "Arabic POS (XLM-R, int8, ~280 MB)" --int8; }
 export_multilingual() { export_semantic_model multilingual-minilm "multilingual MiniLM semantic (~470 MB)"; }
-export_dep_en()  { export_dependency_model en_ewt.electra-base "English (en_ewt.electra-base, ~470 MB)"; }
-export_dep_es()  { export_dependency_model es_ancora.mbert "Spanish (es_ancora.mbert, fp32, ~750 MB)"; }
-export_dep_fr()  { export_dependency_model fr_sequoia.camembert-large "French (fr_sequoia.camembert-large, int8, ~350 MB)" --int8; }
+export_dep_en() { export_dependency_model en_ewt.electra-base "English (en_ewt.electra-base, ~470 MB)"; }
+export_dep_es() { export_dependency_model es_ancora.mbert "Spanish (es_ancora.mbert, fp32, ~750 MB)"; }
+export_dep_fr() { export_dependency_model fr_sequoia.camembert-large "French (fr_sequoia.camembert-large, int8, ~350 MB)" --int8; }
 
 case "$MODEL" in
-    bert-base)       export_pos_model bert-base  "BERT-base POS (~400 MB)" ;;
-    mobilebert)      export_pos_model mobilebert "MobileBERT POS (~100 MB)" ;;
-    pos-es)          export_pos_es ;;
-    pos-fr)          export_pos_fr ;;
-    multilingual)    export_multilingual ;;
-    dependency)      export_dep_en ;;
-    dependency-es)   export_dep_es ;;
-    dependency-fr)   export_dep_fr ;;
-    all)
-        export_pos_model bert-base  "BERT-base POS (~400 MB)"
-        export_pos_model mobilebert "MobileBERT POS (~100 MB)"
-        export_pos_es
-        export_pos_fr
-        export_multilingual
-        export_dep_en
-        export_dep_es
-        export_dep_fr
-        ;;
+bert-base) export_pos_model bert-base "BERT-base POS (~400 MB)" ;;
+mobilebert) export_pos_model mobilebert "MobileBERT POS (~100 MB)" ;;
+pos-es) export_pos_es ;;
+pos-fr) export_pos_fr ;;
+pos-ru) export_pos_ru ;;
+pos-ar) export_pos_ar ;;
+multilingual) export_multilingual ;;
+dependency) export_dep_en ;;
+dependency-es) export_dep_es ;;
+dependency-fr) export_dep_fr ;;
+all)
+    export_pos_model bert-base "BERT-base POS (~400 MB)"
+    export_pos_model mobilebert "MobileBERT POS (~100 MB)"
+    export_pos_es
+    export_pos_fr
+    export_pos_ru
+    export_pos_ar
+    export_multilingual
+    export_dep_en
+    export_dep_es
+    export_dep_fr
+    ;;
 esac
 
 # ── 5. Copy onnxruntime DLL/SO/dylib to data directory ────────────────────
@@ -233,8 +263,8 @@ elif [[ -n "$ORT_RELEASE_ARCHIVE" ]]; then
     step "Downloading official ONNX Runtime release ($ORT_RELEASE_ARCHIVE)"
     TMP_ORT="$(mktemp -d)"
     curl -fL --progress-bar -o "$TMP_ORT/ort.tgz" \
-        "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/$ORT_RELEASE_ARCHIVE" \
-        || fail "Failed to download ONNX Runtime release. Download $ORT_RELEASE_ARCHIVE manually from https://github.com/microsoft/onnxruntime/releases and place the shared library at $ORT_DEST"
+        "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/$ORT_RELEASE_ARCHIVE" ||
+        fail "Failed to download ONNX Runtime release. Download $ORT_RELEASE_ARCHIVE manually from https://github.com/microsoft/onnxruntime/releases and place the shared library at $ORT_DEST"
     tar -xzf "$TMP_ORT/ort.tgz" -C "$TMP_ORT"
     ORT_SRC="$(find "$TMP_ORT" -name "$ORT_NAME" -o -name "${ORT_NAME}.*" | head -1)"
     [[ -n "$ORT_SRC" ]] || fail "Downloaded archive did not contain $ORT_NAME"
@@ -275,8 +305,8 @@ mkdir -p "$INSTALL_DIR"
 cp "$ROOT/bin/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
 ok "Installed: $INSTALL_DIR/$BIN_NAME"
 case ":$PATH:" in
-    *":$INSTALL_DIR:"*) ;;
-    *) echo "    WARNING: $INSTALL_DIR is not on your PATH. Add it to use 'natural-syntax-ls' by name." ;;
+*":$INSTALL_DIR:"*) ;;
+*) echo "    WARNING: $INSTALL_DIR is not on your PATH. Add it to use 'natural-syntax-ls' by name." ;;
 esac
 
 # ── Done ───────────────────────────────────────────────────────────────────

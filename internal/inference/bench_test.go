@@ -22,11 +22,11 @@ var testModels = []struct {
 	}},
 	{"minilm", func(dir string) (Predictor, error) {
 		InitSemantic(384)
-		return NewEmbeddingModel(filepath.Join(dir, "minilm.onnx"), filepath.Join(dir, "minilm_vocab.txt"), 384)
+		return NewEmbeddingModel(filepath.Join(dir, "minilm.onnx"), filepath.Join(dir, "minilm_vocab.txt"))
 	}},
 	{"mpnet", func(dir string) (Predictor, error) {
 		InitSemantic(768)
-		return NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
+		return NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"))
 	}},
 	{"dependency", func(dir string) (Predictor, error) {
 		return NewDependencyModel(filepath.Join(dir, "en_ewt_electra_base_dependency.onnx"), filepath.Join(dir, "en_ewt_electra_base_dependency_vocab.txt"))
@@ -35,6 +35,9 @@ var testModels = []struct {
 
 func testDataDir(t testing.TB) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("model tests skipped with -short")
+	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
 		t.Skip("no user config dir")
@@ -54,10 +57,10 @@ func cpuTime() time.Duration {
 	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
 }
 
-// BenchmarkPredictChunk times one chunk of docs/test.txt through each installed model.
+// BenchmarkPredictChunk times one chunk of docs/examples/test.txt through each installed model.
 func BenchmarkPredictChunk(b *testing.B) {
 	dir := testDataDir(b)
-	raw, err := os.ReadFile("../../docs/test.txt")
+	raw, err := os.ReadFile("../../docs/examples/test.txt")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -68,7 +71,7 @@ func BenchmarkPredictChunk(b *testing.B) {
 			if err != nil {
 				b.Skip(err)
 			}
-			defer m.Close()
+			b.Cleanup(func() { m.Close() })
 			for b.Loop() {
 				if _, err := m.PredictChunk(words); err != nil {
 					b.Fatal(err)
@@ -81,7 +84,7 @@ func BenchmarkPredictChunk(b *testing.B) {
 // TestModelCost prints wall/CPU time per mode for a full-document run and a one-sentence run; NLS_TAG_DUMP=dir also writes each mode's outputs for before/after diffing.
 func TestModelCost(t *testing.T) {
 	dir := testDataDir(t)
-	raw, err := os.ReadFile("../../docs/test.txt")
+	raw, err := os.ReadFile("../../docs/examples/test.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +97,7 @@ func TestModelCost(t *testing.T) {
 			if err != nil {
 				t.Skip(err)
 			}
-			defer m.Close()
+			t.Cleanup(func() { m.Close() })
 			m.PredictChunk(sentence) // warm-up
 
 			measure := func(name string, runs int, f func()) {

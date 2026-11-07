@@ -1,6 +1,6 @@
 //go:build !nojaseg && !english
 
-package jaseg
+package japanese
 
 import (
 	"slices"
@@ -13,7 +13,7 @@ func TestSegmentUniDicWords(t *testing.T) {
 	runes := []rune(run)
 	var got []string
 	pos := 0
-	for _, r := range Segment(run) {
+	for _, r := range segment(run) {
 		if r[0] != pos {
 			t.Fatalf("gap before %v", r)
 		}
@@ -21,14 +21,14 @@ func TestSegmentUniDicWords(t *testing.T) {
 		pos = r[1]
 	}
 	if pos != len(runes) || !slices.Equal(got, want) {
-		t.Errorf("Segment = %q, want %q", got, want)
+		t.Errorf("segment = %q, want %q", got, want)
 	}
 }
 
 func TestLemmas(t *testing.T) {
 	for in, want := range map[string]string{"いただい": "いただく", "持ち込ん": "持ち込む", "素晴らしく": "素晴らしい"} {
-		if got := Lemmas(in); len(got) == 0 || got[0] != want {
-			t.Errorf("Lemmas(%q) = %q, want %q", in, got, want)
+		if got := lemmas(in); len(got) == 0 || got[0] != want {
+			t.Errorf("lemmas(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

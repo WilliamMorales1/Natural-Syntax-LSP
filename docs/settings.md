@@ -17,7 +17,7 @@
 
 ## POS mode colors
 
-Tags map to VS Code semantic token types; color comes from your theme. Full list: [posList.md](posList.md).
+Tags map to VS Code semantic token types; color comes from your theme. Full list: [tags.md](tags.md#pos-tags).
 
 Hover shows the Part of Speech and a Wiktionary definition (when available).
 
@@ -35,7 +35,7 @@ Hover shows the hex color code and a Wiktionary definition (when available).
 
 ## Dependency mode colors
 
-Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [deprelList.md](deprelList.md).
+Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [tags.md](tags.md#ud-relations).
 
 Hover shows the word's relation to its head, then the words that depend on it under `dependents:` (marked `# has dependents` when they have their own), plus a Wiktionary definition (when available).
 
@@ -45,7 +45,7 @@ The server logs to stderr through `log/slog`: warnings and errors by default, de
 
 ## Testing
 
-Open [test.txt](test.txt) in VS Code after installation. For semantic mode, [semantic-example.txt](semantic-example.txt) shows animals, food, technology and feelings each getting their own color family.
+Open [test.txt](examples/test.txt) in VS Code after installation. For semantic mode, [semantic-example.txt](examples/semantic-example.txt) shows animals, food, technology and feelings each getting their own color family.
 
 Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (dependency).
 
@@ -57,7 +57,7 @@ Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (depe
 | --- | ---- | -------------- |
 | `NSLS_ML_DIR` | `internal/inference` multilingual tests | Sample sentences per language through the exported models |
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
-| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across en, es, fr, ja, zh |
+| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across en, es, fr, ja, zh, ru, ar |
 | `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency and server memory, through a real headless Neovim; `NSLS_BENCH_ONLY` filters cases |
 
 `go test -short -race ./...` is the CI check (`.github/workflows/ci.yml`). Fuzz targets run with `go test ./internal/lspserver -run xxx -fuzz FuzzApplyContentChange`; others are `FuzzParseCPUList` (`internal/inference`) and `FuzzStripHTML` (`internal/wiktionary`).

@@ -1,6 +1,6 @@
 //go:build !english
 
-package wiktionary
+package chinese
 
 import (
 	_ "embed"
@@ -35,11 +35,11 @@ func loadMap(data string) map[rune]rune {
 	return m
 }
 
-// simplified converts Traditional Chinese characters to Simplified ones; other text is unchanged.
-func simplified(s string) string { return convert(s, trad2simp()) }
+// Simplified converts Traditional Chinese characters to Simplified ones; other text is unchanged.
+func Simplified(s string) string { return convert(s, trad2simp()) }
 
-// traditional converts Simplified Chinese characters to their first-listed Traditional form; ambiguous ones (发, 后) can pick the wrong variant.
-func traditional(s string) string { return convert(s, simp2trad()) }
+// Traditional converts Simplified Chinese characters to their first-listed Traditional form; ambiguous ones (发, 后) can pick the wrong variant.
+func Traditional(s string) string { return convert(s, simp2trad()) }
 
 func convert(s string, m map[rune]rune) string {
 	return strings.Map(func(r rune) rune {

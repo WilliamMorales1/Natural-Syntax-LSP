@@ -51,9 +51,10 @@ func SidecarPath(vocabPath string) string {
 }
 
 // Open loads the tokenizer a model ships with: a Unigram tokenizer.json sidecar if present, else the WordPiece vocab.txt.
-func Open(vocabPath string) (Tokenizer, error) {
+// Options apply to Unigram tokenizers only; WordPiece models keep their fixed pretokenization.
+func Open(vocabPath string, opts ...Option) (Tokenizer, error) {
 	if data, err := os.ReadFile(SidecarPath(vocabPath)); err == nil && isUnigramFile(data) {
-		return parseUnigram(data)
+		return parseUnigram(data, opts...)
 	}
 	return Load(vocabPath)
 }
@@ -182,7 +183,7 @@ func basicTokenize(text string, charCJK, hfPunct bool) []WordSpan {
 	for i < n {
 		lineFirst := i == 0
 		// skip whitespace
-		for i < n && unicode.IsSpace(runes[i]) {
+		for i < n && isWordBreak(runes[i]) {
 			if runes[i] == '\n' {
 				blockLine = lines.next(runes[i+1:])
 				lineFirst = true
@@ -194,7 +195,7 @@ func basicTokenize(text string, charCJK, hfPunct bool) []WordSpan {
 		}
 		start := i
 		// collect until whitespace
-		for i < n && !unicode.IsSpace(runes[i]) {
+		for i < n && !isWordBreak(runes[i]) {
 			i++
 		}
 		// Split run on punctuation boundaries.
@@ -205,6 +206,11 @@ func basicTokenize(text string, charCJK, hfPunct bool) []WordSpan {
 		words = append(words, spans...)
 	}
 	return words
+}
+
+// isWordBreak reports whether r separates words: whitespace or an invisible bidirectional control, which is not part of any word and would otherwise stay glued to it.
+func isWordBreak(r rune) bool {
+	return unicode.IsSpace(r) || r == '\u200e' || r == '\u200f' || r == '\u061c' || (r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069')
 }
 
 // lineKind is the markdown block construct a line opens.

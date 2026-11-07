@@ -1,6 +1,8 @@
 package lspserver
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -53,9 +55,10 @@ func syncTokens(reg *documentRegistry, text string, version int32) []uint32 {
 
 func hoverAt(t *testing.T, reg *documentRegistry, line, char uint32) *hoverQueryResult {
 	t.Helper()
-	reply := make(chan *hoverQueryResult, 1)
-	reg.hover(testURI, line, char, reply)
-	res := <-reply
+	res, err := reg.hover(t.Context(), testURI, line, char)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if res == nil || res.tok == nil {
 		t.Fatalf("no token at %d:%d", line, char)
 	}
@@ -103,6 +106,9 @@ func dependentWords(r *hoverQueryResult) []string {
 
 // TestEditRetagsAcrossOldChunkBoundary puts "change" at the last slot of an old fixed 200-word window, then inserts "of" after it, in every mode whose model is installed.
 func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model tests skipped with -short")
+	}
 	cfg, _ := os.UserConfigDir()
 	dir := filepath.Join(cfg, "natural-syntax-ls")
 	lib := filepath.Join(dir, "libonnxruntime.so")
@@ -135,7 +141,7 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 		}},
 		{"semantic", func() (predictor, error) {
 			inference.InitSemantic(768)
-			return inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
+			return inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			// Re-embedding is checked on the stored embedding: a sub-visible shift can snap to the same color.
 			t.Logf("change: %s -> %s", b.tok.Color, a.tok.Color)
@@ -155,7 +161,7 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 			if err != nil {
 				t.Skip(err)
 			}
-			defer m.Close()
+			t.Cleanup(func() { m.Close() })
 
 			inc := newDocumentRegistry(m)
 			syncTokens(inc, before, 1)
@@ -195,9 +201,11 @@ func (m *countingModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token
 
 func syncTokensURI(reg *documentRegistry, uri, text string, version int32) []uint32 {
 	reg.update(&textItem{uri: uri, text: text, version: version})
-	reply := make(chan []uint32, 1)
-	reg.semanticTokens(uri, reply)
-	return <-reply
+	data, err := reg.semanticTokens(context.Background(), uri)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func TestRegistryRepredictsOnlyChangedChunks(t *testing.T) {
@@ -244,9 +252,7 @@ func TestRegistryDiscard(t *testing.T) {
 	reg := newDocumentRegistry(contextModel{})
 	syncTokens(reg, "some words.", 1)
 	reg.discard(testURI)
-	reply := make(chan *hoverQueryResult, 1)
-	reg.hover(testURI, 0, 0, reply)
-	if res := <-reply; res != nil {
+	if res, _ := reg.hover(t.Context(), testURI, 0, 0); res != nil {
 		t.Errorf("hover after close: %+v", res.tok)
 	}
 	// Reopening at version 1 must work again after close.
@@ -259,15 +265,11 @@ func TestRegistryHoverMisses(t *testing.T) {
 	reg := newDocumentRegistry(contextModel{})
 	syncTokens(reg, "one two\n\nthree", 1)
 	for _, pos := range [][2]uint32{{0, 3}, {1, 0}, {9, 0}, {0, 99}} {
-		reply := make(chan *hoverQueryResult, 1)
-		reg.hover(testURI, pos[0], pos[1], reply)
-		if res := <-reply; res != nil {
+		if res, _ := reg.hover(t.Context(), testURI, pos[0], pos[1]); res != nil {
 			t.Errorf("hover at %v hit %q", pos, res.tok.Word)
 		}
 	}
-	reply := make(chan *hoverQueryResult, 1)
-	reg.hover("file:///never-opened", 0, 0, reply)
-	if <-reply != nil {
+	if res, _ := reg.hover(t.Context(), "file:///never-opened", 0, 0); res != nil {
 		t.Error("hover on unknown document returned a token")
 	}
 }
@@ -332,9 +334,9 @@ func (m clusterModel) EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token, []
 }
 
 func storeTokens(reg *documentRegistry, uri string) []postag.Token {
-	reply := make(chan []postag.Token, 1)
-	reg.do(func() { reply <- slices.Clone(reg.stores[uri].doc.tokens) })
-	return <-reply
+	var out []postag.Token
+	reg.do(func() { out = slices.Clone(reg.stores[uri].doc.tokens) })
+	return out
 }
 
 func hexDist(a, b string) int {
@@ -348,6 +350,9 @@ func hexDist(a, b string) int {
 }
 
 func TestModelEditLatency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model tests skipped with -short")
+	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
 		t.Skipf("no user config dir: %v", err)
@@ -359,11 +364,11 @@ func TestModelEditLatency(t *testing.T) {
 	}
 	inference.SetORTLibPath(lib)
 	inference.InitSemantic(768)
-	model, err := inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
+	model, err := inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"))
 	if err != nil {
 		t.Skipf("mpnet model unavailable: %v", err)
 	}
-	defer model.Close()
+	t.Cleanup(func() { model.Close() })
 
 	reg := newDocumentRegistry(model)
 	text := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 12)
@@ -433,19 +438,18 @@ func colorsOf(toks []postag.Token) []string {
 
 // embeddingAt returns a copy of the stored embedding of the token starting at offset, or nil.
 func embeddingAt(reg *documentRegistry, offset uint32) []float32 {
-	reply := make(chan []float32, 1)
+	var out []float32
 	reg.do(func() {
 		for _, cr := range reg.stores[testURI].chunkResults {
 			for i, tok := range cr.tokens {
 				if tok.OffsetBegin == offset && i < len(cr.embeds) {
-					reply <- slices.Clone(cr.embeds[i])
+					out = slices.Clone(cr.embeds[i])
 					return
 				}
 			}
 		}
-		reply <- nil
 	})
-	return <-reply
+	return out
 }
 
 // TestChunkKeyBlockStart checks that turning prose lines into list items changes the cache key, since sentence splits differ even though the words match.
@@ -453,6 +457,55 @@ func TestChunkKeyBlockStart(t *testing.T) {
 	prose := tokenizer.BasicTokenize("a - b\n- c")
 	list := tokenizer.BasicTokenize("a\n- b\n- c")
 	if chunkKey(prose) == chunkKey(list) {
-		t.Errorf("same key %q for different block starts", chunkKey(list))
+		t.Errorf("same key %x for different block starts", chunkKey(list))
+	}
+}
+
+func TestHoverWaitsForRun(t *testing.T) {
+	reg := newDocumentRegistry(contextModel{})
+	reg.update(&textItem{uri: testURI, text: "one two three.", version: 1})
+	res, err := reg.hover(t.Context(), testURI, 0, 1)
+	if err != nil || res == nil || res.tok.Word != "one" {
+		t.Fatalf("hover = %+v, %v", res, err)
+	}
+}
+
+func TestRegistryCloseReleasesWaiters(t *testing.T) {
+	reg := newDocumentRegistry(contextModel{})
+	store := &documentStore{processing: true, run: &run{done: make(chan struct{})}}
+	reg.stores[testURI] = store
+	errc := make(chan error, 1)
+	go func() {
+		_, err := reg.semanticTokens(t.Context(), testURI)
+		errc <- err
+	}()
+	reg.Close()
+	if err := <-errc; !errors.Is(err, errClosed) {
+		t.Errorf("err = %v, want errClosed", err)
+	}
+}
+
+func TestDiscardSupersedesWaiter(t *testing.T) {
+	reg := newDocumentRegistry(contextModel{})
+	reg.stores[testURI] = &documentStore{processing: true, run: &run{done: make(chan struct{})}}
+	errc := make(chan error, 1)
+	go func() {
+		_, err := reg.semanticTokens(t.Context(), testURI)
+		errc <- err
+	}()
+	// Discard may land before the waiter registers; either way the waiter must not hang.
+	reg.discard(testURI)
+	if err := <-errc; err != nil && !errors.Is(err, errSuperseded) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestWaiterHonorsContext(t *testing.T) {
+	reg := newDocumentRegistry(contextModel{})
+	reg.stores[testURI] = &documentStore{processing: true, run: &run{done: make(chan struct{})}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := reg.semanticTokens(ctx, testURI); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want Canceled", err)
 	}
 }

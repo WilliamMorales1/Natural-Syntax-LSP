@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
@@ -40,8 +42,8 @@ func loadDepRels(relsPath string) ([]postag.Deprel, error) {
 }
 
 // NewDependencyModel loads the dependency-parsing ONNX model.
-func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
-	tok, err := initEnvAndTokenizer(vocabPath)
+func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (*DependencyModel, error) {
+	tok, err := initEnvAndTokenizer(vocabPath, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -122,26 +124,29 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) poolMatrix
 	return poolMatrixInput{ids: pieceIDs, mask: mask, pool: pool, seqLen: seqLen, nSub: nSub}
 }
 
-// sentenceEnders are word texts that end a sentence for chunking purposes (the biaffine model was trained one sentence per synthetic root).
-var sentenceEnders = map[string]bool{
-	".": true, "!": true, "?": true,
-	"。": true, "！": true, "？": true, "｡": true, "‼": true, "⁇": true, "⁈": true, "⁉": true,
+// isSentenceEnd reports whether w is a lone Unicode sentence terminal (. ! ? 。 ？ ؟ ۔ ...); the biaffine model was trained one sentence per synthetic root.
+func isSentenceEnd(w string) bool {
+	r, n := utf8.DecodeRuneInString(w)
+	return n == len(w) && unicode.Is(unicode.Sentence_Terminal, r)
 }
 
-// cjkClosers are closing brackets that stay with the sentence they close, as in 「行きます。」.
-var cjkClosers = map[string]bool{"」": true, "』": true, "）": true, "】": true, "〕": true, "｣": true}
+// isCloser reports whether w is a lone non-ASCII closing bracket or quote that stays with the sentence it closes, as in 「行きます。」 or «да.».
+func isCloser(w string) bool {
+	r, n := utf8.DecodeRuneInString(w)
+	return n == len(w) && r > unicode.MaxASCII && (unicode.Is(unicode.Pe, r) || unicode.Is(unicode.Pf, r))
+}
 
-// splitSentences groups words into sentences: markdown blocks, each further split right after any sentenceEnders token.
+// splitSentences groups words into sentences: markdown blocks, each further split right after any sentence-end token.
 func splitSentences(words []tokenizer.WordSpan) [][]tokenizer.WordSpan {
 	var sentences [][]tokenizer.WordSpan
 	for _, block := range splitBlocks(words) {
 		start := 0
 		for i, w := range block {
-			if i < start || !sentenceEnders[w.Text] || isOrderedListMarker(block[start:i+1]) {
+			if i < start || !isSentenceEnd(w.Text) || isOrderedListMarker(block[start:i+1]) {
 				continue
 			}
 			end := i + 1
-			for end < len(block) && cjkClosers[block[end].Text] {
+			for end < len(block) && isCloser(block[end].Text) {
 				end++
 			}
 			sentences = append(sentences, block[start:end])

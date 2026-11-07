@@ -6,7 +6,7 @@ Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Cod
 
 Three modes:
 
-- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish and French via XLM-R); your theme picks the colors.
+- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish, French, Russian and Arabic via XLM-R); your theme picks the colors.
 - **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
 - **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish and French.
 
@@ -42,6 +42,7 @@ code --install-extension natural-syntax-ls-*.vsix
 - [Install from source, export models, troubleshooting](docs/install.md)
 - [Models, languages, accuracy, latency and memory](docs/models.md)
 - [Settings, colors, testing](docs/settings.md)
+- [Adding a language](docs/adding-a-language.md)
 - [Neovim manual setup](docs/neovim.md)
 
 ## Credits
