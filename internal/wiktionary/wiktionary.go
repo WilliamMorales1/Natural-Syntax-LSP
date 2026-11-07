@@ -2,25 +2,39 @@
 package wiktionary
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"html"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"natural-syntax-ls/internal/postag"
+	"natural-syntax-ls/internal/tokenizer"
 )
 
 var client = &http.Client{Timeout: 8 * time.Second}
+
+// userAgent identifies this client to Wikimedia; override at build time with -ldflags "-X natural-syntax-ls/internal/wiktionary.userAgent=...".
+var userAgent = "natural-syntax-ls/1.0 (https://github.com/wsm5224/NLSyntaxHighlighting-Go)"
 
 type cacheEntry struct {
 	def, url string
 }
 
-var cache sync.Map // key: lowercase word:pos:deprel → cacheEntry
+// maxCacheEntries bounds the definition cache so a long editor session cannot grow it without limit.
+const maxCacheEntries = 4096
+
+var (
+	cacheMu sync.RWMutex
+	cache   = map[string]cacheEntry{} // key: lang:modelLang:lowercase word:pos:deprel
+)
 
 var (
 	htmlTagRe    = regexp.MustCompile(`<[^>]+>`)
@@ -39,17 +53,20 @@ type sense struct {
 }
 
 // fetch returns the definition API payload for word, keyed by language code.
-func fetch(word string) (map[string][]entry, error) {
-	req, err := http.NewRequest(http.MethodGet, "https://en.wiktionary.org/api/rest_v1/page/definition/"+url.PathEscape(word), nil)
+func fetch(ctx context.Context, word string) (map[string][]entry, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://en.wiktionary.org/api/rest_v1/page/definition/"+url.PathEscape(word), nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "natural-syntax-ls/1.0 (https://github.com/wsm5224/NLSyntaxHighlighting-Go)")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fetchViaWikitext(ctx, word, 0)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("wiktionary %q: %s", word, resp.Status)
 	}
@@ -57,28 +74,48 @@ func fetch(word string) (map[string][]entry, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
+	supplementHan(ctx, word, payload)
 	return payload, nil
 }
 
+// Auto is the lang value that takes the best definition across all languages.
+const Auto = "auto"
+
 // FetchDef returns a definition for word and its Wiktionary page, matching the word's POS if possible, trying exact case then lowercase.
+// lang is a Wiktionary language code ("en" when empty) or Auto; modelLang is tried first under Auto.
 // In dependency mode there is no POS tag (pos == postag.O); deprel is used instead to guess the Wiktionary category.
-func FetchDef(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok bool) {
-	key := strings.ToLower(word) + ":" + pos.String() + ":" + deprel.String()
-	if v, ok := cache.Load(key); ok {
-		e := v.(cacheEntry)
+func FetchDef(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok bool) {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "" {
+		lang = "en"
+	}
+	modelLang = strings.ToLower(modelLang)
+	if lang != Auto {
+		modelLang = ""
+	}
+	key := lang + ":" + modelLang + ":" + strings.ToLower(word) + ":" + pos.String() + ":" + deprel.String()
+	cacheMu.RLock()
+	e, hit := cache[key]
+	cacheMu.RUnlock()
+	if hit {
 		return e.def, e.url, true
 	}
-	def, pageURL, ok = fetchDefUncached(word, pos, deprel)
+	def, pageURL, ok = fetchDefUncached(ctx, word, lang, modelLang, pos, deprel)
 	if ok {
-		cache.Store(key, cacheEntry{def, pageURL})
+		cacheMu.Lock()
+		if len(cache) >= maxCacheEntries {
+			clear(cache)
+		}
+		cache[key] = cacheEntry{def, pageURL}
+		cacheMu.Unlock()
 	}
 	return def, pageURL, ok
 }
 
-func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
+func fetchDefUncached(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
 	lower := strings.ToLower(word)
 
-	if pos == postag.POS || (deprel == postag.DepCase && lower == "'s") {
+	if lang == "en" && (pos == postag.POS || (deprel == postag.DepCase && lower == "'s")) {
 		word = "-'s"
 		lower = "-'s"
 	}
@@ -96,18 +133,35 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 	if word != lower {
 		forms = append(forms, lower)
 	}
+	// Inflected forms (ja) are not headwords, so base forms from the registered lemmatizer are tried last.
+	if lang == "ja" || lang == Auto {
+		for _, base := range tokenizer.JapaneseLemmas(word) {
+			if base != word && base != lower {
+				forms = append(forms, base)
+			}
+		}
+	}
+	// Wiktionary keeps full Chinese entries under the Traditional spelling; the other script's page may be missing or a stub.
+	if lang == "zh" || lang == Auto {
+		if trad := traditional(word); trad != word {
+			forms = append(forms, trad)
+		}
+		if simp := simplified(word); simp != word {
+			forms = append(forms, simp)
+		}
+	}
 	// Capitalized pages can lack the tagged POS (sentence-initial "Said" is only a proper noun), so try lowercase before settling.
 	var fallbackDef, fallbackURL string
 	for _, form := range forms {
-		payload, err := fetchPayload(form)
+		payload, err := fetchPayload(ctx, form)
 		if err != nil {
 			continue
 		}
-		def, matched := pickDef(payload["en"], target, numeralGlyph)
+		def, language, matched := pickLang(payload, lang, modelLang, target, numeralGlyph)
 		if def == "" {
 			continue
 		}
-		pageURL := "https://en.wiktionary.org/wiki/" + url.PathEscape(form)
+		def, pageURL := labelled(def, language, form)
 		if matched || target == "" {
 			return def, pageURL, true
 		}
@@ -118,11 +172,63 @@ func fetchDefUncached(word string, pos postag.PartOfSpeech, deprel postag.Deprel
 	return fallbackDef, fallbackURL, fallbackDef != ""
 }
 
+// pickLang chooses the definition for lang (or the best across buckets under Auto) and reports its entry language.
+func pickLang(payload map[string][]entry, lang, modelLang, target string, numeralGlyph bool) (def, language string, matched bool) {
+	if lang != Auto {
+		entries := payload[lang]
+		if lang != "en" {
+			// Translingual entries (symbols, digits) live in the en bucket.
+			for _, e := range payload["en"] {
+				if strings.EqualFold(e.Language, "Translingual") {
+					entries = append(entries[:len(entries):len(entries)], e)
+				}
+			}
+		}
+		return pickDef(entries, target, numeralGlyph)
+	}
+	var order []string
+	seen := map[string]bool{"other": true}
+	add := func(code string) {
+		if code != "" && !seen[code] {
+			seen[code] = true
+			order = append(order, code)
+		}
+	}
+	add(modelLang)
+	add("en")
+	for _, code := range slices.Sorted(maps.Keys(payload)) {
+		add(code)
+	}
+	var fbDef, fbLang string
+	for _, code := range order {
+		d, l, m := pickDef(payload[code], target, numeralGlyph)
+		if d == "" {
+			continue
+		}
+		if m || target == "" {
+			return d, l, true
+		}
+		if fbDef == "" {
+			fbDef, fbLang = d, l
+		}
+	}
+	return fbDef, fbLang, false
+}
+
+// labelled prefixes def with its language and links the language section when it is not English.
+func labelled(def, language, form string) (string, string) {
+	pageURL := "https://en.wiktionary.org/wiki/" + url.PathEscape(form)
+	if language == "" || strings.EqualFold(language, "English") || strings.EqualFold(language, "Translingual") {
+		return def, pageURL
+	}
+	return "*(" + language + ")* " + def, pageURL + "#" + url.PathEscape(strings.ReplaceAll(language, " ", "_"))
+}
+
 // fetchPayload is fetch, swappable in tests.
 var fetchPayload = fetch
 
-// pickDef returns the best definition from entries and whether it came from an entry matching target.
-func pickDef(entries []entry, target string, numeralGlyph bool) (string, bool) {
+// pickDef returns the best definition from entries, its entry language, and whether the entry matched target.
+func pickDef(entries []entry, target string, numeralGlyph bool) (string, string, bool) {
 	firstNonEmpty := func(e *entry) string {
 		for _, d := range e.Definitions {
 			if s := stripHTML(d.Definition); s != "" {
@@ -145,7 +251,8 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, bool) {
 		e := &entries[i]
 		lpos := strings.ToLower(e.PartOfSpeech)
 		switch {
-		case strings.EqualFold(e.PartOfSpeech, target), target == "Noun" && lpos == "proper noun":
+		case strings.EqualFold(e.PartOfSpeech, target), target == "Noun" && lpos == "proper noun",
+			(target == "Verb" || target == "Adjective") && lpos == "participle":
 			addTo(&matched, e)
 		case lowPriPOS[lpos]:
 			addTo(&lowPri, e)
@@ -164,15 +271,15 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, bool) {
 
 	for _, e := range ordered(matched) {
 		if def := firstNonEmpty(e); def != "" {
-			return def, true
+			return def, e.Language, true
 		}
 	}
-	for _, e := range append(ordered(normal), ordered(lowPri)...) {
+	for _, e := range slices.Concat(ordered(normal), ordered(lowPri)) {
 		if def := firstNonEmpty(e); def != "" {
-			return def, false
+			return def, e.Language, false
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // lowPriPOS are Wiktionary sections ranked after every other non-matching section.
@@ -193,7 +300,7 @@ func stripHTML(s string) string {
 		if v, ok := htmlEntities[e]; ok {
 			return v
 		}
-		return e
+		return html.UnescapeString(e)
 	})
 	return strings.TrimSpace(s)
 }

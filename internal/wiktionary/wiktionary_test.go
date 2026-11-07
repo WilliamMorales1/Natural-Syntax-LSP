@@ -1,6 +1,7 @@
 package wiktionary
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 	}
 	orig := fetchPayload
 	t.Cleanup(func() { fetchPayload = orig })
-	fetchPayload = func(word string) (map[string][]entry, error) {
+	fetchPayload = func(_ context.Context, word string) (map[string][]entry, error) {
 		if p, ok := pages[word]; ok {
 			return p, nil
 		}
@@ -79,9 +80,84 @@ func TestFetchDefSentenceInitialVerb(t *testing.T) {
 		{"sure", postag.JJ, "Certain.", "https://en.wiktionary.org/wiki/sure"},
 		{"Said", postag.NNP, "A male given name from Arabic.", "https://en.wiktionary.org/wiki/Said"},
 	} {
-		got, url, ok := fetchDefUncached(tc.word, tc.pos, postag.DepRoot)
+		got, url, ok := fetchDefUncached(t.Context(), tc.word, "en", "", tc.pos, postag.DepRoot)
 		if !ok || got != tc.wantDef || url != tc.wantURL {
-			t.Errorf("fetchDefUncached(%q, %v) = %q, %q, %v; want %q, %q", tc.word, tc.pos, got, url, ok, tc.wantDef, tc.wantURL)
+			t.Errorf("fetchDefUncached(t.Context(), %q, %v) = %q, %q, %v; want %q, %q", tc.word, tc.pos, got, url, ok, tc.wantDef, tc.wantURL)
+		}
+	}
+}
+
+func TestLanguageSelection(t *testing.T) {
+	ent := func(lang, pos, text string) entry {
+		return entry{PartOfSpeech: pos, Language: lang, Definitions: []sense{{text}}}
+	}
+	pages := map[string]map[string][]entry{
+		"a": {
+			"en":    {ent("English", "Letter", "The first letter.")},
+			"es":    {ent("Spanish", "Preposition", "to, at")},
+			"other": {ent("Zulu", "Noun", "zulu noun")},
+		},
+		"7": {"en": {ent("Translingual", "Symbol", "The digit seven.")}},
+		"私": {"ja": {ent("Japanese", "Pronoun", "I")}},
+	}
+	orig := fetchPayload
+	t.Cleanup(func() { fetchPayload = orig })
+	var asked []string
+	fetchPayload = func(_ context.Context, word string) (map[string][]entry, error) {
+		asked = append(asked, word)
+		if p, ok := pages[word]; ok {
+			return p, nil
+		}
+		return nil, errors.New("not found")
+	}
+
+	for _, tc := range []struct {
+		name, word, lang, model string
+		pos                     postag.PartOfSpeech
+		want, wantURL           string
+		ok                      bool
+	}{
+		{"en default", "a", "en", "", postag.IN, "The first letter.", "https://en.wiktionary.org/wiki/a", true},
+		{"es fixed", "a", "es", "", postag.IN, "*(Spanish)* to, at", "https://en.wiktionary.org/wiki/a#Spanish", true},
+		{"missing bucket", "a", "fr", "", postag.IN, "", "", false},
+		{"auto model first", "a", Auto, "es", postag.IN, "*(Spanish)* to, at", "https://en.wiktionary.org/wiki/a#Spanish", true},
+		{"auto en first", "a", Auto, "", postag.NN, "The first letter.", "https://en.wiktionary.org/wiki/a", true},
+		{"auto skips other", "a", Auto, "", postag.O, "The first letter.", "https://en.wiktionary.org/wiki/a", true},
+		{"translingual under es", "7", "es", "", postag.CD, "The digit seven.", "https://en.wiktionary.org/wiki/7", true},
+		{"non-latin", "私", "ja", "", postag.PRP, "*(Japanese)* I", "https://en.wiktionary.org/wiki/%E7%A7%81#Japanese", true},
+	} {
+		got, url, ok := fetchDefUncached(t.Context(), tc.word, tc.lang, tc.model, tc.pos, postag.DepRoot)
+		if ok != tc.ok || got != tc.want || url != tc.wantURL {
+			t.Errorf("%s: got %q, %q, %v; want %q, %q, %v", tc.name, got, url, ok, tc.want, tc.wantURL, tc.ok)
+		}
+	}
+	_ = asked
+}
+
+func TestCacheSeparatesLanguages(t *testing.T) {
+	pages := map[string][]entry{
+		"en": {{PartOfSpeech: "Noun", Language: "English", Definitions: []sense{{"english sense"}}}},
+		"es": {{PartOfSpeech: "Noun", Language: "Spanish", Definitions: []sense{{"sentido"}}}},
+	}
+	orig := fetchPayload
+	t.Cleanup(func() { fetchPayload = orig })
+	fetchPayload = func(context.Context, string) (map[string][]entry, error) { return pages, nil }
+	en, _, _ := FetchDef(t.Context(), "cachetestword", "en", "", postag.NN, postag.DepRoot)
+	es, _, _ := FetchDef(t.Context(), "cachetestword", "es", "", postag.NN, postag.DepRoot)
+	if en == es || en != "english sense" {
+		t.Errorf("cache mixed languages: en=%q es=%q", en, es)
+	}
+}
+
+func TestParticipleMatchesVerbAndAdjective(t *testing.T) {
+	entries := []entry{
+		{PartOfSpeech: "Noun", Language: "Spanish", Definitions: []sense{{"a noun"}}},
+		{PartOfSpeech: "Participle", Language: "Spanish", Definitions: []sense{{"past participle of recibir"}}},
+	}
+	for _, target := range []string{"Verb", "Adjective"} {
+		def, _, matched := pickDef(entries, target, false)
+		if !matched || def != "past participle of recibir" {
+			t.Errorf("%s: got %q, %v", target, def, matched)
 		}
 	}
 }
