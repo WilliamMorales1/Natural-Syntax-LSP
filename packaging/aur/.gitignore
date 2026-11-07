@@ -1,5 +1,0 @@
-*.pkg.tar.zst
-*.log
-*.tar.gz
-src/
-pkg/

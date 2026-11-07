@@ -107,7 +107,7 @@ jobs:
           name: bin-${{ matrix.platform }}
           path: vscode-extension/bin/${{ matrix.platform }}/
 
-      # Standalone archives for Mason/AUR; the server finds the ORT lib next to its binary.
+      # Standalone archives for Mason; the server finds the ORT lib next to its binary.
       - name: Archive binary (unix)
         if: matrix.os != 'windows-latest'
         shell: bash
