@@ -125,6 +125,37 @@ jobs:
           Copy-Item LICENSE vscode-extension/bin/${{ matrix.platform }}/
           Compress-Archive -Path vscode-extension/bin/${{ matrix.platform }}/* -DestinationPath dist/natural-syntax-ls_${{ matrix.platform }}.zip
 
+      # English-only variant: no kagome dictionary or CJK tables (-tags english); standalone archive only.
+      - name: Archive english-only binary (unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          D=english-pkg
+          mkdir -p $D
+          go build -tags english -trimpath -ldflags "-s -w" -o $D/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+          cp LICENSE vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }} $D/
+          chmod +x $D/${{ matrix.binary }}
+          tar czf dist/natural-syntax-ls_${{ matrix.platform }}_english.tar.gz -C $D .
+
+      - name: Archive english-only binary (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "1"
+          CC: gcc
+        run: |
+          $d = "english-pkg"
+          New-Item -ItemType Directory -Force $d
+          go build -tags english -trimpath -ldflags "-s -w" -o "$d/${{ matrix.binary }}" ./cmd/natural-syntax-ls/
+          Copy-Item LICENSE, "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}" $d/
+          Compress-Archive -Path "$d/*" -DestinationPath dist/natural-syntax-ls_${{ matrix.platform }}_english.zip
+
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: archive-${{ matrix.platform }}
