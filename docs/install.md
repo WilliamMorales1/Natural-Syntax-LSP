@@ -2,7 +2,7 @@
 
 ## Exporting models
 
-Every install path needs the ONNX model files, which no package ships (they are 100-470 MB each). From a repo checkout (installs Python deps itself):
+Every install path needs the ONNX model files, which no package ships (they are 100-750 MB each). Spanish and French POS and the French parser are exported as int8 (`export_model.py --int8`), which is 4x smaller; the Spanish parser must stay fp32. From a repo checkout (installs Python deps itself):
 
 ```bash
 scripts/setup.sh                     # BERT-base POS model (~430 MB)
@@ -32,6 +32,10 @@ npm install
 npx vsce package
 code --install-extension natural-syntax-ls-*.vsix
 ```
+
+Every build includes the kagome Japanese dictionary (about 48 MB binary instead of 11 MB, loaded only when Japanese text appears; see [models.md](models.md#other-languages-experimental)). To leave it out, build with `go build -tags nojaseg ./cmd/natural-syntax-ls/`; Japanese then falls back to tokenizer pieces (74% instead of 97% POS accuracy).
+
+For an English-only server, build with `-tags english` (about 7 MB): no kagome dictionary, no Japanese lemmas, no Chinese script conversion. Release archives named `*_english.*` are built this way; `scripts/build-release.sh [version]` builds both variants into `dist/`. Semantic mode still works because the multilingual embedding model needs the Unigram tokenizer, which stays in.
 
 To use your own binary instead of the bundled one, set in VS Code settings:
 

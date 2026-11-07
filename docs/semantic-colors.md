@@ -33,13 +33,13 @@ Two known behaviors are excluded from the example:
 
 ## 1. Word embeddings
 
-The model (`all-mpnet-base-v2` or `all-MiniLM-L6-v2`) processes one chunk of text at a time and returns a hidden state for each subword token. A word's vector is the mean of its subword vectors:
+The model (default `paraphrase-multilingual-MiniLM-L12-v2`; the numbers in this document were measured with `all-mpnet-base-v2` and `all-MiniLM-L6-v2`, which have been removed) processes one chunk of text at a time and returns a hidden state for each subword token. A word's vector is the mean of its subword vectors:
 
 $$v_w = \frac{1}{|S(w)|} \sum_{s \in S(w)} h_s$$
 
 Because the hidden states are contextual, the same word can receive different vectors in different sentences.
 
-Vectors are normalized to unit length, $\hat v = v / \lVert v \rVert$. Similarity is measured by cosine distance, $1 - \hat v \cdot \hat w \in [0, 2]$, or equivalently by the chord length $\lVert \hat v - \hat w \rVert = \sqrt{2 - 2\,\hat v \cdot \hat w}$. The vectors have 768 dimensions (mpnet) or 384 (MiniLM). The method reduces them to two.
+Vectors are normalized to unit length, $\hat v = v / \lVert v \rVert$. Similarity is measured by cosine distance, $1 - \hat v \cdot \hat w \in [0, 2]$, or equivalently by the chord length $\lVert \hat v - \hat w \rVert = \sqrt{2 - 2\,\hat v \cdot \hat w}$. The vectors have 384 dimensions (multilingual MiniLM; 768 for mpnet). The method reduces them to two.
 
 ## 2. Per-document principal plane
 

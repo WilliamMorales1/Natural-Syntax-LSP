@@ -39,20 +39,21 @@ Start-up is slower than English because of the 250k-piece vocabulary and tokeniz
 
 | Model / language | sep | colsep | grp |
 | ---------------- | --- | ------ | --- |
-| multilingual en | 1.29 | 3.74 | 1.00 |
-| multilingual es | 1.32 | 3.73 | 0.96 |
-| multilingual fr | 1.30 | 2.41 | 1.00 |
-| multilingual zh | 1.24 | 1.37 | 0.88 |
-| multilingual ja (katakana words) | 1.02 | 0.93 | 0.17 |
-| multilingual ja (kanji words) | 1.16 | 1.05 | 0.79 |
+| multilingual en | 1.30 | 3.89 | 1.00 |
+| multilingual es | 1.34 | 3.99 | 1.00 |
+| multilingual fr | 1.31 | 2.59 | 1.00 |
+| multilingual zh | 1.36 | 3.54 | 1.00 |
+| multilingual ja (katakana words) | 1.35 | 2.88 | 1.00 |
+| multilingual ja (kanji words) | 1.26 | 2.68 | 1.00 |
 | mpnet en (removed) | 1.29 | 3.95 | 1.00 |
 | English MiniLM en (removed) | 1.20 | 4.63 | 1.00 |
 
-Across languages, the nearest word in another language has the right group 90% of the time (en, es, fr, zh at 88-100%; pairs involving ja at 50-96%) and is the actual translation 65% of the time (chance 4%).
+Across languages, the nearest word in another language has the right group 99% of the time and is the actual translation 88% of the time (chance 4%).
 
 - English quality matches mpnet on this test; colors are slightly less separated than with either removed English model.
-- es and fr match English. zh is correct but its colors separate less.
-- Japanese is unreliable for katakana words: the XLM-R vocabulary splits them into one-character pieces (`キ ツ ネ`), so embeddings cluster by script, not meaning. Words written in kanji work (0.79).
+- es, fr, zh and ja all match English on group accuracy.
+- Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Before this, every tokenizer piece got its own mark, so katakana `キツネ` reached the model as `▁キ ▁ツ ▁ネ` (ja 0.17, zh 0.88).
+- Pieces are still the unit that gets a color: a katakana word split into several pieces shows several colors, though they now come from the right context.
 
 ## Other languages (experimental)
 
@@ -61,7 +62,10 @@ The Spanish, French, and multilingual models above have setup names. Anything el
 | Language | Mode | Export |
 | -------- | ---- | ------ |
 | es, fr, ja, zh | POS (UPOS mapped onto the Penn token types) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ja`, `-zh`) |
+| zh | POS, whole words (character-level B-/I- tagger) | `--mode pos --model KoichiYasuoka/chinese-roberta-base-upos` (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
 | all | Semantic | `--mode semantic --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
 | es, fr | Dependency | `--mode dependency --model es_ancora.mbert` or `fr_sequoia.camembert-large` (needs `diaparser`) |
 
-Japanese and Chinese are split into the multi-character pieces of the model's SentencePiece vocabulary, not single characters. Pieces can fuse a particle or preposition with its noun, so tags there are less reliable than for Spanish and French. No Japanese or Chinese dependency parser is wired up yet. Hover text still shows English Penn descriptions.
+Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Build with `-tags english` to leave out kagome and the Chinese script tables together (the `*_english.*` release archives). Kanji-only text cannot be told from Chinese and also uses pieces.
+
+The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `KoichiYasuoka/chinese-roberta-base-upos`: it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. Use it with `-vocab` pointing at its `_vocab.txt`. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level). No Japanese or Chinese dependency parser is wired up yet. Hover text still shows English Penn descriptions.

@@ -151,3 +151,7 @@ The server re-pushes after every edit, so colors catch up once inference finishe
 `-threads N` sets ONNX Runtime threads per chunk; the default (0) uses the physical core count, capped at 4, and runs chunks in parallel on any cores left over.
 
 POS tags map to standard semantic token types, so colors come from your colorscheme's `@lsp.type.*` highlight groups. Link any that render plain, e.g. `vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })`.
+
+## Hover definition language
+
+Pass `init_options = { wiktionary_language = "es" }` in the LSP config. Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's language, else `en`), or `auto` (best across languages). Read at server start.
