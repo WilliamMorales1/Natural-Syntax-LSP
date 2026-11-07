@@ -7,8 +7,9 @@ import (
 )
 
 // PartOfSpeech is a Penn Treebank part-of-speech tag.
-type PartOfSpeech int
+type PartOfSpeech uint8
 
+// Penn Treebank tags; O marks words with no tag of interest.
 const (
 	CC PartOfSpeech = iota
 	CD
@@ -48,6 +49,7 @@ const (
 	WPS
 	WRB
 
+	// NumPartsOfSpeech is the number of tags above.
 	NumPartsOfSpeech = iota
 )
 
@@ -105,8 +107,9 @@ func ParsePartOfSpeech(tag string) (PartOfSpeech, bool) {
 	return p, ok
 }
 
-func (p PartOfSpeech) valid() bool { return p >= 0 && p < NumPartsOfSpeech }
+func (p PartOfSpeech) valid() bool { return p < NumPartsOfSpeech }
 
+// String returns the Penn Treebank tag, or POS(n) when out of range.
 func (p PartOfSpeech) String() string {
 	if p.valid() {
 		return posInfo[p].tag
@@ -122,10 +125,12 @@ func (p PartOfSpeech) Description() string {
 	return "Unknown"
 }
 
+// MarshalText encodes p as its tag name.
 func (p PartOfSpeech) MarshalText() ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
+// UnmarshalText decodes a Penn Treebank tag name.
 func (p *PartOfSpeech) UnmarshalText(text []byte) error {
 	v, ok := ParsePartOfSpeech(string(text))
 	if !ok {

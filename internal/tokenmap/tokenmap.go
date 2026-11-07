@@ -36,7 +36,7 @@ func (m *Map) Extend(update map[postag.PartOfSpeech]*Override) {
 
 // Get returns the bits for pos, or nil if pos is disabled or out of range.
 func (m *Map) Get(pos postag.PartOfSpeech) *Bits {
-	if pos < 0 || pos >= postag.NumPartsOfSpeech {
+	if pos >= postag.NumPartsOfSpeech {
 		return nil
 	}
 	return m[pos]
@@ -89,6 +89,7 @@ var TypeNames = [NumTypes]string{
 
 var typeByName = indexByName[Type](TypeNames[:])
 
+// UnmarshalText decodes a token type name.
 func (t *Type) UnmarshalText(text []byte) error {
 	if v, ok := typeByName[string(text)]; ok {
 		*t = v
@@ -130,6 +131,7 @@ func indexByName[T ~uint32](names []string) map[string]T {
 	return m
 }
 
+// UnmarshalText decodes a token modifier name.
 func (m *Modifier) UnmarshalText(text []byte) error {
 	v, ok := modifierByName[string(text)]
 	if !ok {

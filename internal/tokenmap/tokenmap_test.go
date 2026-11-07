@@ -24,7 +24,7 @@ func TestDefaultMapCoversEveryTag(t *testing.T) {
 			t.Errorf("%v: type %d out of legend range", d, b.TokenType)
 		}
 	}
-	if m.Get(-1) != nil || m.Get(postag.NumPartsOfSpeech) != nil {
+	if m.Get(postag.NumPartsOfSpeech) != nil {
 		t.Error("out-of-range Get returned bits")
 	}
 }

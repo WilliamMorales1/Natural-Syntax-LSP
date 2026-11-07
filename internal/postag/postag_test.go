@@ -2,6 +2,7 @@ package postag
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -23,23 +24,29 @@ func TestPartOfSpeechJSONRoundTrip(t *testing.T) {
 	if json.Unmarshal([]byte(`"NOPE"`), &p) == nil {
 		t.Error("unknown tag accepted")
 	}
-	if PartOfSpeech(-1).String() != "POS(-1)" {
-		t.Errorf("out-of-range String: %s", PartOfSpeech(-1))
+	if bad := PartOfSpeech(NumPartsOfSpeech); bad.String() != fmt.Sprintf("POS(%d)", NumPartsOfSpeech) {
+		t.Errorf("out-of-range String: %s", bad)
 	}
 }
 
 func TestDeprel(t *testing.T) {
 	for d := range Deprel(NumDeprels) {
-		b, _ := json.Marshal(d)
-		var back Deprel
-		if err := json.Unmarshal(b, &back); err != nil || back != d {
-			t.Errorf("%v: round trip gave %v, %v", d, back, err)
-		}
+		t.Run(d.String(), func(t *testing.T) {
+			t.Parallel()
+			b, _ := json.Marshal(d)
+			var back Deprel
+			if err := json.Unmarshal(b, &back); err != nil || back != d {
+				t.Errorf("%v: round trip gave %v, %v", d, back, err)
+			}
+		})
 	}
 	for in, want := range map[string]Deprel{"nsubj": DepNsubj, "nsubj:pass": DepNsubj, "OBJ": DepObj, "acl:relcl": DepAcl} {
-		if got, ok := ParseDeprel(in); !ok || got != want {
-			t.Errorf("ParseDeprel(%q) = %v, %v; want %v", in, got, ok, want)
-		}
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			if got, ok := ParseDeprel(in); !ok || got != want {
+				t.Errorf("ParseDeprel(%q) = %v, %v; want %v", in, got, ok, want)
+			}
+		})
 	}
 	if _, ok := ParseDeprel("bogus"); ok {
 		t.Error("ParseDeprel accepted bogus")

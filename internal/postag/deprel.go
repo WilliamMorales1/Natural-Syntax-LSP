@@ -6,8 +6,9 @@ import (
 )
 
 // Deprel is a Universal Dependencies relation label (https://universaldependencies.org/u/dep/).
-type Deprel int
+type Deprel uint8
 
+// UD relation labels.
 const (
 	DepAcl Deprel = iota
 	DepAdvcl
@@ -66,17 +67,20 @@ var deprelByName = func() map[string]Deprel {
 	return m
 }()
 
+// String returns the UD relation name, or dep(n) when out of range.
 func (d Deprel) String() string {
-	if d >= 0 && d < NumDeprels {
+	if d < NumDeprels {
 		return deprelNames[d]
 	}
 	return fmt.Sprintf("dep(%d)", int(d))
 }
 
+// MarshalText encodes d as its relation name.
 func (d Deprel) MarshalText() ([]byte, error) {
 	return []byte(d.String()), nil
 }
 
+// UnmarshalText decodes a UD relation name, case-insensitively.
 func (d *Deprel) UnmarshalText(text []byte) error {
 	v, ok := deprelByName[strings.ToLower(string(text))]
 	if !ok {
