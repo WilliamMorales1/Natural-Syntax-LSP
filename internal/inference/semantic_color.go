@@ -10,10 +10,16 @@ import (
 
 type semanticColorParams struct{ L, C float64 }
 
-var semanticColorParamsPtr atomic.Pointer[semanticColorParams]
+var (
+	semanticColorParamsPtr atomic.Pointer[semanticColorParams]
+	defaultSemanticColorLC = &semanticColorParams{L: 0.75, C: 0.14}
+)
 
-func init() {
-	semanticColorParamsPtr.Store(&semanticColorParams{L: 0.75, C: 0.14})
+func colorParams() *semanticColorParams {
+	if p := semanticColorParamsPtr.Load(); p != nil {
+		return p
+	}
+	return defaultSemanticColorLC
 }
 
 // SetSemanticColorParams sets the OKLCH lightness/chroma used by EmbeddingToColor.
@@ -23,18 +29,25 @@ func SetSemanticColorParams(l, c float64) {
 
 // SemanticColorParams returns the current OKLCH lightness/chroma.
 func SemanticColorParams() (l, c float64) {
-	p := semanticColorParamsPtr.Load()
+	p := colorParams()
 	return p.L, p.C
 }
 
-// Two fixed orthogonal unit vectors, seeded deterministically, used to project embeddings to a 2D hue plane.
-var (
-	colorProjX []float32
-	colorProjY []float32
-)
+// colorProjection is two fixed orthogonal unit vectors, seeded deterministically, that project embeddings onto a 2D hue plane.
+type colorProjection struct{ x, y []float32 }
 
-// InitSemantic builds the two projection vectors for the given hidden dim; must be called once before any EmbeddingToColor call.
-func InitSemantic(dim int) {
+var colorProj atomic.Pointer[colorProjection]
+
+// projection returns the hue-plane projection for dim-sized embeddings, building it on first use or when dim changes.
+func projection(dim int) *colorProjection {
+	if p := colorProj.Load(); p != nil && len(p.x) == dim {
+		return p
+	}
+	return InitSemantic(dim)
+}
+
+// InitSemantic builds and installs the projection vectors for the given hidden dim; models call it on load.
+func InitSemantic(dim int) *colorProjection {
 	rng := rand.New(rand.NewSource(0xC0105500))
 
 	gaussian := func() []float32 {
@@ -44,22 +57,25 @@ func InitSemantic(dim int) {
 		}
 		return v
 	}
-	colorProjX = l2Normalize(gaussian())
+	x := l2Normalize(gaussian())
 	// Gram-Schmidt: remove Y's X component so the two axes are orthogonal.
 	y := gaussian()
-	var dot float32
+	var d float32
 	for j := range y {
-		dot += colorProjX[j] * y[j]
+		d += x[j] * y[j]
 	}
 	for j := range y {
-		y[j] -= dot * colorProjX[j]
+		y[j] -= d * x[j]
 	}
-	colorProjY = l2Normalize(y)
+	p := &colorProjection{x: x, y: l2Normalize(y)}
+	colorProj.Store(p)
+	return p
 }
 
 // EmbeddingToColor maps a normalized embedding to a "#RRGGBB" hex color: project onto a fixed 2D plane → angle → OKLCH hue → sRGB.
 func EmbeddingToColor(v []float32) string {
-	return hueToColor(dot(v, colorProjX), dot(v, colorProjY))
+	p := projection(len(v))
+	return hueToColor(dot(v, p.x), dot(v, p.y))
 }
 
 // Snapping keeps sub-visible refit drift from minting new hex values, since the client makes one decoration type per hex; a full step is ΔE ≈ 0.007 (hue, at C = 0.14) or 0.009 (chroma), under half an OKLab JND of 0.02.
@@ -70,13 +86,13 @@ const (
 
 // hueToColor converts the plane coordinates (px, py) to a full-chroma hex color whose OKLCH hue is their angle.
 func hueToColor(px, py float32) string {
-	p := semanticColorParamsPtr.Load()
+	p := colorParams()
 	return oklchHex(p.L, p.C, snapHue(math.Atan2(float64(py), float64(px))))
 }
 
 // diskColor converts a point of the unit disk to a hex color: OKLCH hue from its angle, chroma scaled by its radius.
 func diskColor(x, y float32) string {
-	p := semanticColorParamsPtr.Load()
+	p := colorParams()
 	r := math.Round(math.Hypot(float64(x), float64(y))*chromaSteps) / chromaSteps
 	return oklchHex(p.L, p.C*r, snapHue(math.Atan2(float64(y), float64(x))))
 }
@@ -126,7 +142,8 @@ func (p *SemanticPlane) Fit(embeds [][]float32) {
 	}
 	prev, iters := p.axes, planeWarmIters
 	if !p.Fitted() {
-		prev, iters = [2][]float32{colorProjX, colorProjY}, planeColdIters
+		p := projection(len(embeds[0]))
+		prev, iters = [2][]float32{p.x, p.y}, planeColdIters
 	}
 	mean := meanOf(embeds)
 	axes := [2][]float32{slices.Clone(prev[0]), slices.Clone(prev[1])}

@@ -173,13 +173,20 @@ func TestEvalPOS(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for _, lang := range []string{"es", "fr", "ja", "zh"} {
+	for _, tc := range []struct{ lang, prefix, vocab string }{
+		{"es", udposPrefix + "es", "_tokenizer.json"},
+		{"fr", udposPrefix + "fr", "_tokenizer.json"},
+		{"ja", udposPrefix + "ja", "_tokenizer.json"},
+		{"zh", udposPrefix + "zh", "_tokenizer.json"},
+		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
+	} {
+		lang := strings.SplitN(tc.lang, "-", 2)[0]
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
-			base := filepath.Join(dir, udposPrefix+lang)
-			m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json")
+			base := filepath.Join(dir, tc.prefix)
+			m, err := NewPOSModel(base+".onnx", base+tc.vocab)
 			if err != nil {
-				t.Logf("%s %s: skipped: %v", lang, variant, err)
+				t.Logf("%s %s: skipped: %v", tc.lang, variant, err)
 				continue
 			}
 			var right, total int
@@ -211,7 +218,7 @@ func TestEvalPOS(t *testing.T) {
 				}
 			}
 			m.Close()
-			t.Logf("POS %s %-4s %d sentences: %.1f%% of %d characters", lang, variant, len(sents), 100*float64(right)/float64(max(total, 1)), total)
+			t.Logf("POS %s %-4s %d sentences: %.1f%% of %d characters", tc.lang, variant, len(sents), 100*float64(right)/float64(max(total, 1)), total)
 		}
 	}
 }

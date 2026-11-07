@@ -2,28 +2,10 @@
 package inference
 
 import (
-	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
-
-// Predictor abstracts POS tagging, dependency parsing, and semantic embedding modes.
-type Predictor interface {
-	PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error)
-	Close()
-}
-
-// TextTokenizer is a Predictor that dictates its own word segmentation.
-type TextTokenizer interface {
-	Tokenize(text string) []tokenizer.WordSpan
-}
-
-// Embedder is a Predictor whose tokens come with unit embeddings, so they can be recolored per document.
-type Embedder interface {
-	Predictor
-	EmbedChunk(words []tokenizer.WordSpan) ([]postag.Token, [][]float32, error)
-}
 
 // SetORTLibPath sets the path to the onnxruntime shared library; must be called before any model is loaded.
 func SetORTLibPath(path string) {

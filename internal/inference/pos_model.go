@@ -19,6 +19,7 @@ import (
 type POSModel struct {
 	*baseModel
 	labels []postag.PartOfSpeech // index → PartOfSpeech, loaded from _labels.json
+	cont   []bool                // index → label is an I- chunk label that extends the previous word
 }
 
 // labelsPathFor derives the labels JSON path from the model path.
@@ -30,31 +31,36 @@ func labelsPathFor(modelPath string) string {
 	return base + "_labels.json"
 }
 
-func loadLabels(labelsPath string) ([]postag.PartOfSpeech, error) {
+// loadLabels reads the index→tag sidecar, returning decoded tags and continuation flags.
+func loadLabels(labelsPath string) ([]postag.PartOfSpeech, []bool, error) {
 	data, err := os.ReadFile(labelsPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var raw map[string]string
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	n := len(raw)
 	tags := make([]string, n)
 	for idxStr, tag := range raw {
 		idx, err := strconv.Atoi(idxStr)
 		if err != nil || idx < 0 || idx >= n {
-			return nil, fmt.Errorf("bad label index %q", idxStr)
+			return nil, nil, fmt.Errorf("bad label index %q", idxStr)
 		}
 		tags[idx] = tag
 	}
+	cont := make([]bool, n)
+	for i, tag := range tags {
+		cont[i] = postag.IsContinuation(tag)
+	}
 	// unknown tags treated as O
-	return decodeEnumList(tags, postag.ParseLabel, postag.O), nil
+	return decodeEnumList(tags, postag.ParseLabel, postag.O), cont, nil
 }
 
 // NewPOSModel loads a POS model and its labels sidecar, falling back to the default label order.
 func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
-	labels, err := loadLabels(labelsPathFor(modelPath))
+	labels, cont, err := loadLabels(labelsPathFor(modelPath))
 	if err != nil {
 		// The default English order is only safe for the bundled English WordPiece models, which export no sidecar tokenizer.
 		if _, statErr := os.Stat(tokenizer.SidecarPath(vocabPath)); statErr == nil || !errors.Is(err, fs.ErrNotExist) {
@@ -71,7 +77,7 @@ func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		return nil, err
 	}
 
-	return &POSModel{baseModel: base, labels: labels}, nil
+	return &POSModel{baseModel: base, labels: labels, cont: cont}, nil
 }
 
 // PredictChunk tags each non-punctuation word by its first subword's argmax label, running each markdown block as its own sequence.
@@ -89,10 +95,11 @@ func (m *POSModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, err
 
 // predictBlock tags one block in a single model run.
 func (m *POSModel) predictBlock(words []tokenizer.WordSpan) ([]postag.Token, error) {
-	logits, seqLen, swWordIdx, swIsFirst, err := m.runWords(words)
+	run, err := m.runWords(words)
 	if err != nil {
 		return nil, err
 	}
+	logits, seqLen, swWordIdx, swIsFirst := run.out, run.seqLen, run.swWordIdx, run.swIsFirst
 
 	numLabels := len(m.labels)
 
@@ -113,11 +120,12 @@ func (m *POSModel) predictBlock(words []tokenizer.WordSpan) ([]postag.Token, err
 			break
 		}
 		scores := softmax(logits[base : base+numLabels])
-		label := argmax(scores)
+		label := slices.Index(scores, slices.Max(scores))
 		wordBest[wi] = best{label: label, score: float64(scores[label]), ok: true}
 	}
 
 	tokens := make([]postag.Token, 0, len(words))
+	var conts []bool
 	for wi, w := range words {
 		b := wordBest[wi]
 		if !b.ok || tokenizer.IsAllPunct(w.Text) {
@@ -131,30 +139,37 @@ func (m *POSModel) predictBlock(words []tokenizer.WordSpan) ([]postag.Token, err
 			OffsetBegin: w.Begin,
 			OffsetEnd:   w.End,
 		})
+		conts = append(conts, m.cont != nil && m.cont[b.label])
 	}
-	return tokens, nil
+	return mergeContinuations(tokens, conts), nil
 }
 
-func softmax(logits []float32) []float32 {
-	peak := slices.Max(logits)
-	var sum float32
-	out := make([]float32, len(logits))
-	for i, v := range logits {
-		out[i] = float32(math.Exp(float64(v - peak)))
-		sum += out[i]
-	}
-	for i := range out {
-		out[i] /= sum
+// mergeContinuations folds each token flagged as an I- continuation into the touching token before it, so character-level B-/I- taggers yield whole words; the merged token keeps the first tag and the lowest score.
+func mergeContinuations(tokens []postag.Token, conts []bool) []postag.Token {
+	out := tokens[:0:0]
+	for i, t := range tokens {
+		if n := len(out); conts[i] && n > 0 && out[n-1].OffsetEnd == t.OffsetBegin {
+			prev := &out[n-1]
+			prev.Word += t.Word
+			prev.OffsetEnd = t.OffsetEnd
+			prev.Score = min(prev.Score, t.Score)
+			continue
+		}
+		out = append(out, t)
 	}
 	return out
 }
 
-func argmax(scores []float32) int {
-	best := 0
-	for i, s := range scores {
-		if s > scores[best] {
-			best = i
-		}
+// softmax normalizes logits in place and returns them.
+func softmax(logits []float32) []float32 {
+	peak := slices.Max(logits)
+	var sum float32
+	for i, v := range logits {
+		logits[i] = float32(math.Exp(float64(v - peak)))
+		sum += logits[i]
 	}
-	return best
+	for i := range logits {
+		logits[i] /= sum
+	}
+	return logits
 }

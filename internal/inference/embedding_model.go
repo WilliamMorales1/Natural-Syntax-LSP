@@ -18,6 +18,9 @@ func NewEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingM
 		return nil, err
 	}
 
+	InitSemantic(hiddenSize)
+	// Sentence encoders were trained on running text, not on words split apart by the tokenizer.
+	base.contiguous = true
 	return &EmbeddingModel{baseModel: base, hiddenSize: hiddenSize}, nil
 }
 
@@ -68,11 +71,13 @@ func (m *EmbeddingModel) embedChunk(words []tokenizer.WordSpan) ([][]float32, er
 	return embeddings, nil
 }
 
+// embedBlock returns each word's mean-pooled subword embedding for one block.
 func (m *EmbeddingModel) embedBlock(words []tokenizer.WordSpan) ([][]float32, error) {
-	hidden, seqLen, swWordIdx, _, err := m.runWords(words)
+	run, err := m.runWords(words)
 	if err != nil {
 		return nil, err
 	}
+	hidden, seqLen, swWordIdx := run.out, run.seqLen, run.swWordIdx
 	hs := m.hiddenSize
 
 	// embeddings start as per-word subword sums and are divided into means below.

@@ -3,6 +3,7 @@ package inference
 import (
 	"fmt"
 	"slices"
+	"sync"
 
 	"natural-syntax-ls/internal/tokenizer"
 
@@ -20,20 +21,48 @@ type baseModel struct {
 	tokenizer  tokenizer.Tokenizer
 	outputName string
 	lastDim    int64
+	// contiguous encodes unspaced neighbors without a word-start mark (see tokenizer.EncodeWordsContiguous).
+	contiguous bool
 }
 
 // Tokenize splits text using the model's own tokenizer rules.
 func (b *baseModel) Tokenize(text string) []tokenizer.WordSpan { return b.tokenizer.Tokenize(text) }
 
-// initEnvAndTokenizer inits the ORT env and loads the BERT tokenizer; callers must call ort.DestroyEnvironment() on later errors and on Close().
-func initEnvAndTokenizer(vocabPath string) (tokenizer.Tokenizer, error) {
-	if err := ort.InitializeEnvironment(ort.WithLogLevelError()); err != nil {
-		return nil, fmt.Errorf("init ort env: %w", err)
-	}
+var (
+	envMu   sync.Mutex
+	envRefs int
+)
 
+// acquireEnv initializes the process-global ORT environment on first use and counts later users.
+func acquireEnv() error {
+	envMu.Lock()
+	defer envMu.Unlock()
+	if envRefs == 0 {
+		if err := ort.InitializeEnvironment(ort.WithLogLevelError()); err != nil {
+			return fmt.Errorf("init ort env: %w", err)
+		}
+	}
+	envRefs++
+	return nil
+}
+
+// releaseEnv drops one user and destroys the ORT environment after the last.
+func releaseEnv() {
+	envMu.Lock()
+	defer envMu.Unlock()
+	if envRefs--; envRefs == 0 {
+		ort.DestroyEnvironment()
+	}
+}
+
+// initEnvAndTokenizer takes an ORT env reference and loads the tokenizer; on success the caller owns the reference and must releaseEnv() on later errors and on Close().
+func initEnvAndTokenizer(vocabPath string) (tokenizer.Tokenizer, error) {
+	if err := acquireEnv(); err != nil {
+		return nil, err
+	}
 	tok, err := tokenizer.Open(vocabPath)
 	if err != nil {
-		ort.DestroyEnvironment()
+		releaseEnv()
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 	return tok, nil
@@ -80,16 +109,17 @@ func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64) (*base
 		[]string{outputName},
 	)
 	if err != nil {
-		ort.DestroyEnvironment()
+		releaseEnv()
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
 	return &baseModel{session: session, tokenizer: tok, outputName: outputName, lastDim: lastDim}, nil
 }
 
 // Close releases the ORT session and environment.
-func (m *baseModel) Close() {
-	m.session.Destroy()
-	ort.DestroyEnvironment()
+func (m *baseModel) Close() error {
+	err := m.session.Destroy()
+	releaseEnv()
+	return err
 }
 
 // decodeEnumList decodes each string in raw via decode, substituting fallback for entries decode rejects.
@@ -105,38 +135,49 @@ func decodeEnumList[T any](raw []string, decode func(string) (T, bool), fallback
 	return out
 }
 
-// runWords tokenizes words, runs the session on exactly that many subwords, and returns the flat [seqLen x lastDim] output plus subword bookkeeping.
-func (m *baseModel) runWords(words []tokenizer.WordSpan) (out []float32, seqLen int, swWordIdx []int, swIsFirst []bool, err error) {
-	ids, mask, tti, swWordIdx, swIsFirst := tokenizer.EncodeWords(m.tokenizer, words)
-	seqLen = min(len(ids), maxSeqLen)
+// wordsRun is one model run over a block of words.
+type wordsRun struct {
+	out       []float32 // flat [seqLen x lastDim] output
+	seqLen    int
+	swWordIdx []int  // subword → word index, negative for special tokens
+	swIsFirst []bool // subword is its word's first piece
+}
+
+// runWords tokenizes words and runs the session on exactly that many subwords.
+func (m *baseModel) runWords(words []tokenizer.WordSpan) (wordsRun, error) {
+	encode := tokenizer.EncodeWords
+	if m.contiguous {
+		encode = tokenizer.EncodeWordsContiguous
+	}
+	enc := encode(m.tokenizer, words)
+	ids, mask, tti := enc.InputIDs, enc.AttMask, enc.TokTypeIDs
+	seqLen := min(len(ids), maxSeqLen)
 	shape := ort.NewShape(1, int64(seqLen))
 
-	inputIDs, err := ort.NewTensor(shape, ids[:seqLen])
-	if err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("new inputIDs tensor: %w", err)
+	var inputs []ort.Value
+	defer func() {
+		for _, v := range inputs {
+			v.Destroy()
+		}
+	}()
+	for _, in := range []struct {
+		name string
+		data []int64
+	}{{"inputIDs", ids}, {"attMask", mask}, {"tokTypeIDs", tti}} {
+		t, err := ort.NewTensor(shape, in.data[:seqLen])
+		if err != nil {
+			return wordsRun{}, fmt.Errorf("new %s tensor: %w", in.name, err)
+		}
+		inputs = append(inputs, t)
 	}
-	defer inputIDs.Destroy()
-	attMask, err := ort.NewTensor(shape, mask[:seqLen])
-	if err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("new attMask tensor: %w", err)
-	}
-	defer attMask.Destroy()
-	tokTypeIDs, err := ort.NewTensor(shape, tti[:seqLen])
-	if err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("new tokTypeIDs tensor: %w", err)
-	}
-	defer tokTypeIDs.Destroy()
 	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, int64(seqLen), m.lastDim))
 	if err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("new output tensor: %w", err)
+		return wordsRun{}, fmt.Errorf("new output tensor: %w", err)
 	}
 	defer output.Destroy()
 
-	if err := m.session.Run(
-		[]ort.Value{inputIDs, attMask, tokTypeIDs},
-		[]ort.Value{output},
-	); err != nil {
-		return nil, 0, nil, nil, fmt.Errorf("ort run: %w", err)
+	if err := m.session.Run(inputs, []ort.Value{output}); err != nil {
+		return wordsRun{}, fmt.Errorf("ort run: %w", err)
 	}
-	return slices.Clone(output.GetData()), seqLen, swWordIdx, swIsFirst, nil
+	return wordsRun{slices.Clone(output.GetData()), seqLen, enc.SwWordIdx, enc.SwIsFirst}, nil
 }

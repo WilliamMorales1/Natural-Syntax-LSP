@@ -5,27 +5,28 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // maxIntraOpThreads caps per-chunk ORT threads: sweeps put the single-chunk speedup peak near 5-8 threads, and 4 already reaches ~90% of it.
 const maxIntraOpThreads = 4
 
 // intraOpThreads is the ORT per-op thread count set by SetIntraOpThreads; 0 picks Concurrency's default.
-var intraOpThreads int
+var intraOpThreads atomic.Int32
 
 // Concurrency returns ORT intra-op threads per chunk and parallel chunk workers, sized so their product stays near the physical core count.
 func Concurrency() (threads, workers int) {
 	phys := physicalCores()
-	threads = intraOpThreads
+	threads = int(intraOpThreads.Load())
 	if threads <= 0 {
 		threads = min(phys, maxIntraOpThreads)
 	}
 	return threads, max(1, phys/threads)
 }
 
-// SetIntraOpThreads overrides the per-chunk ORT thread count (0 = auto); must be called before any model is loaded.
+// SetIntraOpThreads overrides the per-chunk ORT thread count (0 = auto).
 func SetIntraOpThreads(n int) {
-	intraOpThreads = n
+	intraOpThreads.Store(int32(n))
 }
 
 // physicalCores counts the physical cores this process may run on; SMT siblings add little speed at high CPU cost, so they don't count.

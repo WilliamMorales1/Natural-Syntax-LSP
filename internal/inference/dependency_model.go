@@ -48,7 +48,7 @@ func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
 
 	rels, err := loadDepRels(depRelsPathFor(modelPath))
 	if err != nil {
-		ort.DestroyEnvironment()
+		releaseEnv()
 		return nil, fmt.Errorf("load dependency rel labels: %w", err)
 	}
 
@@ -57,7 +57,7 @@ func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
 		[]string{"arc_logits", "rel_logits"},
 	)
 	if err != nil {
-		ort.DestroyEnvironment()
+		releaseEnv()
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
 
@@ -65,13 +65,25 @@ func NewDependencyModel(modelPath, vocabPath string) (*DependencyModel, error) {
 }
 
 // Close releases the ORT session and environment.
-func (m *DependencyModel) Close() {
-	m.session.Destroy()
-	ort.DestroyEnvironment()
+func (m *DependencyModel) Close() error {
+	err := m.session.Destroy()
+	releaseEnv()
+	return err
+}
+
+// UsesDeprel reports that tokens carry dependency relations.
+func (*DependencyModel) UsesDeprel() bool { return true }
+
+// poolMatrixInput is the subword stream plus its [seqLen x nSub] mean-pooling matrix.
+type poolMatrixInput struct {
+	ids, mask []int64
+	pool      []float32
+	seqLen    int // words including the synthetic root
+	nSub      int // subwords
 }
 
 // buildPoolMatrix wordpiece-tokenizes words (prepending a synthetic [CLS] root) and returns subword ids/mask plus a [seqLen x nSub] mean-pooling matrix.
-func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask []int64, pool []float32, seqLen, nSub int) {
+func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) poolMatrixInput {
 	type wordPieces struct {
 		start, count int
 	}
@@ -93,10 +105,10 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 		}
 	}
 
-	nSub = len(pieceIDs)
-	seqLen = len(bounds)
-	mask = slices.Repeat([]int64{1}, nSub)
-	pool = make([]float32, seqLen*nSub)
+	nSub := len(pieceIDs)
+	seqLen := len(bounds)
+	mask := slices.Repeat([]int64{1}, nSub)
+	pool := make([]float32, seqLen*nSub)
 	for wi, b := range bounds {
 		if b.count == 0 {
 			continue
@@ -107,7 +119,7 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) (ids, mask
 			pool[row+b.start+i] = weight
 		}
 	}
-	return pieceIDs, mask, pool, seqLen, nSub
+	return poolMatrixInput{ids: pieceIDs, mask: mask, pool: pool, seqLen: seqLen, nSub: nSub}
 }
 
 // sentenceEnders are word texts that end a sentence for chunking purposes (the biaffine model was trained one sentence per synthetic root).
@@ -169,7 +181,8 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 	if len(words) == 0 {
 		return nil, nil
 	}
-	ids, mask, pool, seqLen, nSub := m.buildPoolMatrix(words)
+	pm := m.buildPoolMatrix(words)
+	ids, mask, pool, seqLen, nSub := pm.ids, pm.mask, pm.pool, pm.seqLen, pm.nSub
 
 	inputIDs, err := ort.NewTensor(ort.NewShape(1, int64(nSub)), ids)
 	if err != nil {
@@ -236,7 +249,7 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 
 		relBase := (row*seqLen + head) * numRels
 		relRow := relData[relBase : relBase+numRels]
-		relClass := argmax(relRow[1:]) + 1 // skip index 0, the unused "<bos>" placeholder
+		relClass := slices.Index(relRow[1:], slices.Max(relRow[1:])) + 1 // skip index 0, the unused "<bos>" placeholder
 		var rel postag.Deprel
 		if relClass < len(m.rels) { // a rels file holding only "<bos>" leaves no real class
 			rel = m.rels[relClass]

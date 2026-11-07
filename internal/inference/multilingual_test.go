@@ -70,6 +70,38 @@ func TestMultilingualPOS(t *testing.T) {
 	}
 }
 
+const yasukoZHPrefix = "KoichiYasuoka_chinese_roberta_base_upos"
+
+// TestChineseCharPOS checks that the character-level B-/I- Chinese model comes out as whole words.
+func TestChineseCharPOS(t *testing.T) {
+	dir := multilingualDir(t)
+	base := filepath.Join(dir, yasukoZHPrefix)
+	m, err := NewPOSModel(base+".onnx", base+"_vocab.txt")
+	if err != nil {
+		t.Skip(err)
+	}
+	defer m.Close()
+	text := "我喜欢在北京大学学习自然语言处理。"
+	toks, err := m.PredictChunk(m.Tokenize(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var words []string
+	for _, tok := range toks {
+		words = append(words, fmt.Sprintf("%s/%s", tok.Word, tok.Tag))
+	}
+	t.Log(strings.Join(words, " "))
+	long := 0
+	for _, tok := range toks {
+		if len([]rune(tok.Word)) > 1 {
+			long++
+		}
+	}
+	if long < 3 {
+		t.Errorf("only %d multi-character words in %v", long, words)
+	}
+}
+
 // TestMultilingualSemantic checks that word embeddings of one concept sit closer across languages than embeddings of different concepts.
 func TestMultilingualSemantic(t *testing.T) {
 	dir := multilingualDir(t)

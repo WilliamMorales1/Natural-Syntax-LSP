@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	_ "natural-syntax-ls/internal/jaseg"
 )
 
 // Semantic quality across languages. Off by default: set NSLS_SEMANTIC_EVAL=1.
@@ -230,8 +232,7 @@ func TestSemanticQualityAcrossLanguages(t *testing.T) {
 		bm.Close()
 	}
 	t.Log("\n" + strings.Join(rows, "\n"))
-	// Katakana-heavy ja is a known failure (see ja2), so it is logged but not asserted.
-	for _, l := range []string{"en", "es", "fr", "zh", "ja2"} {
+	for _, l := range []string{"en", "es", "fr", "zh", "ja", "ja2"} {
 		if accs[l] < 0.7 {
 			t.Errorf("%s: within-language group accuracy %.2f below 0.70", l, accs[l])
 		}
