@@ -82,6 +82,12 @@
           "default": true,
           "description": "Show Wiktionary definitions in hover tooltips."
         },
+        "naturalSyntaxLs.wiktionaryLanguage": {
+          "type": "string",
+          "default": "en",
+          "examples": ["en", "es", "fr", "ja", "zh", "model", "auto"],
+          "description": "Wiktionary language for hover definitions: a language code (en, es, fr, ja, zh, ...), 'model' (the model's language, else en), or 'auto' (best match across languages). Read at server start."
+        },
         "naturalSyntaxLs.semanticLightness": {
           "type": "number",
           "default": 0.75,
