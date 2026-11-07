@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"natural-syntax-ls/internal/inference"
 	"natural-syntax-ls/internal/postag"
@@ -56,6 +57,16 @@ type document struct {
 	text    string
 	tokens  []postag.Token
 	version int32
+	lines   atomic.Pointer[lineIndex] // built on first use
+}
+
+// lineIndex returns the document's line index, building it once per document.
+func (d *document) lineIndex() *lineIndex {
+	if ix := d.lines.Load(); ix != nil {
+		return ix
+	}
+	d.lines.CompareAndSwap(nil, newLineIndex([]rune(d.text)))
+	return d.lines.Load()
 }
 
 type hoverRequest struct {
@@ -63,12 +74,16 @@ type hoverRequest struct {
 	reply      chan *hoverQueryResult
 }
 
+// dependent is a token headed on the hovered token.
+type dependent struct {
+	tok     postag.Token
+	hasDeps bool // some token is headed on this one
+}
+
 // hoverQueryResult is the hovered token plus (in dependency mode) the tokens whose head is this token.
 type hoverQueryResult struct {
 	tok        *postag.Token
-	dependents []postag.Token
-	// dependentsHaveDeps[i] is true when dependents[i] itself has dependents (tokens headed on it).
-	dependentsHaveDeps []bool
+	dependents []dependent
 }
 
 // chunkResult holds per-chunk prediction results and the word spans used.
@@ -107,25 +122,30 @@ type textItem struct {
 // documentRegistry serialises all document state on a single goroutine; its methods queue work onto it.
 type documentRegistry struct {
 	ch         chan func()
-	model      inference.Predictor
-	embedder   inference.Embedder // non-nil in semantic mode: tokens are recolored per document
+	done       chan struct{} // closed by Close; stops loop and releases waiters
+	closeOnce  sync.Once
+	model      predictor
+	embedder   embedder // non-nil in semantic mode: tokens are recolored per document
 	tokenMap   tokenmap.Map
-	useDeprel  bool // true when model is *inference.DependencyModel: color tokens by deprel category, not POS tag
+	useDeprel  bool // true when model reports UsesDeprel: color tokens by deprel category, not POS tag
 	threshold  float64
 	workers    int // parallel chunk predictions per document
 	stores     map[string]*documentStore
 	onDocReady func(uri string, doc *document) // called after each chunk and on completion
 }
 
-func newDocumentRegistry(model inference.Predictor) *documentRegistry {
-	_, isDependency := model.(*inference.DependencyModel)
-	embedder, _ := model.(inference.Embedder)
+// newDocumentRegistry starts a registry around model; the caller keeps ownership of model.
+func newDocumentRegistry(model predictor) *documentRegistry {
+	dm, _ := model.(deprelModel)
+	isDependency := dm != nil && dm.UsesDeprel()
+	emb, _ := model.(embedder)
 	_, workers := inference.Concurrency()
 	dr := &documentRegistry{
 		workers:   workers,
 		ch:        make(chan func(), 64),
+		done:      make(chan struct{}),
 		model:     model,
-		embedder:  embedder,
+		embedder:  emb,
 		tokenMap:  tokenmap.NewDefault(),
 		useDeprel: isDependency,
 		threshold: defaultScoreThreshold,
@@ -136,14 +156,27 @@ func newDocumentRegistry(model inference.Predictor) *documentRegistry {
 }
 
 func (dr *documentRegistry) loop() {
-	for f := range dr.ch {
-		f()
+	for {
+		select {
+		case f := <-dr.ch:
+			f()
+		case <-dr.done:
+			return
+		}
 	}
 }
 
-// do runs f on the registry goroutine.
+// Close stops the registry goroutine; later work is dropped.
+func (dr *documentRegistry) Close() {
+	dr.closeOnce.Do(func() { close(dr.done) })
+}
+
+// do runs f on the registry goroutine, or drops it once the registry is closed.
 func (dr *documentRegistry) do(f func()) {
-	dr.ch <- f
+	select {
+	case dr.ch <- f:
+	case <-dr.done:
+	}
 }
 
 // update queues a new document version for prediction.
@@ -183,7 +216,7 @@ func (dr *documentRegistry) handleItem(item *textItem) {
 	}
 	store.latestVersion = item.version
 	var words []tokenizer.WordSpan
-	if tt, ok := dr.model.(inference.TextTokenizer); ok {
+	if tt, ok := dr.model.(textTokenizer); ok {
 		words = tt.Tokenize(item.text)
 	} else {
 		words = tokenizer.BasicTokenize(item.text)
@@ -276,11 +309,11 @@ func (dr *documentRegistry) handleHoverQuery(uri string, line, character uint32,
 
 // tokenAt returns the token at the position and its direct dependents, or nil if none.
 func tokenAt(doc *document, line, character uint32) *hoverQueryResult {
-	lineStart := lineToCharOffset(doc.text, int(line))
-	if lineStart < 0 {
+	off, ok := doc.lineIndex().offset(line, character)
+	if !ok {
 		return nil
 	}
-	offset := uint32(lineStart) + character
+	offset := uint32(off)
 	i := slices.IndexFunc(doc.tokens, func(t postag.Token) bool {
 		return t.OffsetBegin <= offset && offset < t.OffsetEnd
 	})
@@ -291,8 +324,7 @@ func tokenAt(doc *document, line, character uint32) *hoverQueryResult {
 	res := &hoverQueryResult{tok: &tok}
 	for _, d := range doc.tokens {
 		if d.HasHead && d.HeadOffsetBegin == tok.OffsetBegin {
-			res.dependents = append(res.dependents, d)
-			res.dependentsHaveDeps = append(res.dependentsHaveDeps, hasDependents(doc.tokens, d.OffsetBegin))
+			res.dependents = append(res.dependents, dependent{d, hasDependents(doc.tokens, d.OffsetBegin)})
 		}
 	}
 	return res
@@ -487,21 +519,4 @@ func mergeChunkTokens(results []*chunkResult) []postag.Token {
 		}
 	}
 	return tokens
-}
-
-// lineToCharOffset returns the unicode char index of the start of line (0-indexed), or -1 if out of range.
-func lineToCharOffset(text string, line int) int {
-	if line == 0 {
-		return 0
-	}
-	n := 0
-	for _, r := range text {
-		n++
-		if r == '\n' {
-			if line--; line == 0 {
-				return n
-			}
-		}
-	}
-	return -1
 }

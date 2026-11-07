@@ -106,6 +106,11 @@ func benchCases(t *testing.T) []benchCase {
 	for _, l := range []string{"es", "fr"} {
 		cases = append(cases, benchCase{"pos/" + l, "pos", l, "xlmr_" + l, ml})
 	}
+	cases = append(cases,
+		benchCase{"pos/ja", "pos", "ja", "wietsedv_xlm_roberta_base_ft_udpos28_ja", ml},
+		benchCase{"pos/zh", "pos", "zh", "wietsedv_xlm_roberta_base_ft_udpos28_zh", ml},
+		benchCase{"pos/zh-char", "pos", "zh", "KoichiYasuoka_chinese_roberta_base_upos", ml},
+	)
 	for _, l := range []string{"es", "fr", "ja", "zh"} {
 		cases = append(cases, benchCase{"semantic/" + l, "semantic", l, "multilingual_minilm", ml})
 	}

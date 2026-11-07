@@ -42,7 +42,7 @@ func (contextModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, er
 	return toks, nil
 }
 
-func (contextModel) Close() {}
+func (contextModel) Close() error { return nil }
 
 const testURI = "file:///t.txt"
 
@@ -96,7 +96,7 @@ func TestIncrementalMatchesFresh(t *testing.T) {
 func dependentWords(r *hoverQueryResult) []string {
 	var out []string
 	for _, d := range r.dependents {
-		out = append(out, d.Word)
+		out = append(out, d.tok.Word)
 	}
 	return out
 }
@@ -122,10 +122,10 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 
 	modes := []struct {
 		name  string
-		load  func() (inference.Predictor, error)
+		load  func() (predictor, error)
 		check func(t *testing.T, before, after *hoverQueryResult)
 	}{
-		{"pos", func() (inference.Predictor, error) {
+		{"pos", func() (predictor, error) {
 			return inference.NewPOSModel(filepath.Join(dir, "bert_base.onnx"), filepath.Join(dir, "bert_base_vocab.txt"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			if b.tok.Tag == a.tok.Tag {
@@ -133,14 +133,14 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 			}
 			t.Logf("change: %v -> %v", b.tok.Tag, a.tok.Tag)
 		}},
-		{"semantic", func() (inference.Predictor, error) {
+		{"semantic", func() (predictor, error) {
 			inference.InitSemantic(768)
 			return inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"), 768)
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			// Re-embedding is checked on the stored embedding: a sub-visible shift can snap to the same color.
 			t.Logf("change: %s -> %s", b.tok.Color, a.tok.Color)
 		}},
-		{"dependency", func() (inference.Predictor, error) {
+		{"dependency", func() (predictor, error) {
 			return inference.NewDependencyModel(filepath.Join(dir, "en_ewt_electra_base_dependency.onnx"), filepath.Join(dir, "en_ewt_electra_base_dependency_vocab.txt"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			if !slices.Contains(dependentWords(a), "state") {

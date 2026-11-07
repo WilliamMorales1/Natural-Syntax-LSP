@@ -3,10 +3,12 @@ package lspserver
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -29,46 +31,114 @@ type jsonrpcMsg struct {
 	Error   *rpcError        `json:"error,omitempty"`
 }
 
-// codeMethodNotFound is the JSON-RPC error code for an unknown method.
-const codeMethodNotFound = -32601
+const (
+	codeMethodNotFound = -32601
+	codeInvalidRequest = -32600
+	codeInvalidParams  = -32602
+)
+
+// replyTimeout bounds how long a request waits on the registry.
+const replyTimeout = 30 * time.Second
+
+// errExitWithoutShutdown is returned when the client sends exit before shutdown; the LSP spec requires exit code 1.
+var errExitWithoutShutdown = errors.New("exit received without prior shutdown")
 
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
+func (e *rpcError) Error() string { return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message) }
+
+// Mode selects what the server highlights by.
+type Mode string
+
+// Highlighting modes.
+const (
+	ModePOS        Mode = "pos"
+	ModeSemantic   Mode = "semantic"
+	ModeDependency Mode = "dependency"
+)
+
+// ParseMode validates a -mode flag value.
+func ParseMode(s string) (Mode, error) {
+	switch m := Mode(s); m {
+	case ModePOS, ModeSemantic, ModeDependency:
+		return m, nil
+	}
+	return "", fmt.Errorf("unknown mode %q (want pos, semantic, or dependency)", s)
+}
+
 // Config configures the LSP server's model/mode.
 type Config struct {
 	ModelPath       string // path to the mode's .onnx model
 	VocabPath       string // path to that same model's own _vocab.txt
-	Mode            string // "pos", "semantic", or "dependency"
+	Mode            Mode
 	EmbedHiddenSize int    // hidden dimension of embedding model (384 or 768); semantic mode only
+	Language        string // Wiktionary code of the model's language ("" when English or multilingual)
 }
 
-// Run starts the LSP server over stdin/stdout and blocks until the client disconnects.
-func Run(cfg Config) error {
-	srv := &lspServer{cfg: cfg, ready: make(chan struct{})}
+// Run starts the LSP server over stdin/stdout and blocks until the client disconnects or sends exit.
+// It returns nil after shutdown+exit or EOF, and errExitWithoutShutdown when exit arrives without shutdown.
+// Cancelling ctx aborts in-flight hover lookups.
+func Run(ctx context.Context, cfg Config) error {
+	level := slog.LevelWarn
+	if os.Getenv("NLS_LOG") == "debug" {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	srv := &lspServer{ctx: ctx, cfg: cfg, ready: make(chan struct{})}
 	srv.wiktionary.Store(true) // on by default
+	defer srv.closeModel()
 	return srv.serve(os.Stdin, os.Stdout)
 }
 
 type lspServer struct {
+	ctx        context.Context // nil means Background
 	cfg        Config
 	registry   atomic.Pointer[documentRegistry]
 	ready      chan struct{} // closed when registry is set or load failed
 	loadFailed atomic.Bool
 
-	wiktionary atomic.Bool // true = show Wiktionary defs (default)
+	loadStarted atomic.Bool
+	predictor   predictor // owned by the server; set before ready closes
+	shutdown    atomic.Bool
+	writeErr    atomic.Pointer[error] // first transport write failure
+
+	wiktionary     atomic.Bool            // true = show Wiktionary defs (default)
+	wiktionaryLang atomic.Pointer[string] // code, "model", or "auto"; unset = "en"
 
 	pendingMu sync.Mutex
 	pending   []*textItem // didOpen/didChange before model ready
 
-	documentsMu sync.Mutex
-	documents   map[string]trackedDocument
+	documents textDocuments
 
 	writerMu  sync.Mutex
 	writer    io.Writer // set in serve(); used to push server→client requests
 	nextReqID atomic.Int64
+}
+
+// closeModel releases the predictor once any in-flight load has finished.
+func (s *lspServer) closeModel() {
+	if !s.loadStarted.Load() {
+		return
+	}
+	<-s.ready
+	if reg := s.registry.Load(); reg != nil {
+		reg.Close()
+	}
+	if s.predictor != nil {
+		if err := s.predictor.Close(); err != nil {
+			slog.Warn("close model", "err", err)
+		}
+	}
+}
+
+func (s *lspServer) context() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
 }
 
 func (s *lspServer) serve(r io.Reader, w io.Writer) error {
@@ -77,12 +147,21 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 	s.writerMu.Unlock()
 	br := bufio.NewReader(r)
 	for {
+		if werr := s.writeErr.Load(); werr != nil {
+			return *werr
+		}
 		msg, err := readMessage(br)
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if msg.Method == "exit" {
+			if s.shutdown.Load() {
+				return nil
+			}
+			return errExitWithoutShutdown
 		}
 		// Messages without a method are responses to our server→client requests; ignore them.
 		if msg.Method != "" {
@@ -99,34 +178,46 @@ func (s *lspServer) serve(r io.Reader, w io.Writer) error {
 }
 
 func (s *lspServer) handle(msg jsonrpcMsg) {
-	var result any
-	var rpcErr *rpcError
-
-	switch msg.Method {
-	case "initialize":
-		result, rpcErr = s.handleInitialize(msg.Params)
-	case "initialized", "shutdown":
-		// nothing to do; shutdown replies with a null result
-	case "exit":
-		os.Exit(0)
-	case "textDocument/didOpen":
-		s.handleDidOpen(msg.Params)
-	case "textDocument/didChange":
-		s.handleDidChange(msg.Params)
-	case "textDocument/didClose":
-		s.handleDidClose(msg.Params)
-	case "textDocument/hover":
-		result, rpcErr = s.handleHover(msg.Params)
-	case "textDocument/semanticTokens/full":
-		result, rpcErr = s.handleSemanticTokensFull(msg.Params)
-	default:
-		if msg.ID != nil {
-			rpcErr = &rpcError{Code: codeMethodNotFound, Message: "method not found: " + msg.Method}
-		}
+	if s.shutdown.Load() && msg.ID != nil {
+		s.writeResponse(msg.ID, nil, &rpcError{Code: codeInvalidRequest, Message: "server is shut down"})
+		return
 	}
 
+	var result any
+	var rpcErr *rpcError
+	if h, ok := routes[msg.Method]; ok {
+		result, rpcErr = h(s, msg.Params)
+	} else if msg.ID != nil {
+		rpcErr = &rpcError{Code: codeMethodNotFound, Message: "method not found: " + msg.Method}
+	}
 	if msg.ID != nil {
 		s.writeResponse(msg.ID, result, rpcErr)
+	}
+}
+
+type handlerFunc func(s *lspServer, raw json.RawMessage) (any, *rpcError)
+
+// routes maps LSP methods to handlers; unknown notifications are ignored.
+var routes = map[string]handlerFunc{
+	"initialize":                       (*lspServer).handleInitialize,
+	"initialized":                      func(*lspServer, json.RawMessage) (any, *rpcError) { return nil, nil },
+	"shutdown":                         func(s *lspServer, _ json.RawMessage) (any, *rpcError) { s.shutdown.Store(true); return nil, nil },
+	"textDocument/didOpen":             typed((*lspServer).handleDidOpen),
+	"textDocument/didChange":           typed((*lspServer).handleDidChange),
+	"textDocument/didClose":            typed((*lspServer).handleDidClose),
+	"textDocument/hover":               typed((*lspServer).handleHover),
+	"textDocument/semanticTokens/full": typed((*lspServer).handleSemanticTokensFull),
+}
+
+// typed decodes params into P once, so handlers take typed arguments.
+func typed[P any](fn func(*lspServer, P) (any, *rpcError)) handlerFunc {
+	return func(s *lspServer, raw json.RawMessage) (any, *rpcError) {
+		var p P
+		if err := json.Unmarshal(raw, &p); err != nil {
+			slog.Warn("bad params", "err", err)
+			return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}
+		}
+		return fn(s, p)
 	}
 }
 
@@ -140,6 +231,7 @@ type initOptions struct {
 	TokenMapUpdate        map[string]json.RawMessage `json:"token_map_update"`
 	ScoreThreshold        *float64                   `json:"score_threshold"`
 	WiktionaryDefinitions *bool                      `json:"wiktionary_definitions"`
+	WiktionaryLanguage    *string                    `json:"wiktionary_language"`
 	SemanticLightness     *float64                   `json:"semantic_lightness"`
 	SemanticChroma        *float64                   `json:"semantic_chroma"`
 }
@@ -166,9 +258,12 @@ type semanticTokensLegend struct {
 
 func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError) {
 	var params initializeParams
-	_ = json.Unmarshal(rawParams, &params)
+	if err := json.Unmarshal(rawParams, &params); err != nil {
+		slog.Warn("initialize params", "err", err)
+	}
 
 	// Load model in background so initialize responds immediately.
+	s.loadStarted.Store(true)
 	go s.loadModel(params.InitializationOptions)
 
 	return initializeResult{
@@ -188,24 +283,25 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 
 // loadModel loads the configured predictor, starts the registry, replays queued documents, and applies rawOpts.
 func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
-	var predictor inference.Predictor
+	var pred predictor
 	var err error
 	switch s.cfg.Mode {
-	case "semantic":
-		predictor, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, s.cfg.EmbedHiddenSize)
-	case "dependency":
-		predictor, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath)
+	case ModeSemantic:
+		pred, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, s.cfg.EmbedHiddenSize)
+	case ModeDependency:
+		pred, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath)
 	default:
-		predictor, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath)
+		pred, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "natural-syntax-ls: load model: %v\n", err)
+		slog.Error("load model", "err", err)
 		s.loadFailed.Store(true)
 		close(s.ready)
 		return
 	}
-	reg := newDocumentRegistry(predictor)
-	if s.cfg.Mode == "semantic" {
+	s.predictor = pred
+	reg := newDocumentRegistry(pred)
+	if s.cfg.Mode == ModeSemantic {
 		// O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.
 		reg.extendTokenMap(map[postag.PartOfSpeech]*tokenmap.Override{postag.O: nil})
 		reg.onDocReady = s.sendSemanticColors
@@ -229,6 +325,7 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	}
 	var opts initOptions
 	if err := json.Unmarshal(*rawOpts, &opts); err != nil {
+		slog.Warn("initializationOptions", "err", err)
 		return
 	}
 	s.applyOptions(reg, opts)
@@ -254,6 +351,10 @@ func (s *lspServer) applyOptions(reg *documentRegistry, opts initOptions) {
 	}
 	if opts.WiktionaryDefinitions != nil {
 		s.wiktionary.Store(*opts.WiktionaryDefinitions)
+	}
+	if opts.WiktionaryLanguage != nil {
+		lang := strings.ToLower(strings.TrimSpace(*opts.WiktionaryLanguage))
+		s.wiktionaryLang.Store(&lang)
 	}
 	if opts.SemanticLightness != nil || opts.SemanticChroma != nil {
 		l, c := inference.SemanticColorParams()
@@ -282,7 +383,7 @@ type didChangeParams struct {
 		URI     string `json:"uri"`
 		Version int32  `json:"version"`
 	} `json:"textDocument"`
-	ContentChanges []json.RawMessage `json:"contentChanges"`
+	ContentChanges []textDocumentContentChange `json:"contentChanges"`
 }
 
 type documentPosition struct {
@@ -305,24 +406,83 @@ type trackedDocument struct {
 	version int32
 }
 
+// textDocuments tracks the client's current text per URI; its zero value is ready to use.
+type textDocuments struct {
+	mu sync.Mutex
+	m  map[string]trackedDocument
+}
+
+func (d *textDocuments) open(uri, text string, version int32) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.m == nil {
+		d.m = make(map[string]trackedDocument)
+	}
+	d.m[uri] = trackedDocument{text: text, version: version}
+}
+
+func (d *textDocuments) get(uri string) trackedDocument {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.m[uri]
+}
+
+func (d *textDocuments) close(uri string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.m, uri)
+}
+
+// change applies changes in order and returns the new text; ok is false for stale versions.
+func (d *textDocuments) change(uri string, version int32, changes []textDocumentContentChange) (text string, ok bool, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.m == nil {
+		d.m = make(map[string]trackedDocument)
+	}
+	current, known := d.m[uri]
+	if known && current.version >= version {
+		return "", false, nil
+	}
+	runes := []rune(current.text)
+	for _, change := range changes {
+		if change.Range == nil {
+			runes = []rune(change.Text)
+			continue
+		}
+		if runes, err = applyRuneChange(runes, *change.Range, change.Text); err != nil {
+			return "", false, err
+		}
+	}
+	text = string(runes)
+	d.m[uri] = trackedDocument{text: text, version: version}
+	return text, true, nil
+}
+
 type didCloseParams struct {
-	TextDocument struct {
-		URI string `json:"uri"`
-	} `json:"textDocument"`
+	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
 // writeBytes writes a pre-marshaled JSON body as a framed LSP message, under writerMu.
 func (s *lspServer) writeBytes(body []byte) {
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
-	if s.writer != nil {
-		fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n%s", len(body), body)
+	if s.writer == nil {
+		return
+	}
+	if _, err := fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n%s", len(body), body); err != nil {
+		slog.Error("write", "err", err)
+		s.writeErr.CompareAndSwap(nil, &err)
 	}
 }
 
 // writeMsg serializes msg and writes it atomically under writerMu.
 func (s *lspServer) writeMsg(msg jsonrpcMsg) {
-	body, _ := json.Marshal(msg)
+	body, err := json.Marshal(msg)
+	if err != nil {
+		slog.Error("marshal", "method", msg.Method, "err", err)
+		return
+	}
 	s.writeBytes(body)
 }
 
@@ -350,134 +510,44 @@ func (s *lspServer) update(item *textItem) {
 	s.pendingMu.Unlock()
 }
 
-func (s *lspServer) handleDidOpen(raw json.RawMessage) {
-	var p didOpenParams
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return
-	}
-	s.documentsMu.Lock()
-	if s.documents == nil {
-		s.documents = make(map[string]trackedDocument)
-	}
-	s.documents[p.TextDocument.URI] = trackedDocument{text: p.TextDocument.Text, version: p.TextDocument.Version}
-	s.documentsMu.Unlock()
+func (s *lspServer) handleDidOpen(p didOpenParams) (any, *rpcError) {
+	s.documents.open(p.TextDocument.URI, p.TextDocument.Text, p.TextDocument.Version)
 	s.update(&textItem{uri: p.TextDocument.URI, text: p.TextDocument.Text, version: p.TextDocument.Version})
+	return nil, nil
 }
 
-func (s *lspServer) handleDidChange(raw json.RawMessage) {
-	var p didChangeParams
-	if err := json.Unmarshal(raw, &p); err != nil || len(p.ContentChanges) == 0 {
-		return
+func (s *lspServer) handleDidChange(p didChangeParams) (any, *rpcError) {
+	if len(p.ContentChanges) == 0 {
+		return nil, nil
 	}
-	changes := make([]textDocumentContentChange, len(p.ContentChanges))
-	for i, rawChange := range p.ContentChanges {
-		if err := json.Unmarshal(rawChange, &changes[i]); err != nil {
-			return
-		}
+	text, ok, err := s.documents.change(p.TextDocument.URI, p.TextDocument.Version, p.ContentChanges)
+	if err != nil {
+		slog.Warn("didChange apply", "uri", p.TextDocument.URI, "err", err)
+		return nil, nil
 	}
-
-	s.documentsMu.Lock()
-	if s.documents == nil {
-		s.documents = make(map[string]trackedDocument)
+	if ok {
+		s.update(&textItem{uri: p.TextDocument.URI, text: text, version: p.TextDocument.Version})
 	}
-	current, ok := s.documents[p.TextDocument.URI]
-	if ok && current.version >= p.TextDocument.Version {
-		s.documentsMu.Unlock()
-		return
-	}
-	text := current.text
-	for _, change := range changes {
-		if change.Range == nil {
-			text = change.Text
-			continue
-		}
-		var err error
-		text, err = applyContentChange(text, *change.Range, change.Text)
-		if err != nil {
-			s.documentsMu.Unlock()
-			return
-		}
-	}
-	s.documents[p.TextDocument.URI] = trackedDocument{text: text, version: p.TextDocument.Version}
-	s.documentsMu.Unlock()
-	s.update(&textItem{uri: p.TextDocument.URI, text: text, version: p.TextDocument.Version})
+	return nil, nil
 }
 
-func (s *lspServer) handleDidClose(raw json.RawMessage) {
-	reg := s.registry.Load()
-	var p didCloseParams
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return
-	}
-	s.documentsMu.Lock()
-	delete(s.documents, p.TextDocument.URI)
-	s.documentsMu.Unlock()
-	if reg != nil {
+func (s *lspServer) handleDidClose(p didCloseParams) (any, *rpcError) {
+	s.documents.close(p.TextDocument.URI)
+	if reg := s.registry.Load(); reg != nil {
 		reg.discard(p.TextDocument.URI)
 	}
-}
-
-func applyContentChange(text string, r contentChangeRange, replacement string) (string, error) {
-	runes := []rune(text)
-	start, ok := positionToRuneOffset(runes, r.Start)
-	if !ok {
-		return "", fmt.Errorf("invalid content change start position")
-	}
-	end, ok := positionToRuneOffset(runes, r.End)
-	if !ok || end < start {
-		return "", fmt.Errorf("invalid content change end position")
-	}
-	runes = append(runes[:start:start], append([]rune(replacement), runes[end:]...)...)
-	return string(runes), nil
-}
-
-func positionToRuneOffset(runes []rune, pos documentPosition) (int, bool) {
-	line := int(pos.Line)
-	start := 0
-	for current := 0; current < line; current++ {
-		i := start
-		for i < len(runes) && runes[i] != '\n' {
-			i++
-		}
-		if i == len(runes) {
-			return 0, false
-		}
-		start = i + 1
-	}
-	end := start
-	for end < len(runes) && runes[end] != '\n' {
-		end++
-	}
-	units := uint32(0)
-	for i := start; i <= end; i++ {
-		if units == pos.Character {
-			return i, true
-		}
-		if i == end {
-			break
-		}
-		if runes[i] > 0xffff {
-			units += 2
-		} else {
-			units++
-		}
-		if units > pos.Character {
-			return 0, false
-		}
-	}
-	return 0, false
+	return nil, nil
 }
 
 // --- hover ---
 
+type textDocumentIdentifier struct {
+	URI string `json:"uri"`
+}
+
 type hoverParams struct {
-	TextDocument struct {
-		URI string `json:"uri"`
-	} `json:"textDocument"`
-	Position struct {
-		Line      uint32 `json:"line"`
-		Character uint32 `json:"character"`
-	} `json:"position"`
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     documentPosition       `json:"position"`
 }
 
 type hoverResult struct {
@@ -489,7 +559,7 @@ type markupContent struct {
 	Value string `json:"value"`
 }
 
-func formatHoverContent(tok *postag.Token, dependents []postag.Token, dependentsHaveDeps []bool, wiktDef, wiktURL string) string {
+func formatHoverContent(tok *postag.Token, dependents []dependent, wiktDef, wiktURL string) string {
 	var header string
 	if tok.HasHead || len(dependents) > 0 {
 		lines := []string{fmt.Sprintf("%s: %s", tok.Word, tok.Deprel)}
@@ -497,9 +567,9 @@ func formatHoverContent(tok *postag.Token, dependents []postag.Token, dependents
 			// Nesting under a scalar is invalid YAML, which highlighters render as one multi-line string.
 			lines = append(lines, "dependents:")
 		}
-		for i, d := range dependents {
-			line := fmt.Sprintf("  %s: %s", d.Word, d.Deprel)
-			if i < len(dependentsHaveDeps) && dependentsHaveDeps[i] {
+		for _, d := range dependents {
+			line := fmt.Sprintf("  %s: %s", d.tok.Word, d.tok.Deprel)
+			if d.hasDeps {
 				line += "  # has dependents"
 			}
 			lines = append(lines, line)
@@ -524,56 +594,72 @@ func formatHoverContent(tok *postag.Token, dependents []postag.Token, dependents
 	return fmt.Sprintf("%s\n\n%s\n\n[Wiktionary](%s)", header, wiktDef, wiktURL)
 }
 
-func (s *lspServer) handleHover(raw json.RawMessage) (any, *rpcError) {
+func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 	reg := s.registry.Load()
-	var p hoverParams
-	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
+	if reg == nil {
 		return nil, nil
 	}
 	reply := make(chan *hoverQueryResult, 1)
 	reg.hover(p.TextDocument.URI, p.Position.Line, p.Position.Character, reply)
-	var res *hoverQueryResult
-	select {
-	case res = <-reply:
-	case <-time.After(30 * time.Second):
-	}
+	res, _ := awaitReply(s.context(), reg, reply)
 	if res == nil || res.tok == nil {
 		return nil, nil
 	}
 	tok := res.tok
 	var wiktDef, wiktURL string
 	if s.wiktionary.Load() {
-		if def, url, ok := wiktionary.FetchDef(tok.Word, tok.Tag, tok.Deprel); ok {
+		lang := "en"
+		if p := s.wiktionaryLang.Load(); p != nil {
+			lang = *p
+		}
+		modelLang := s.cfg.Language
+		if lang == "model" {
+			lang = modelLang
+			if lang == "" {
+				lang = "en"
+			}
+		}
+		if def, url, ok := wiktionary.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
 			wiktDef, wiktURL = def, url
 		}
 	}
-	text := formatHoverContent(tok, res.dependents, res.dependentsHaveDeps, wiktDef, wiktURL)
+	text := formatHoverContent(tok, res.dependents, wiktDef, wiktURL)
 	return hoverResult{Contents: markupContent{Kind: "markdown", Value: text}}, nil
+}
+
+// awaitReply waits for a registry reply; ok is false on timeout, cancellation, registry shutdown, or a closed (superseded) reply channel.
+func awaitReply[T any](ctx context.Context, reg *documentRegistry, reply <-chan T) (v T, ok bool) {
+	ctx, cancel := context.WithTimeout(ctx, replyTimeout)
+	defer cancel()
+	select {
+	case v, ok = <-reply:
+		return v, ok
+	case <-ctx.Done():
+	case <-reg.done:
+	}
+	return v, false
 }
 
 // --- semanticTokens/full ---
 
 type semanticTokensParams struct {
-	TextDocument struct {
-		URI string `json:"uri"`
-	} `json:"textDocument"`
+	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
 type semanticTokensResult struct {
 	Data []uint32 `json:"data"`
 }
 
-func (s *lspServer) handleSemanticTokensFull(raw json.RawMessage) (any, *rpcError) {
+func (s *lspServer) handleSemanticTokensFull(p semanticTokensParams) (any, *rpcError) {
 	empty := semanticTokensResult{Data: []uint32{}}
 	reg := s.registry.Load()
-	var p semanticTokensParams
-	if err := json.Unmarshal(raw, &p); err != nil || reg == nil {
+	if reg == nil {
 		return empty, nil
 	}
 	reply := make(chan []uint32, 1)
 	reg.semanticTokens(p.TextDocument.URI, reply)
-	data := <-reply // nil when closed because a newer request superseded this one
-	if data == nil {
+	data, ok := awaitReply(s.context(), reg, reply) // zero when a newer request superseded this one
+	if !ok || data == nil {
 		return empty, nil
 	}
 	return semanticTokensResult{Data: data}, nil
@@ -597,7 +683,7 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 	if doc == nil || len(doc.tokens) == 0 {
 		return
 	}
-	lines := lineCursor{starts: buildLineStarts([]rune(doc.text))}
+	lines := doc.lineIndex()
 	tokens := make([]colorTokenJSON, 0, len(doc.tokens))
 	for _, tok := range doc.tokens {
 		if tok.Color == "" {
@@ -607,7 +693,7 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 		tokens = append(tokens, colorTokenJSON{
 			Line:      line,
 			Character: col,
-			Length:    int(tok.OffsetEnd - tok.OffsetBegin),
+			Length:    lines.utf16Len(int(tok.OffsetBegin), int(tok.OffsetEnd)),
 			Color:     tok.Color,
 		})
 	}
@@ -618,14 +704,18 @@ func (s *lspServer) sendSemanticColors(uri string, doc *document) {
 }
 
 func (s *lspServer) writeNotification(method string, params any) {
-	body, _ := json.Marshal(params)
+	body, err := json.Marshal(params)
+	if err != nil {
+		slog.Error("marshal notification", "method", method, "err", err)
+		return
+	}
 	s.writeMsg(jsonrpcMsg{JSONRPC: "2.0", Method: method, Params: body})
 }
 
 // --- JSON-RPC framing ---
 
 func readMessage(r *bufio.Reader) (jsonrpcMsg, error) {
-	var contentLength int
+	contentLength := -1
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
@@ -636,10 +726,14 @@ func readMessage(r *bufio.Reader) (jsonrpcMsg, error) {
 			break
 		}
 		if v, ok := strings.CutPrefix(line, "Content-Length:"); ok {
-			contentLength, _ = strconv.Atoi(strings.TrimSpace(v))
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil || n < 0 {
+				return jsonrpcMsg{}, fmt.Errorf("bad Content-Length %q", v)
+			}
+			contentLength = n
 		}
 	}
-	if contentLength == 0 {
+	if contentLength < 0 {
 		return jsonrpcMsg{}, errors.New("missing Content-Length")
 	}
 	buf := make([]byte, contentLength)
@@ -666,10 +760,15 @@ func (s *lspServer) writeResponse(id *json.RawMessage, result any, rpcErr *rpcEr
 		Error   *rpcError        `json:"error"`
 	}
 	var body []byte
+	var err error
 	if rpcErr != nil {
-		body, _ = json.Marshal(errorResp{JSONRPC: "2.0", ID: id, Error: rpcErr})
+		body, err = json.Marshal(errorResp{JSONRPC: "2.0", ID: id, Error: rpcErr})
 	} else {
-		body, _ = json.Marshal(successResp{JSONRPC: "2.0", ID: id, Result: result})
+		body, err = json.Marshal(successResp{JSONRPC: "2.0", ID: id, Result: result})
+	}
+	if err != nil {
+		slog.Error("marshal response", "err", err)
+		return
 	}
 	s.writeBytes(body)
 }

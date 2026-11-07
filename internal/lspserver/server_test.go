@@ -66,40 +66,46 @@ func TestWriteResponse(t *testing.T) {
 	}
 }
 
-func TestLineHelpers(t *testing.T) {
+func TestLineIndex(t *testing.T) {
 	for _, tc := range []struct {
 		text  string
 		lines []int
 	}{
 		{"", []int{0}},
 		{"abc", []int{0}},
-		{"abc\n", []int{0}}, // a trailing newline opens no line with content
+		{"abc\n", []int{0, 4}},
 		{"a\nb\n\nc", []int{0, 2, 4, 5}},
 		{"é\nü", []int{0, 2}}, // rune offsets, not bytes
 	} {
-		got := buildLineStarts([]rune(tc.text))
-		if !slices.Equal(got, tc.lines) {
-			t.Errorf("buildLineStarts(%q) = %v, want %v", tc.text, got, tc.lines)
+		ix := newLineIndex([]rune(tc.text))
+		if !slices.Equal(ix.starts, tc.lines) {
+			t.Errorf("starts(%q) = %v, want %v", tc.text, ix.starts, tc.lines)
 		}
 		for line, start := range tc.lines {
-			if got := charOffsetToLine(got, start); got != line {
-				t.Errorf("%q: charOffsetToLine(%d) = %d, want %d", tc.text, start, got, line)
+			if got := ix.lineOf(start); got != line {
+				t.Errorf("%q: lineOf(%d) = %d, want %d", tc.text, start, got, line)
 			}
-			if got := lineToCharOffset(tc.text, line); got != start {
-				t.Errorf("%q: lineToCharOffset(%d) = %d, want %d", tc.text, line, got, start)
+			if got, ok := ix.offset(uint32(line), 0); !ok || got != start {
+				t.Errorf("%q: offset(%d,0) = %d, %v, want %d", tc.text, line, got, ok, start)
 			}
 		}
-		// Backwards lookups make the cursor fall back to binary search.
-		c := lineCursor{starts: got}
-		for off := len([]rune(tc.text)); off >= 0; off-- {
-			want := charOffsetToLine(got, off)
-			if l, col := c.position(off); l != want || col != off-got[want] {
-				t.Errorf("%q: cursor at %d = %d:%d, want line %d", tc.text, off, l, col, want)
+		for off := range len([]rune(tc.text)) + 1 {
+			line, col := ix.position(off)
+			if got, ok := ix.offset(uint32(line), uint32(col)); !ok || got != off {
+				t.Errorf("%q: round trip %d -> %d:%d -> %d, %v", tc.text, off, line, col, got, ok)
 			}
 		}
 	}
-	if lineToCharOffset("a\nb", 5) != -1 {
-		t.Error("lineToCharOffset past end not -1")
+	if _, ok := newLineIndex([]rune("a\nb")).offset(5, 0); ok {
+		t.Error("offset past last line accepted")
+	}
+	// An astral rune takes two UTF-16 units.
+	ix := newLineIndex([]rune("a😀b"))
+	if _, col := ix.position(2); col != 3 {
+		t.Errorf("column after astral rune = %d, want 3", col)
+	}
+	if n := ix.utf16Len(1, 2); n != 2 {
+		t.Errorf("utf16Len = %d, want 2", n)
 	}
 }
 
@@ -138,13 +144,11 @@ func TestApplyContentChange(t *testing.T) {
 
 func TestDidChangeAppliesIncrementalEdits(t *testing.T) {
 	s := &lspServer{}
-	s.handleDidOpen(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":1,"text":"one two\nthree four"}}`))
-	s.handleDidChange(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":2},"contentChanges":[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}},"text":""}]}`))
-	s.handleDidChange(json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":3},"contentChanges":[{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}},"text":"four three"}]}`))
+	s.handle(jsonrpcMsg{Method: "textDocument/didOpen", Params: json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":1,"text":"one two\nthree four"}}`)})
+	s.handle(jsonrpcMsg{Method: "textDocument/didChange", Params: json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":2},"contentChanges":[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}},"text":""}]}`)})
+	s.handle(jsonrpcMsg{Method: "textDocument/didChange", Params: json.RawMessage(`{"textDocument":{"uri":"file:///edit.txt","version":3},"contentChanges":[{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}},"text":"four three"}]}`)})
 
-	s.documentsMu.Lock()
-	got := s.documents["file:///edit.txt"].text
-	s.documentsMu.Unlock()
+	got := s.documents.get("file:///edit.txt").text
 	if got != "one\nfour three four" {
 		t.Fatalf("incremental edits produced %q", got)
 	}
@@ -186,16 +190,16 @@ func TestEncodeSemanticTokens(t *testing.T) {
 
 func TestFormatHoverContent(t *testing.T) {
 	pos := &postag.Token{Word: "dog", Tag: postag.NN, Score: 0.912}
-	if got := formatHoverContent(pos, nil, nil, "", ""); !strings.Contains(got, "```yaml\ndog: ") || !strings.Contains(got, "# 0.91") {
+	if got := formatHoverContent(pos, nil, "", ""); !strings.Contains(got, "```yaml\ndog: ") || !strings.Contains(got, "# 0.91") {
 		t.Errorf("POS hover: %q", got)
 	}
 	sem := &postag.Token{Word: "dog", Color: "#112233", Description: "Semantic color #112233"}
-	if got := formatHoverContent(sem, nil, nil, "", ""); strings.Contains(got, "#") && strings.Contains(got, "# 0.") {
+	if got := formatHoverContent(sem, nil, "", ""); strings.Contains(got, "#") && strings.Contains(got, "# 0.") {
 		t.Errorf("semantic hover shows a score: %q", got)
 	}
 	head := &postag.Token{Word: "ran", HasHead: true, Deprel: postag.DepRoot}
-	deps := []postag.Token{{Word: "dog", Deprel: postag.DepNsubj}, {Word: "far", Deprel: postag.DepAdvmod}}
-	got := formatHoverContent(head, deps, []bool{true, false}, "to move quickly", "https://en.wiktionary.org/wiki/run")
+	deps := []dependent{{postag.Token{Word: "dog", Deprel: postag.DepNsubj}, true}, {postag.Token{Word: "far", Deprel: postag.DepAdvmod}, false}}
+	got := formatHoverContent(head, deps, "to move quickly", "https://en.wiktionary.org/wiki/run")
 	for _, want := range []string{"```yaml\nran: root\ndependents:\n", "  dog: nsubj  # has dependents\n", "  far: advmod\n```", "to move quickly", "[Wiktionary](https://en.wiktionary.org/wiki/run)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("dependency hover missing %q in %q", want, got)
