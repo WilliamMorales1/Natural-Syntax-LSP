@@ -1,0 +1,8 @@
+Third-party data
+
+internal/wiktionary/trad2simp.tsv and internal/wiktionary/simp2trad.tsv are derived from the
+Open Chinese Convert (OpenCC) dictionaries TSCharacters.txt and STCharacters.txt, reduced to
+each character's first mapping.
+
+  Project:   OpenCC, https://github.com/BYVoid/OpenCC
+  License:   Apache License 2.0 (third_party/opencc/LICENSE)

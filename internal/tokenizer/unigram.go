@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -24,13 +25,41 @@ type Tokenizer interface {
 	SEPID() int
 }
 
-// EncodeWords builds a special-token-wrapped id stream for pre-split words; wrapper entries get swWordIdx -1.
-func EncodeWords(t Tokenizer, words []WordSpan) (inputIDs, attMask, tokTypeIDs []int64, swWordIdx []int, swIsFirst []bool) {
-	inputIDs = []int64{int64(t.CLSID())}
-	swWordIdx = []int{-1}
-	swIsFirst = []bool{false}
+// continuer is implemented by tokenizers that mark word starts and can encode a word without the mark.
+type continuer interface {
+	ContinuationIDs(word string) []int64
+}
+
+// Encoding is a subword stream for pre-split words, wrapped in special tokens.
+type Encoding struct {
+	InputIDs, AttMask, TokTypeIDs []int64
+	// SwWordIdx maps each subword to its word index; special tokens get -1.
+	SwWordIdx []int
+	// SwIsFirst marks each word's first subword.
+	SwIsFirst []bool
+}
+
+// EncodeWords builds a special-token-wrapped id stream for pre-split words; wrapper entries get SwWordIdx -1.
+func EncodeWords(t Tokenizer, words []WordSpan) Encoding {
+	return encodeWords(t, words, false)
+}
+
+// EncodeWordsContiguous is EncodeWords, but a word that starts where the previous one ended in the source gets no word-start mark, so unspaced text (Japanese, Chinese, punctuation) reaches the model as it was written.
+func EncodeWordsContiguous(t Tokenizer, words []WordSpan) Encoding {
+	return encodeWords(t, words, true)
+}
+
+func encodeWords(t Tokenizer, words []WordSpan, contiguous bool) Encoding {
+	inputIDs := []int64{int64(t.CLSID())}
+	swWordIdx := []int{-1}
+	swIsFirst := []bool{false}
+	cont, canCont := t.(continuer)
 	for wi, w := range words {
-		for pi, id := range t.WordIDs(w.Text) {
+		ids := t.WordIDs(w.Text)
+		if contiguous && canCont && wi > 0 && !w.BlockStart && w.Begin == words[wi-1].End {
+			ids = cont.ContinuationIDs(w.Text)
+		}
+		for pi, id := range ids {
 			inputIDs = append(inputIDs, id)
 			swWordIdx = append(swWordIdx, wi)
 			swIsFirst = append(swIsFirst, pi == 0)
@@ -41,11 +70,11 @@ func EncodeWords(t Tokenizer, words []WordSpan) (inputIDs, attMask, tokTypeIDs [
 	swIsFirst = append(swIsFirst, false)
 
 	n := len(inputIDs)
-	attMask = make([]int64, n)
+	attMask := make([]int64, n)
 	for i := range attMask {
 		attMask[i] = 1
 	}
-	return inputIDs, attMask, make([]int64, n), swWordIdx, swIsFirst
+	return Encoding{inputIDs, attMask, make([]int64, n), swWordIdx, swIsFirst}
 }
 
 // UnigramTokenizer is a SentencePiece Unigram model loaded from a HF tokenizer.json.
@@ -92,7 +121,7 @@ func isUnigramFile(data []byte) bool {
 func LoadUnigram(path string) (*UnigramTokenizer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load unigram tokenizer: %w", err)
 	}
 	return parseUnigram(data)
 }
@@ -164,9 +193,14 @@ func (t *UnigramTokenizer) Pieces(ids []int64) []string {
 }
 
 // WordIDs encodes one pre-split word, with a leading ▁ for models that mark word starts.
-func (t *UnigramTokenizer) WordIDs(word string) []int64 {
+func (t *UnigramTokenizer) WordIDs(word string) []int64 { return t.wordIDs(word, t.metaspace) }
+
+// ContinuationIDs encodes a word that continues the previous one with no space between, so it carries no ▁.
+func (t *UnigramTokenizer) ContinuationIDs(word string) []int64 { return t.wordIDs(word, false) }
+
+func (t *UnigramTokenizer) wordIDs(word string, mark bool) []int64 {
 	norm, _ := normalizeRunes(word)
-	if t.metaspace {
+	if mark {
 		norm = append([]rune{'▁'}, norm...)
 	}
 	segs := t.viterbi(norm)
@@ -226,12 +260,44 @@ func (t *UnigramTokenizer) viterbi(runes []rune) []segment {
 	return fused
 }
 
-// Tokenize splits text into words like the WordPiece path does, then breaks each CJK run into the Unigram pieces the model would see, since those scripts have no spaces.
+var japaneseSegmenter atomic.Pointer[func(run string) [][2]int]
+
+var japaneseLemmatizer atomic.Pointer[func(word string) []string]
+
+// SetJapaneseLemmatizer registers the function returning dictionary forms of an inflected Japanese word.
+func SetJapaneseLemmatizer(f func(word string) []string) { japaneseLemmatizer.Store(&f) }
+
+// JapaneseLemmas returns dictionary forms of word, nil when no lemmatizer is registered.
+func JapaneseLemmas(word string) []string {
+	if f := japaneseLemmatizer.Load(); f != nil {
+		return (*f)(word)
+	}
+	return nil
+}
+
+// SetJapaneseSegmenter installs a word segmenter for Japanese Han/kana runs; seg returns rune ranges covering the run in order, or nil to fall back to Unigram pieces.
+func SetJapaneseSegmenter(seg func(run string) [][2]int) { japaneseSegmenter.Store(&seg) }
+
+// hasKana reports whether text is Japanese, since Han runs alone cannot tell Japanese from Chinese.
+func hasKana(runes []rune) bool {
+	for _, r := range runes {
+		if unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// Tokenize splits text into words like the WordPiece path does, then breaks each CJK run into words: with a Japanese segmenter installed, the dictionary words of kana-bearing text, otherwise the Unigram pieces the model would see, since those scripts have no spaces.
 func (t *UnigramTokenizer) Tokenize(text string) []WordSpan {
 	runes := []rune(text)
+	var seg func(string) [][2]int
+	if p := japaneseSegmenter.Load(); p != nil && hasKana(runes) {
+		seg = *p
+	}
 	var out []WordSpan
 	for _, w := range mergeElisions(runes, basicTokenize(text, false, true)) {
-		out = append(out, t.splitCJK(runes, w)...)
+		out = append(out, t.splitCJK(runes, w, seg)...)
 	}
 	return out
 }
@@ -265,7 +331,7 @@ func mergeElisions(runes []rune, words []WordSpan) []WordSpan {
 }
 
 // splitCJK cuts out maximal Han/kana runs from w and segments each with Unigram.
-func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan) []WordSpan {
+func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan, seg func(string) [][2]int) []WordSpan {
 	src := runes[w.Begin:w.End]
 	hasCJK := false
 	for _, r := range src {
@@ -294,6 +360,15 @@ func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan) []WordSpan {
 			i = j
 			continue
 		}
+		if seg != nil {
+			if ranges := seg(string(src[i:j])); coversRun(ranges, j-i) {
+				for _, r := range ranges {
+					flush(i+r[0], i+r[1])
+				}
+				i = j
+				continue
+			}
+		}
 		norm, origin := normalizeRunes(string(src[i:j]))
 		for _, s := range t.viterbi(norm) {
 			flush(i+origin[s.from], i+originEnd(origin, s.to, j-i))
@@ -304,6 +379,18 @@ func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan) []WordSpan {
 		parts[0].BlockStart = w.BlockStart
 	}
 	return parts
+}
+
+// coversRun reports whether ranges tile [0, n) in order with no gap, the only segmentation worth trusting.
+func coversRun(ranges [][2]int, n int) bool {
+	pos := 0
+	for _, r := range ranges {
+		if r[0] != pos || r[1] <= r[0] {
+			return false
+		}
+		pos = r[1]
+	}
+	return pos == n
 }
 
 // originEnd maps an exclusive normalized rune end back to an exclusive original rune end.

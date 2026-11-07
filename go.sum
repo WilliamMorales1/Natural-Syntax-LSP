@@ -1,4 +1,12 @@
+github.com/ikawaha/kagome-dict v1.1.7 h1:O/uAL+WCGhp6kT0+szxBSPaSM4i+vdArSefFvJE4Nug=
+github.com/ikawaha/kagome-dict v1.1.7/go.mod h1:9tvk7/jZkvYt40foxkB9CqSAAknoQrIPfzqQd05UkFw=
+github.com/ikawaha/kagome-dict/ipa v1.2.6 h1:Bcvm4jgxAAnTIKb6ckqUKBiFDN0wuanFfycMuYt7xGQ=
+github.com/ikawaha/kagome-dict/ipa v1.2.6/go.mod h1:ONdTMUAKMCq9yx4s69QRtPcJLEMVM0BNNYQrMCJLWb0=
+github.com/ikawaha/kagome-dict/uni v1.2.6 h1:q5AzlkZ0bFAUmX5EKN/hfb5Ze39pJHyZm+65seQFjdM=
+github.com/ikawaha/kagome-dict/uni v1.2.6/go.mod h1:YKr6RV/SKGoEHl4pcxzFnsVemRpRISwgTpSZqqwZbKs=
+github.com/ikawaha/kagome/v2 v2.11.0 h1:R914EkRzay9qtUbsFzEbcdZ3wHwwSPvbPkuBI1oIf78=
+github.com/ikawaha/kagome/v2 v2.11.0/go.mod h1:6mYPezBou+iNVnX9uNa00Sfu6S6t2zcM8Nv1EW9Y9so=
 github.com/yalue/onnxruntime_go v1.31.0 h1:1ln4YW1SFOFfGJZXe3jNOb2JUSt+l2pEneZfV8HdtFA=
 github.com/yalue/onnxruntime_go v1.31.0/go.mod h1:b4X26A8pekNb1ACJ58wAXgNKeUCGEAQ9dmACut9Sm/4=
-golang.org/x/text v0.30.0 h1:yznKA/E9zq54KzlzBEAWn1NXSQ8DIp/NYMy88xJjl4k=
-golang.org/x/text v0.30.0/go.mod h1:yDdHFIX9t+tORqspjENWgzaCVXgk0yYnYuSZ8UzzBVM=
+golang.org/x/text v0.32.0 h1:ZD01bjUt1FQ9WJ0ClOL5vxgxOI/sVCNgX1YtKwcY0mU=
+golang.org/x/text v0.32.0/go.mod h1:o/rUWzghvpD5TXrTIBuJU77MTaN0ljMWE47kxGJQ7jY=

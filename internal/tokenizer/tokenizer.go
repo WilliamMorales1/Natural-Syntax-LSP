@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"slices"
@@ -61,7 +62,7 @@ func Open(vocabPath string) (Tokenizer, error) {
 func Load(vocabPath string) (*BERTTokenizer, error) {
 	f, err := os.Open(vocabPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load vocab: %w", err)
 	}
 	defer f.Close()
 
@@ -78,17 +79,17 @@ func Load(vocabPath string) (*BERTTokenizer, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read vocab %s: %w", vocabPath, err)
 	}
 	var cfg tokenizerConfig
 	hasSidecar := false
 	if data, err := os.ReadFile(SidecarPath(vocabPath)); err == nil {
 		hasSidecar = true
 		if err := json.Unmarshal(data, &cfg); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse tokenizer config for %s: %w", vocabPath, err)
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+		return nil, fmt.Errorf("read tokenizer config for %s: %w", vocabPath, err)
 	}
 	return &BERTTokenizer{
 		// HF BertTokenizer defaults tokenize_chinese_chars to true when the config omits it.
@@ -132,8 +133,8 @@ func (t *BERTTokenizer) WordIDs(word string) []int64 {
 	return ids
 }
 
-// TokenizeWords encodes a pre-split word slice into a [CLS]-prefixed, [SEP]-suffixed subword stream; [CLS]/[SEP] entries get swWordIdx -1.
-func (t *BERTTokenizer) TokenizeWords(words []WordSpan) (inputIDs, attMask, tokTypeIDs []int64, swWordIdx []int, swIsFirst []bool) {
+// TokenizeWords encodes a pre-split word slice into a [CLS]-prefixed, [SEP]-suffixed subword stream; [CLS]/[SEP] entries get SwWordIdx -1.
+func (t *BERTTokenizer) TokenizeWords(words []WordSpan) Encoding {
 	return EncodeWords(t, words)
 }
 

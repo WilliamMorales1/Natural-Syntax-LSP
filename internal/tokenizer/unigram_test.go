@@ -49,6 +49,32 @@ func TestUnigramTokenizeSegmentsCJKByPieces(t *testing.T) {
 	}
 }
 
+func TestJapaneseSegmenterReplacesPiecesOnlyForKanaText(t *testing.T) {
+	tok := tinyTokenizer(t)
+	t.Cleanup(func() { SetJapaneseSegmenter(nil) })
+	SetJapaneseSegmenter(func(run string) [][2]int {
+		if run == "コーヒー" {
+			return [][2]int{{0, 4}}
+		}
+		return nil
+	})
+	if got := texts(tok.Tokenize("コーヒーは")); !slices.Equal(got, []string{"コーヒー", "は"}) {
+		t.Errorf("kana text = %q", got)
+	}
+	// Han-only text has no kana to mark it Japanese, so the segmenter is not consulted.
+	called := false
+	SetJapaneseSegmenter(func(string) [][2]int { called = true; return nil })
+	tok.Tokenize("今日")
+	if called {
+		t.Error("segmenter called for Han-only text")
+	}
+	// A segmentation that leaves a gap is ignored in favor of Unigram pieces.
+	SetJapaneseSegmenter(func(string) [][2]int { return [][2]int{{0, 1}} })
+	if got := texts(tok.Tokenize("今日は晴れです")); !slices.Equal(got, []string{"今日", "は", "晴れ", "です"}) {
+		t.Errorf("bad segmentation not rejected: %q", got)
+	}
+}
+
 func TestUnigramTokenizeOffsets(t *testing.T) {
 	tok := tinyTokenizer(t)
 	in := "ＡＢ 今日は\n晴れです 🎉コーヒー。"
@@ -77,10 +103,47 @@ func TestUnigramWordIDs(t *testing.T) {
 	if got := tok.WordIDs("XYZ"); !slices.Equal(got, []int64{1}) {
 		t.Errorf("XYZ = %v, want one fused [UNK]", got)
 	}
-	ids, mask, _, wordIdx, first := EncodeWords(tok, []WordSpan{{Text: "今日"}, {Text: "は"}})
+	enc := EncodeWords(tok, []WordSpan{{Text: "今日"}, {Text: "は"}})
+	ids, mask, wordIdx, first := enc.InputIDs, enc.AttMask, enc.SwWordIdx, enc.SwIsFirst
 	if !slices.Equal(ids, []int64{0, 3, 6, 2}) || !slices.Equal(mask, []int64{1, 1, 1, 1}) ||
 		!slices.Equal(wordIdx, []int{-1, 0, 1, -1}) || !slices.Equal(first, []bool{false, true, true, false}) {
 		t.Errorf("EncodeWords = %v %v %v %v", ids, mask, wordIdx, first)
+	}
+}
+
+const tinyMetaspace = `{
+ "model": {"type": "Unigram", "unk_id": 1, "vocab": [
+  ["<s>", 0], ["<unk>", 0], ["</s>", 0],
+  ["▁キ", -5], ["ツ", -5], ["ネ", -5], ["▁ツ", -5], ["▁ネ", -5], ["▁", -3]
+ ]},
+ "pre_tokenizer": {"type": "Metaspace"},
+ "post_processor": {"type": "TemplateProcessing", "single": [
+  {"SpecialToken": {"id": "<s>", "type_id": 0}}, {"Sequence": {"id": "A", "type_id": 0}}, {"SpecialToken": {"id": "</s>", "type_id": 0}}]}
+}`
+
+func TestEncodeWordsContiguousDropsMarkInsideUnspacedText(t *testing.T) {
+	tok, err := parseUnigram([]byte(tinyMetaspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	glued := []WordSpan{{Text: "キ", Begin: 0, End: 1}, {Text: "ツ", Begin: 1, End: 2}, {Text: "ネ", Begin: 2, End: 3}}
+	spaced := []WordSpan{{Text: "キ", Begin: 0, End: 1}, {Text: "ツ", Begin: 2, End: 3}, {Text: "ネ", Begin: 4, End: 5}}
+	for _, tc := range []struct {
+		name  string
+		words []WordSpan
+		want  []int64
+	}{
+		{"glued", glued, []int64{0, 3, 4, 5, 2}},
+		{"spaced", spaced, []int64{0, 3, 6, 7, 2}},
+	} {
+		enc := EncodeWordsContiguous(tok, tc.words)
+		ids, idx := enc.InputIDs, enc.SwWordIdx
+		if !slices.Equal(ids, tc.want) || !slices.Equal(idx, []int{-1, 0, 1, 2, -1}) {
+			t.Errorf("%s: ids %v idx %v, want %v", tc.name, ids, idx, tc.want)
+		}
+	}
+	if ids := EncodeWords(tok, glued).InputIDs; !slices.Equal(ids, []int64{0, 3, 6, 7, 2}) {
+		t.Errorf("EncodeWords must keep a mark on every word, got %v", ids)
 	}
 }
 

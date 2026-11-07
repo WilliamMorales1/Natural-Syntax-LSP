@@ -170,7 +170,8 @@ func TestWordPieceCasedVocab(t *testing.T) {
 
 func TestTokenizeWords(t *testing.T) {
 	tok := loadVocab(t, "[PAD]", "[UNK]", "[CLS]", "[SEP]", "play", "##ing", "go")
-	ids, mask, tti, wordIdx, isFirst := tok.TokenizeWords(BasicTokenize("playing go"))
+	enc := tok.TokenizeWords(BasicTokenize("playing go"))
+	ids, mask, tti, wordIdx, isFirst := enc.InputIDs, enc.AttMask, enc.TokTypeIDs, enc.SwWordIdx, enc.SwIsFirst
 	if want := []int64{2, 4, 5, 6, 3}; !slices.Equal(ids, want) {
 		t.Errorf("ids = %v, want %v", ids, want)
 	}
