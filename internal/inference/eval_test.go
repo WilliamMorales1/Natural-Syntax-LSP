@@ -180,7 +180,7 @@ func TestEvalPOS(t *testing.T) {
 		{"zh", udposPrefix + "zh", "_tokenizer.json"},
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
-		lang := strings.SplitN(tc.lang, "-", 2)[0]
+		lang, _, _ := strings.Cut(tc.lang, "-")
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := filepath.Join(dir, tc.prefix)

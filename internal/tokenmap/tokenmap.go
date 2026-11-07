@@ -51,6 +51,7 @@ type Override struct {
 // Type enum (indices match LSP SemanticTokensLegend positions).
 type Type uint32
 
+// Semantic token types.
 const (
 	TypeNamespace Type = iota
 	TypeType
@@ -100,6 +101,7 @@ func (t *Type) UnmarshalText(text []byte) error {
 // Modifier enum (bit positions).
 type Modifier uint32
 
+// Semantic token modifiers.
 const (
 	ModifierDeclaration Modifier = iota
 	ModifierDefinition

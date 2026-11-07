@@ -26,7 +26,7 @@ type baseModel struct {
 }
 
 // Tokenize splits text using the model's own tokenizer rules.
-func (b *baseModel) Tokenize(text string) []tokenizer.WordSpan { return b.tokenizer.Tokenize(text) }
+func (m *baseModel) Tokenize(text string) []tokenizer.WordSpan { return m.tokenizer.Tokenize(text) }
 
 var (
 	envMu   sync.Mutex

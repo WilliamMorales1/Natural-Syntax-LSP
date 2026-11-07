@@ -333,13 +333,7 @@ func mergeElisions(runes []rune, words []WordSpan) []WordSpan {
 // splitCJK cuts out maximal Han/kana runs from w and segments each with Unigram.
 func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan, seg func(string) [][2]int) []WordSpan {
 	src := runes[w.Begin:w.End]
-	hasCJK := false
-	for _, r := range src {
-		if isCJK(r) {
-			hasCJK = true
-			break
-		}
-	}
+	hasCJK := slices.ContainsFunc(src, isCJK)
 	if !hasCJK {
 		return []WordSpan{w}
 	}

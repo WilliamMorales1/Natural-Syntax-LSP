@@ -2,7 +2,7 @@
 
 Scope: all non-test Go under `cmd/` and `internal/` on branch `multilingual`. The code is already modern (range-over-int, `slices`, `strings.SplitSeq`, `wg.Go`, `min`/`max`, `atomic.Pointer`). Findings below are the remaining places where it departs from common Go patterns, ordered by payoff. Each item lists the location, the current pattern, the idiomatic replacement, and why.
 
-`golangci-lint` is installed locally but built against an older Go than the toolchain (go 1.26.4), so it fails to typecheck. Rebuild it (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`) before adopting item 17.
+`golangci-lint` was rebuilt against the current toolchain and `golangci-lint run ./...` reports 0 issues. Tests exempt `errcheck` and `noctx`; `Close`/`Destroy` returns are exempt everywhere.
 
 ## Status
 

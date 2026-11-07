@@ -103,7 +103,7 @@ func (lf *liveFetcher) get(ctx context.Context, word string) (map[string][]entry
 	}
 	var p map[string][]entry
 	var err error
-	for try := 0; try < 4; try++ {
+	for try := range 4 {
 		if d := 150*time.Millisecond - time.Since(lf.last); d > 0 {
 			time.Sleep(d)
 		}

@@ -18,3 +18,9 @@ linters:
       rules:
         - name: exported
         - name: receiver-naming
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck, noctx]
+      - linters: [errcheck]
+        text: "Close|Destroy|DestroyEnvironment"

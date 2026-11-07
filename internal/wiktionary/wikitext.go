@@ -101,18 +101,19 @@ func parseWikitext(text string) map[string][]entry {
 		}
 		cur = nil
 	}
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			flush()
 			name := m[2]
-			if len(m[1]) == 2 {
+			switch {
+			case len(m[1]) == 2:
 				lang, pos = name, ""
-			} else if strings.EqualFold(name, "Definitions") {
+			case strings.EqualFold(name, "Definitions"):
 				pos, cur = "Hanzi", &entry{PartOfSpeech: "Hanzi", Language: lang}
-			} else if posNames[strings.ToLower(name)] {
+			case posNames[strings.ToLower(name)]:
 				pos = name
 				cur = &entry{PartOfSpeech: name, Language: lang}
-			} else {
+			default:
 				pos = ""
 			}
 			continue

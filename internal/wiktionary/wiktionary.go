@@ -180,7 +180,7 @@ func pickLang(payload map[string][]entry, lang, modelLang, target string, numera
 			// Translingual entries (symbols, digits) live in the en bucket.
 			for _, e := range payload["en"] {
 				if strings.EqualFold(e.Language, "Translingual") {
-					entries = append(entries[:len(entries):len(entries)], e)
+					entries = append(slices.Clip(entries), e)
 				}
 			}
 		}

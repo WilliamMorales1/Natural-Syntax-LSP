@@ -72,7 +72,7 @@ func TestSemanticPlaneStableAcrossEdits(t *testing.T) {
 		t.Errorf("refit on same rows moved hues by %.4f", s)
 	}
 
-	edited := append(rows[:len(rows):len(rows)], clusteredRows(rng, 25)...)
+	edited := slices.Concat(rows, clusteredRows(rng, 25))
 	p.Fit(edited)
 	if s := hueShift(&before, &p, rows); s > 0.05 {
 		t.Errorf("appending 25 rows moved old hues by %.4f", s)
