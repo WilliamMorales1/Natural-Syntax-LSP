@@ -58,3 +58,21 @@ func TestUnknownModifierIgnored(t *testing.T) {
 		t.Errorf("bitmap %b, want %b (typo must not set declaration)", got, want)
 	}
 }
+
+// TestClassesColorAlike checks Penn variants of one Universal class share a color, so English matches UPOS languages.
+func TestClassesColorAlike(t *testing.T) {
+	m := NewDefault()
+	for _, group := range [][]postag.PartOfSpeech{
+		{postag.NN, postag.NNS}, {postag.NNP, postag.NNPS},
+		{postag.VB, postag.VBD, postag.VBG, postag.VBN, postag.VBP, postag.VBZ},
+		{postag.JJ, postag.JJR, postag.JJS}, {postag.RB, postag.RBR, postag.RBS, postag.WRB},
+		{postag.DT, postag.PDT, postag.WDT}, {postag.PRP, postag.PRPS, postag.WP, postag.WPS},
+		{postag.RP, postag.TO, postag.POS},
+	} {
+		for _, p := range group[1:] {
+			if *m.Get(p) != *m.Get(group[0]) {
+				t.Errorf("%v colors differently from %v", p, group[0])
+			}
+		}
+	}
+}

@@ -20,6 +20,7 @@ type POSModel struct {
 	*baseModel
 	labels []postag.PartOfSpeech // index → PartOfSpeech, loaded from _labels.json
 	cont   []bool                // index → label is an I- chunk label that extends the previous word
+	descs  []string              // index → neutral hover wording for Universal labels, empty for Penn
 }
 
 // labelsPathFor derives the labels JSON path from the model path.
@@ -32,35 +33,37 @@ func labelsPathFor(modelPath string) string {
 }
 
 // loadLabels reads the index→tag sidecar, returning decoded tags and continuation flags.
-func loadLabels(labelsPath string) ([]postag.PartOfSpeech, []bool, error) {
+func loadLabels(labelsPath string) ([]postag.PartOfSpeech, []bool, []string, error) {
 	data, err := os.ReadFile(labelsPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var raw map[string]string
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	n := len(raw)
 	tags := make([]string, n)
 	for idxStr, tag := range raw {
 		idx, err := strconv.Atoi(idxStr)
 		if err != nil || idx < 0 || idx >= n {
-			return nil, nil, fmt.Errorf("bad label index %q", idxStr)
+			return nil, nil, nil, fmt.Errorf("bad label index %q", idxStr)
 		}
 		tags[idx] = tag
 	}
 	cont := make([]bool, n)
+	descs := make([]string, n)
 	for i, tag := range tags {
 		cont[i] = postag.IsContinuation(tag)
+		descs[i] = postag.LabelDescription(tag)
 	}
 	// unknown tags treated as O
-	return decodeEnumList(tags, postag.ParseLabel, postag.O), cont, nil
+	return decodeEnumList(tags, postag.ParseLabel, postag.O), cont, descs, nil
 }
 
 // NewPOSModel loads a POS model and its labels sidecar, falling back to the default label order.
 func NewPOSModel(modelPath, vocabPath string, opts ...tokenizer.Option) (*POSModel, error) {
-	labels, cont, err := loadLabels(labelsPathFor(modelPath))
+	labels, cont, descs, err := loadLabels(labelsPathFor(modelPath))
 	if err != nil {
 		// The default English order is only safe for the bundled English WordPiece models, which export no sidecar tokenizer.
 		if _, statErr := os.Stat(tokenizer.SidecarPath(vocabPath)); statErr == nil || !errors.Is(err, fs.ErrNotExist) {
@@ -77,7 +80,7 @@ func NewPOSModel(modelPath, vocabPath string, opts ...tokenizer.Option) (*POSMod
 		return nil, err
 	}
 
-	return &POSModel{baseModel: base, labels: labels, cont: cont}, nil
+	return &POSModel{baseModel: base, labels: labels, cont: cont, descs: descs}, nil
 }
 
 // PredictChunk tags each non-punctuation word by its first subword's argmax label, running each markdown block as its own sequence.
@@ -136,12 +139,21 @@ func (m *POSModel) predictBlock(words []tokenizer.WordSpan) ([]postag.Token, err
 			Word:        w.Text,
 			Score:       b.score,
 			Tag:         pos,
+			Description: m.describe(b.label),
 			OffsetBegin: w.Begin,
 			OffsetEnd:   w.End,
 		})
 		conts = append(conts, m.cont != nil && m.cont[b.label])
 	}
 	return mergeContinuations(tokens, conts), nil
+}
+
+// describe returns the neutral wording for a label index, or empty.
+func (m *POSModel) describe(label int) string {
+	if label < len(m.descs) {
+		return m.descs[label]
+	}
+	return ""
 }
 
 // mergeContinuations folds each token flagged as an I- continuation into the touching token before it, so character-level B-/I- taggers yield whole words; the merged token keeps the first tag and the lowest score.

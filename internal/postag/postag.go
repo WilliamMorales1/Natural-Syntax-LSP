@@ -55,24 +55,24 @@ const (
 
 var posInfo = [NumPartsOfSpeech]struct{ tag, description string }{
 	CC:   {"CC", "Coordinating conjunction"},
-	CD:   {"CD", "Cardinal number"},
+	CD:   {"CD", "Numeral"},
 	DT:   {"DT", "Determiner"},
 	EX:   {"EX", "Existential"},
-	FW:   {"FW", "Foreign word"},
-	IN:   {"IN", "Preposition or subordinating conjunction"},
+	FW:   {"FW", "Other"},
+	IN:   {"IN", "Adposition"},
 	JJ:   {"JJ", "Adjective"},
 	JJR:  {"JJR", "Adjective, comparative"},
 	JJS:  {"JJS", "Adjective, superlative"},
 	LS:   {"LS", "List item marker"},
-	MD:   {"MD", "Modal"},
-	NN:   {"NN", "Noun, singular or mass"},
-	NNP:  {"NNP", "Proper noun, singular"},
+	MD:   {"MD", "Auxiliary verb"},
+	NN:   {"NN", "Noun"},
+	NNP:  {"NNP", "Proper noun"},
 	NNPS: {"NNPS", "Proper noun, plural"},
 	NNS:  {"NNS", "Noun, plural"},
 	O:    {"O", "Other"},
 	PDT:  {"PDT", "Predeterminer"},
 	POS:  {"POS", "Possessive ending"},
-	PRP:  {"PRP", "Personal pronoun"},
+	PRP:  {"PRP", "Pronoun"},
 	PRPS: {"PRP$", "Possessive pronoun"},
 	RB:   {"RB", "Adverb"},
 	RBR:  {"RBR", "Adverb, comparative"},
@@ -81,7 +81,7 @@ var posInfo = [NumPartsOfSpeech]struct{ tag, description string }{
 	SYM:  {"SYM", "Symbol"},
 	TO:   {"TO", "to"},
 	UH:   {"UH", "Interjection"},
-	VB:   {"VB", "Verb, base form"},
+	VB:   {"VB", "Verb"},
 	VBD:  {"VBD", "Verb, past tense"},
 	VBG:  {"VBG", "Verb, gerund or present participle"},
 	VBN:  {"VBN", "Verb, past participle"},
@@ -117,12 +117,27 @@ func (p PartOfSpeech) String() string {
 	return fmt.Sprintf("POS(%d)", int(p))
 }
 
-// Description returns a human-readable label for p, used in hover text.
+// Description returns a language-neutral label for p, used in hover text; fine Penn distinctions (number, tense, degree) collapse into the Universal class.
 func (p PartOfSpeech) Description() string {
 	if p.valid() {
-		return posInfo[p].description
+		return posInfo[p.Canonical()].description
 	}
 	return "Unknown"
+}
+
+// Canonical returns the Penn tag that stands for p's Universal class, so every language and tagset colors and describes the same class alike.
+func (p PartOfSpeech) Canonical() PartOfSpeech {
+	if !p.valid() {
+		return O
+	}
+	return canonical[p]
+}
+
+var canonical = [NumPartsOfSpeech]PartOfSpeech{
+	CC: CC, CD: CD, DT: DT, EX: PRP, FW: FW, IN: IN, JJ: JJ, JJR: JJ, JJS: JJ, LS: FW, MD: MD,
+	NN: NN, NNP: NNP, NNPS: NNP, NNS: NN, O: O, PDT: DT, POS: RP, PRP: PRP, PRPS: PRP,
+	RB: RB, RBR: RB, RBS: RB, RP: RP, SYM: SYM, TO: RP, UH: UH,
+	VB: VB, VBD: VB, VBG: VB, VBN: VB, VBP: VB, VBZ: VB, WDT: DT, WP: PRP, WPS: PRP, WRB: RB,
 }
 
 // MarshalText encodes p as its tag name.
@@ -162,3 +177,18 @@ func ParseLabel(label string) (PartOfSpeech, bool) {
 
 // IsContinuation reports whether label is an I- chunk label, which extends the previous word.
 func IsContinuation(label string) bool { return strings.HasPrefix(label, "I-") }
+
+var uposNames = map[string]string{
+	"ADJ": "Adjective", "ADP": "Adposition", "ADV": "Adverb", "AUX": "Auxiliary verb", "CCONJ": "Coordinating conjunction",
+	"DET": "Determiner", "INTJ": "Interjection", "NOUN": "Noun", "NUM": "Numeral", "PART": "Particle", "PRON": "Pronoun",
+	"PROPN": "Proper noun", "PUNCT": "Punctuation", "SCONJ": "Subordinating conjunction", "SYM": "Symbol", "VERB": "Verb", "X": "Other",
+}
+
+// LabelDescription returns language-neutral hover wording for a Universal POS label, or "" for a Penn label so English output keeps its Penn wording.
+func LabelDescription(label string) string {
+	if len(label) > 2 && (label[:2] == "B-" || label[:2] == "I-") {
+		label = label[2:]
+	}
+	head, _, _ := strings.Cut(label, "+")
+	return uposNames[head]
+}

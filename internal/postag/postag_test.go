@@ -97,3 +97,28 @@ func TestParseLabel(t *testing.T) {
 		t.Error("IsContinuation misclassifies chunk prefixes")
 	}
 }
+
+func TestLabelDescription(t *testing.T) {
+	for label, want := range map[string]string{"NOUN": "Noun", "B-VERB": "Verb", "I-PROPN": "Proper noun", "VERB+AUX": "Verb", "NN": "", "VBZ": ""} {
+		if got := LabelDescription(label); got != want {
+			t.Errorf("LabelDescription(%q) = %q, want %q", label, got, want)
+		}
+	}
+}
+
+func TestDescriptionIsLanguageNeutral(t *testing.T) {
+	for _, tc := range []struct {
+		pos  PartOfSpeech
+		want string
+	}{{NN, "Noun"}, {NNS, "Noun"}, {VBZ, "Verb"}, {VBD, "Verb"}, {JJR, "Adjective"}, {NNPS, "Proper noun"}} {
+		if got := tc.pos.Description(); got != tc.want {
+			t.Errorf("%v.Description() = %q, want %q", tc.pos, got, tc.want)
+		}
+	}
+	for label, want := range map[string]PartOfSpeech{"NOUN": NN, "NNS": NNS} {
+		got, _ := ParseLabel(label)
+		if got.Description() != "Noun" || got != want {
+			t.Errorf("ParseLabel(%q) = %v", label, got)
+		}
+	}
+}
