@@ -2,7 +2,7 @@
   "name": "natural-syntax-ls",
   "displayName": "Natural Syntax Highlighting",
   "description": "Parts-of-speech semantic highlighting via natural-syntax-ls",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publisher": "WilliamMorales1",
   "license": "MIT",
   "repository": {
@@ -41,7 +41,21 @@
         },
         "naturalSyntaxLs.model": {
           "type": "string",
-          "examples": ["bert-base", "mobilebert", "xlmr-es", "xlmr-fr", "xlmr-ru", "xlmr-ja", "xlmr-ar", "xlmr-de", "xlmr-it", "xlmr-pt", "chinese-roberta-upos", "multilingual-minilm", "en_ewt.electra-base"],
+          "examples": [
+            "bert-base",
+            "mobilebert",
+            "xlmr-es",
+            "xlmr-fr",
+            "xlmr-ru",
+            "xlmr-ja",
+            "xlmr-ar",
+            "xlmr-de",
+            "xlmr-it",
+            "xlmr-pt",
+            "chinese-roberta-upos",
+            "multilingual-minilm",
+            "en_ewt.electra-base"
+          ],
           "default": "bert-base",
           "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. Any name from models.json (bundled or your own entries in the config dir); run scripts/setup.sh --list to see them. Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
         },
@@ -66,7 +80,17 @@
         "naturalSyntaxLs.wiktionaryLanguage": {
           "type": "string",
           "default": "detect,en",
-          "examples": ["detect,en", "en", "es", "fr", "ja", "zh", "model", "auto", "es,en"],
+          "examples": [
+            "detect,en",
+            "en",
+            "es",
+            "fr",
+            "ja",
+            "zh",
+            "model",
+            "auto",
+            "es,en"
+          ],
           "description": "Wiktionary language priority for hover definitions: 'detect' (the language the built-in detector finds in the hovered line), a language code (en, es, fr, ja, zh, ...), 'model' (the model's language, else en), 'auto' (best match across languages), or a comma-separated priority list such as 'detect,en' (first language with a definition wins). Applies immediately."
         },
         "naturalSyntaxLs.langDir": {
