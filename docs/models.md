@@ -43,28 +43,7 @@ Checked against the Hugging Face model cards and the UD treebank READMEs. The se
 | diaparser parsers (`en_ewt`, `es_ancora`, `fr_sequoia`, `ru_syntagrus`, `ja_gsd`, `de_hdt`, `it_isdt`) | diaparser is MIT; weights follow the training treebank: EWT CC BY-SA 4.0, AnCora CC BY 4.0, Sequoia LGPL-LR, SynTagRus **CC BY-NC-SA 4.0**, Japanese-GSD CC BY-SA 4.0, HDT CC BY-SA 4.0, ISDT **CC BY-NC-SA 3.0** | UD relations, see [tags.md](tags.md) |
 | `zh_ud.mbert` | CC BY-SA 4.0 (trained on Chinese-GSD, CC BY-SA 4.0) | UD relations |
 
-Other tag sets: label files may also use EAGLES (`NCMS000`) or CKIP (`Na`, `VC`) names, which decode to the Universal classes (`internal/postag/tagsets.go`). The CKIP transformers models are GPL-3.0 and are not in the catalog. A label that fits no inventory decodes as `O` and is logged when the model loads.
-
-## Cost on a ThinkPad X280
-
-Measured through Neovim (`internal/e2e`, `NSLS_NVIM_BENCH=1`): time to first result including model load, median one-character edit in a 32-line document, and server RSS.
-
-| Model | Ready | Edit | RSS |
-| ----- | ----- | ---- | --- |
-| en `bert-base` POS | 0.45 s | 93 ms | 397 MB |
-| es / fr POS (int8) | 1.1 s | 62 ms | 450 MB |
-| ru POS (int8) | 1.0 s | 60 ms | 457 MB |
-| ja POS (int8, kagome words) | 3.3 s | 133 ms | 1037 MB |
-| zh POS (`chinese-roberta-upos`, fp32) | 0.46 s | 120 ms | 404 MB |
-| en `mpnet` semantic (removed) | 0.42 s | 90 ms | 385 MB |
-| multilingual MiniLM semantic | 0.8 s | 26-43 ms | 203 MB |
-| en electra dependency | 0.8 s | 130 ms | 684 MB |
-| es mBERT dependency (fp32) | 1.1 s | 130 ms | 919 MB |
-| fr CamemBERT dependency (int8) | 1.2 s | 244 ms | 492 MB |
-| ja mBERT dependency (int8, kagome words) | 2.7 s | 92 ms | 779 MB |
-| zh character-level dependency (fp32) | 0.9 s | 161 ms | 675 MB |
-
-Start-up is slower than English because of the 250k-piece vocabulary and tokenizer load. The French parser is about twice as slow per edit as the English one.
+EAGLES (`NCMS000`) and CKIP (`Na`) labels also decode; `ExampleParseLabel` in `internal/postag` shows every inventory and the `O` fallback, which is logged when a model loads. The CKIP transformers models are GPL-3.0 and are not in the catalog.
 
 ## Semantic quality across languages
 
@@ -90,15 +69,7 @@ Across languages, the nearest word in another language has the right group 99% o
 
 ## Other languages
 
-The models in the table above have setup names. Anything else (other treebanks, other UD languages) can be exported by hand: use an explicit `--mode` and a Hugging Face repo id; the model name on disk is the repo id with `-`, `.`, `/` → `_`. SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it.
-
-| Language | Mode | Export |
-| -------- | ---- | ------ |
-| es, fr, ru, ja, zh | POS (UPOS mapped onto the Penn token types; all but zh are catalog entries `xlmr-<code>`) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ru`, `-ja`, `-zh`) |
-| zh | POS, whole words (character-level B-/I- tagger) | `chinese-roberta-upos` in the catalog (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
-| all | Semantic | `--mode semantic --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
-| es, fr, ru, ja | Dependency | `--mode dependency --model es_ancora.mbert`, `fr_sequoia.camembert-large`, `ru_syntagrus.DeepPavlov` or `ja_gsd.mbert` (needs `diaparser`) |
-| zh | Dependency, character level | `--mode dependency --model zh_ud.mbert` (downloads the checkpoint from Hugging Face; retrain with `scripts/train_zh_dependency.py`, see below) |
+Anything outside the catalog (other treebanks, other UD languages) can be exported by hand: `python scripts/export_model.py DIR --mode pos|semantic|dependency --model <Hugging Face repo id or diaparser name>`. The name on disk is the id with `-`, `.`, `/` → `_`; SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it. `wietsedv/xlm-roberta-base-ft-udpos28-<code>` covers most UD languages for POS.
 
 Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
 
@@ -108,7 +79,7 @@ The XLM-R Chinese model tags the multi-character pieces of its SentencePiece voc
 
 ### Arabic clitics
 
-UD Arabic-PADT, which the Arabic model was trained on, splits a written word such as `وبالكتاب` into syntactic words (`و`, `ب`, `الكتاب`). Without a split the model tags the whole written word once: 16% of PADT test words carry a clitic, and only 39.8% of their characters got their own word's tag. `tokenizer.arabic_clitics` in `data/lang/arabic.lua` splits off a conjunction (`و ف`), a preposition (`ب ل ك`, with `لل` read as `ل` plus `ال`), the future `س` and a pronoun suffix (`ه ها هم ...`). `ExampleParseUnigram` in `internal/tokenizer` shows the split on a tiny vocabulary. It needs no extra files: a split is taken when the rest is a likelier whole word in the model's own SentencePiece vocabulary than the written word, or when the written word is in the vocabulary under no common inflection, plus short lists of function words (`فيها`, `وهو`). Marks stay with their letter.
+UD Arabic-PADT, which the Arabic model was trained on, splits a written word such as `وبالكتاب` into syntactic words (`و`, `ب`, `الكتاب`). Without a split the model tags the whole written word once: 16% of PADT test words carry a clitic, and only 39.8% of their characters got their own word's tag. `tokenizer.arabic_clitics` in `data/lang/arabic.lua` splits off a conjunction (`و ف`), a preposition (`ب ل ك`, `لل` as `ل` plus `ال`), the future `س` and a pronoun suffix, taking a split only where the model's own vocabulary backs it (`ExampleParseUnigram` in `internal/tokenizer`). Marks stay with their letter.
 
 Measured on the PADT sentences whose words align with the text (int8 model, per character, clitic parts scored by their own tag):
 

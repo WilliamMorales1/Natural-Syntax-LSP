@@ -1,79 +1,36 @@
 # Adding a language
 
-A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; edits are picked up within about two seconds, with no restart: the server re-reads the scripts, rebuilds the tokenizers and Wiktionary rules and re-analyses open documents. Restart only to change which directories are read.
+A language is a Lua script; no Go build needed. The server loads every `*.lua` from `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`), and a later script replaces an earlier one with the same `code` (`ExampleMerge` in `internal/lang/luaload`). Edits are picked up within about two seconds: scripts, tokenizers and Wiktionary rules are rebuilt and open documents re-analysed. Restart only to change which directories are read.
 
-The shipped scripts are in `data/lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags nojaseg` drops the kagome dictionary.
-
-Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
+Shipped scripts live in `data/lang/`. Setup copies them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets.
 
 ## Schema
 
-A script returns one table with the fields under Hooks below. `data/lang/french.lua` is a real one; `ExampleParse_schema` in `internal/lang/luaload/example_test.go` uses every field and prints what each becomes.
+The examples in `internal/lang/luaload/example_test.go` are the reference, checked by `go test ./...`:
 
-Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running. `ExampleParse` there shows a minimal script and a field error; `ExampleParseUnigram` in `internal/tokenizer` shows `elisions` and `arabic_clitics` on a tiny vocabulary. `go test ./...` checks all three.
+- `ExampleParse`: a minimal script (`code`, `model_prefixes`, `wiktionary.code`/`sections`/`forms`, like `spanish.lua`) and the error for an unknown field. A bad script fails alone; the server logs it and keeps running.
+- `ExampleParse_schema`: every field and what it becomes.
+- `ExampleParse_sandbox`: what scripts can call, and what a failing or looping hook returns.
+- `ExampleParseUnigram` in `internal/tokenizer`: `elisions` and `arabic_clitics` on a tiny vocabulary.
 
-## Sandbox
-
-- Available: base functions (no `load*`, `dofile`, `require`, `print`, `setfenv`, `collectgarbage`), `table`, `string` (no `dump`; `rep` capped at 64 KB), `math`, and a `utf8` table: `chars(s)` (array of characters), `codepoint(ch)`, `char(n)`, `len(s)`. Lua strings are bytes, so use `utf8` for non-ASCII text.
-- Not available: `os`, `io`, `package`, `debug`, `coroutine`. No file, network or process access.
-- Load has a 2 s limit and each hook call 200 ms. A hook that errors, loops or panics returns nothing for that call and is logged.
-- Trust model: scripts sit beside downloaded models, so treat them like config, not like code you would run unreviewed. The sandbox limits damage but cannot cap heap use beyond `string.rep`.
-- Keep per-token work out of Lua. Only per-lookup hooks (`rewrite`, `forms`) are scripted; tokenizer behavior is chosen by flag.
-
-## Hooks
-
-Every field but `code` is optional.
+Every field but `code` is optional. Add one only when needed, in this order:
 
 | Field | Use when |
 | ----- | -------- |
 | `model_prefixes` | Models whose file name starts with the prefix are this language's (drives `wiktionaryLanguage: "model"` and `auto`). |
-| `tokenizer.elisions` | The generic split cuts clitics wrongly (French `l'ami`). Unigram tokenizers only. |
-| `tokenizer.arabic_clitics` | `true` splits Arabic conjunction, preposition, future and pronoun clitics off written words, guided by the model's vocabulary (`docs/models.md`). Unigram tokenizers only. |
-| `wiktionary.rewrite` | A token's headword differs from its text (English `'s` to `-'s`). Called as `rewrite(word, pos, deprel)` with the Penn tag and UD relation as strings; returns a headword or nil. |
-| `wiktionary.forms` | Extra headwords to try (stripped diacritics, `ё` variants). |
-| `wiktionary.sections` | Always: the English Wiktionary L2 headings (`"Spanish"`) that map to the language code. |
-| `wiktionary.wikitext`, `script` | The REST endpoint cannot parse the language's entries, so read wikitext for words in `script` (a Unicode script name such as `"Han"`). |
+| `tokenizer.elisions`, `tokenizer.arabic_clitics` | The model's tokenizer does not produce the words the model was trained on (French `l'ami`, Arabic `وبالكتاب`). Unigram tokenizers only. |
+| `wiktionary.sections` | The language has Wiktionary entries: the English Wiktionary L2 headings (`"Spanish"`). Without `wiktionary`, no lookup. |
+| `wiktionary.forms`, `rewrite` | Wiktionary files the word under something other than its text or lowercase: variants, lemmas, stripped diacritics (`forms`) or a fixed page (`rewrite`, English `'s` to `-'s`). |
+| `wiktionary.wikitext`, `script` | The REST payload lacks the language's sections, so read wikitext for words in `script` (a Unicode script name such as `"Han"`). |
 
-Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a native library needs Go: add a named flag in `luaload/options.go`, or a package under `internal/lang/<name>` exporting `Language()` and list it in `internal/lang/builtin/native.go`.
+Scripts sit beside downloaded models: treat them like config, not like unreviewed code. The sandbox cannot cap heap use beyond `string.rep`. Keep per-token work out of Lua; tokenizer behavior is chosen by flag.
+
+Needs Go instead: a new tokenizer flag (`luaload/options.go`), an unspaced-script segmenter or a native library (a package under `internal/lang/<name>` exporting `Language()`, listed in `internal/lang/builtin/native.go`; Go hooks shown in `ExampleLanguage` in `internal/lang`), model labels `postag.ParseLabel` does not know (`ExampleParseLabel`; unknown labels decode as `O`, no color), or a sentence terminator without the Unicode `Sentence_Terminal` property (`Example_sentences` in `internal/inference`).
 
 ## Steps
 
-1. Write `<code>.lua`. A language with no special rules is only `code`, `model_prefixes` and `wiktionary.code`/`sections` (see `spanish.lua`).
-2. To ship it built in, put it in `lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
-3. Model catalog: add an entry to `data/models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). It is read by the server (default model search, from `<exe dir>` then the config dir) and by `scripts/export_model.py`; setup copies it to the config dir without overwriting. Nothing else in Go or Python names models.
-4. Not catalog, one line each:
-   - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list (still hardcoded).
-   - `vscode-extension/package.json`: `naturalSyntaxLs.model` enum and description (static JSON, still hardcoded).
-   - `docs/models.md`: model, license, accuracy.
-
-## Worked example: French
-
-French needed a word merger beyond a model: the generic split cuts `l'ami` into three words, and `elisions` gives UD's words instead (`data/lang/french.lua`; output in `ExampleParseUnigram`). Arabic needed `arabic_clitics` for the same reason.
-
-Spanish needed only prefixes and a Wiktionary section. Russian needed `forms` (stress marks and `ё`). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
-
-## Decide what the language needs
-
-Answer these in order; stop adding hooks as soon as the answer is no. Names below are the Go side, shown in `ExampleLanguage` in `internal/lang`: `WordMerger` and `Segmenter` are `tokenizer.WithWordMerger` and `tokenizer.WithSegmenter` options in `Language.Tokenizer`, the rest are `Language.Wiktionary` fields. In Lua they are the `tokenizer` flags and the `wiktionary` fields above.
-
-1. Does the model's own tokenizer already produce the words the model was trained on? If not, add a `WordMerger` (clitics, elision) or `Segmenter` (no spaces).
-2. Does Wiktionary file the word under something other than its surface text or lowercase? Add `Forms` (variants, lemmas, stripped diacritics) or `Rewrite` (a fixed suffix page).
-3. Does Wiktionary's REST payload lack the language's sections? Set `Wikitext` and `Script`.
-4. Does the language have a Wiktionary section? Set `Sections` (a Language with no `Wiktionary` gets none of the lookup).
-5. Does the model emit labels `postag.ParseLabel` does not know (non-UPOS, non-Penn)? Extend the mapping; unknown labels decode as `O` (no color), which hides the failure.
-
-## Verifying
-
-- Unit tests for each hook with no model files (`internal/lang/builtin/builtin_test.go`).
-- `NSLS_EVAL=1` accuracy run (`internal/inference/eval_test.go`) against the language's UD test treebank; add it to the table in `docs/models.md`.
-- `NSLS_WIKT_EVAL=1` live Wiktionary check (`internal/wiktionary/live_eval_test.go`); add the treebank to `udFiles` there.
-- Latency and memory with `NSLS_NVIM_BENCH=1` (`internal/e2e`).
-- `go build -tags nojaseg ./...` still builds.
-
-## Sentence boundaries
-
-No hook needed. `internal/inference` ends a sentence at any lone Unicode `Sentence_Terminal` word and keeps following non-ASCII closing brackets and quotes with it (`Example_sentences` there). A script whose terminator lacks that property needs a tokenizer or inference change.
-
-## Language detection
-
-Hover and language-scoped tokenizer rules rely on the built-in detector. If your language is not among those it knows (see `docs/settings.md`), scripts with `tokenizer` rules apply to every line. To teach the detector a language, add a Tatoeba dump (and optionally UD text) and retrain as described in `docs/settings.md`. Galician was tried and dropped: about 10k sentences were too few to separate it from Spanish and Portuguese (64% held-out accuracy).
+1. Write `<code>.lua`. To ship it, put it in `data/lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
+2. Add the model to `data/models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). The server and `scripts/export_model.py` read it; nothing else in Go or Python names models.
+3. Still hardcoded, one line each: `scripts/setup.sh` and `setup.ps1` (`export_*` function, `--model` case, `all` list), the `naturalSyntaxLs.model` enum in `vscode-extension/package.json`, and the model, license and accuracy in `docs/models.md`.
+4. Verify with the opt-in tests in [settings.md](settings.md#automated-tests) (`NSLS_EVAL`, `NSLS_WIKT_EVAL` with the treebank in `udFiles`, `NSLS_NVIM_BENCH`), and `go build -tags nojaseg ./...`.
+5. If the language detector does not know it (`ExampleDetect` in `internal/langid`), tokenizer rules apply to every line. Retrain it as in [settings.md](settings.md#language-detection). Galician was tried and dropped: about 10k sentences gave 64% held-out accuracy against Spanish and Portuguese.

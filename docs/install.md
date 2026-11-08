@@ -2,24 +2,13 @@
 
 ## Exporting models
 
-Every install path needs the ONNX model files, which no package ships (they are 100-750 MB each). Spanish, French, Russian and Japanese POS and the French parser are exported as int8 (`export_model.py --int8`), which is 4x smaller (Chinese POS stays fp32, int8 drops it from 91.6% to 86.5%); the Spanish and Russian parsers must stay fp32. From a repo checkout (installs Python deps itself):
+Every install path needs the ONNX model files, which no package ships (100-750 MB each). Catalog entries marked `int8` are quantized on export, 4x smaller; [models.md](models.md) lists which and why others stay fp32. From a repo checkout (installs Python deps itself):
 
 ```bash
-scripts/setup.sh                     # BERT-base POS model (~430 MB)
-scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
-scripts/setup.sh --model xlmr-es      # Spanish POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model xlmr-fr      # French POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model xlmr-ru      # Russian POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model xlmr-ja      # Japanese POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model xlmr-ar      # Arabic POS, XLM-R int8 (~280 MB); also xlmr-de, xlmr-it, xlmr-pt
-scripts/setup.sh --model chinese-roberta-upos  # Chinese POS, whole words (~410 MB)
-scripts/setup.sh --model multilingual-minilm  # semantic mode, paraphrase-multilingual-MiniLM-L12-v2 (~470 MB)
-scripts/setup.sh --model en_ewt.electra-base  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
-scripts/setup.sh --model es_ancora.mbert  # Spanish parser, fp32 (~750 MB)
-scripts/setup.sh --model fr_sequoia.camembert-large  # French parser, int8 (~350 MB)
-scripts/setup.sh --model ru_syntagrus.DeepPavlov  # Russian parser, fp32 (~750 MB)
-scripts/setup.sh --model all         # all models
-scripts/setup.sh --list              # print the catalog (data/models.json) and exit
+scripts/setup.sh                    # bert-base POS model (~430 MB)
+scripts/setup.sh --model xlmr-es    # any setup name from models.md
+scripts/setup.sh --model all        # every model
+scripts/setup.sh --list             # print the catalog (data/models.json) and exit
 ```
 
 (`scripts/setup.ps1 -Model <...>` and `-List` on Windows, same values.) The script also downloads the ONNX Runtime library, copies `data/lang/` and `models.json` into the config dir without overwriting edited files, builds the server and installs it to `~/.local/bin` (`$XDG_BIN_HOME` if set; on Windows `%LOCALAPPDATA%\Programs\natural-syntax-ls`, added to your user `PATH`). A model already exported is skipped.

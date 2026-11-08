@@ -18,7 +18,7 @@
 
 ## Language detection
 
-The server embeds a small language detector (a linear model over hashed character n-grams and words, 1.7 MB, about 11 microseconds per line; en, fr, es, de, it, pt, ru, ja, zh, ar, ca, uk, ko). Nothing needs configuring:
+The server embeds a 1.7 MB language detector, about 11 microseconds per line; `ExampleDetect` in `internal/langid` lists its languages. Nothing needs configuring:
 
 - Hover looks the word up in the language of its line (`detect`). A line too short to tell borrows the nearest of the five lines above that can; failing that the whole document's language, then English.
 - With an English model configured (the default), a document detected as another language is analysed by that language's installed model for the current mode (`models.json`), loaded in the background on first use; the document shows no tags until it is ready (or until it fails to load, then the English model analyses it). If no open document needs the English model once it has loaded, its weights are freed until one does. At most two extra models are kept, and like the configured one each frees its weights after `-idle-unload` (default 5 minutes) without use, then reloads on the next edit; a text too short to tell keeps the model it had. Any non-English or multilingual `model` setting, and `:NSLang CODE`, disable switching.
@@ -32,29 +32,13 @@ go run ./internal/langid/train -data TATOEBA_DIR -extra EXTRA_DIR -out internal/
 
 `NSLS_LANGID_DIR=TATOEBA_DIR go test ./internal/langid -run HeldOut -v` reports held-out accuracy by text length and a confusion matrix (99-100% on whole sentences, 85-99% on texts of 6-12 characters); `NSLS_LANGID_UD=DIR` with `<code>.test.txt` files scores out-of-domain text. Add `NSLS_LANGID_LINEAR=FILE` to score a candidate model without installing it. To add a language, add its row to `langs` in `internal/langid/train/main.go` and to the test tables, then retrain.
 
-## POS mode colors
+## Colors
 
-Tags map to VS Code semantic token types; color comes from your theme. Full list: [tags.md](tags.md#pos-tags).
+- **POS**: one token type per Universal class, colored by your theme ([tags.md](tags.md#pos-classes)). Hover shows the part of speech.
+- **Dependency**: one token type and modifier pair per UD relation ([tags.md](tags.md#ud-relations)). Hover shows the relation to the head and the words under `dependents:` (marked `# has dependents` when they have their own).
+- **Semantic**: hex colors pushed in a custom `$/nls/semanticColors` notification and drawn as decorations, independent of theme. Words used alike get similar hues; colors are per document and stay steady as you type. `semanticLightness` sets the shared lightness (raise it for light themes), `semanticChroma` the most vivid words' intensity. Hover shows the hex code. Method and costs: [semantic-colors.md](semantic-colors.md).
 
-Hover shows the Part of Speech and a Wiktionary definition (when available).
-
-## Semantic mode colors
-
-Colors are pushed via a custom `$/nls/semanticColors` LSP notification and applied as VS Code `TextEditorDecorationType` decorations (full hex, not theme-limited).
-
-For each document, the server lays every word out on a 2D map, choosing the view where that document's words are most spread out. A word's direction on the map sets its hue and its distance from the middle sets how vivid it is. Words used in similar ways land close together, so they get similar colors. The map is updated as you type and lined up with the previous one, so colors stay steady. Colors are per document and don't depend on your theme.
-
-All colors share one lightness. `semanticLightness` (default 0.75) sets it; increase it for light themes. `semanticChroma` (default 0.14) sets the most vivid words' intensity.
-
-How it works, in depth (the math, the code, and its time and memory costs): [semantic-colors.md](semantic-colors.md).
-
-Hover shows the hex color code and a Wiktionary definition (when available).
-
-## Dependency mode colors
-
-Each word is colored by its Universal Dependencies relation, one relation per token type/modifier pair. Full list: [tags.md](tags.md#ud-relations).
-
-Hover shows the word's relation to its head, then the words that depend on it under `dependents:` (marked `# has dependents` when they have their own), plus a Wiktionary definition (when available).
+Every mode adds a Wiktionary definition to hover when one exists.
 
 ## Logging
 
@@ -62,18 +46,17 @@ The server logs to stderr through `log/slog`: warnings and errors by default, de
 
 ## Testing
 
-Open [test.txt](examples/test.txt) in VS Code after installation. For semantic mode, [semantic-example.txt](examples/semantic-example.txt) shows animals, food, technology and feelings each getting their own color family.
-
-Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (dependency).
+Open [test.txt](examples/test.txt) after installation; words color within about 10 s (POS), 5 s (semantic) or 15 s (dependency). [semantic-example.txt](examples/semantic-example.txt) gives animals, food, technology and feelings their own color families.
 
 ### Automated tests
 
-`go test ./...` runs the unit tests. These need models or a long run, so they skip unless enabled:
+`go test ./...` runs the unit tests and the `Example` functions, which double as reference docs. These need models or a long run, so they skip unless enabled:
 
 | Env | Test | What it checks |
 | --- | ---- | -------------- |
 | `NSLS_ML_DIR` | `internal/inference` multilingual tests | Sample sentences per language through the exported models |
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
+| `NSLS_WIKT_EVAL=1` | `internal/wiktionary` `TestLiveAccuracy` | Live Wiktionary hits on UD treebank words (`udFiles`) |
 | `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across languages (the table in models.md covers en, es, fr, zh, ja; ru is in the test but not yet in that table) |
 | `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency (Wiktionary on; `NSLS_BENCH_WIKT=0` off) and server memory, through a real headless Neovim on Linux, macOS or Windows; `NSLS_BENCH_ONLY` filters cases |
 

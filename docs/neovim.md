@@ -113,23 +113,13 @@ On Neovim 0.10, `vim.lsp.config` does not exist. Register the server through `nv
 
 ## Switching modes
 
-Mode and model are fixed when the server starts, picked by the `-mode`, `-model`, `-vocab` args in `cmd` (same flags as `cmd/natural-syntax-ls`'s CLI). `-vocab` defaults to `<model>_vocab.txt` next to the model, so it is rarely needed. Pass `-model` whenever `-mode` isn't `pos`: without it the server auto-picks a POS model first.
-
-| Mode         | `cmd`                                                                                                                                  |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `pos`        | `{ "natural-syntax-ls" }`                                                                                                              |
-| `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/multilingual_minilm/multilingual_minilm.onnx") }` |
-| `dependency` | `{ "natural-syntax-ls", "-mode", "dependency", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/en_ewt_electra_base_dependency/en_ewt_electra_base_dependency.onnx") }` |
-
-Swap `bert_base` for `mobilebert`, `xlmr_es`, `xlmr_fr`, `xlmr_ru`, `xlmr_ja`, `xlmr_ar`, `xlmr_de`, `xlmr_it`, `xlmr_pt` or `chinese_roberta_upos` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency`, `fr_sequoia_camembert_large_dependency` or `ru_syntagrus_DeepPavlov_dependency` (the slug keeps the model name's case), to use other models.
-
-To switch at runtime, use `:NSMode pos|semantic|dependency` (defined above).
+Mode and model are fixed at server start by `-mode` and `-model` in `cmd` (the CLI flags of `cmd/natural-syntax-ls`); `:NSMode pos|semantic|dependency` restarts with the paths in `models` above. Pass `-model` whenever `-mode` isn't `pos`, or the server picks a POS model. To use another model, put its slug in `models`: the setup name with `-`, `.`, `/` → `_`, case kept, and `_dependency` appended for parsers ([models.md](models.md)). The vocab or tokenizer file is found next to it.
 
 ## Semantic mode colors in Neovim
 
 Semantic mode emits no semantic tokens. The server pushes each word's hex color in a custom `$/nls/semanticColors` notification instead (`{ uri, tokens = { { line, character, length, color } } }`, columns in codepoints). Neovim drops unknown notifications, so the config above includes a handler that paints them as extmarks.
 
-The server re-pushes after every edit, so colors catch up once inference finishes. Tune them with `initializationOptions = { semantic_lightness = 0.6, semantic_chroma = 0.14 }` (lower lightness for light colorschemes).
+The server re-pushes after every edit. Tune colors with `initializationOptions = { semantic_lightness = 0.6, semantic_chroma = 0.14 }` (lower lightness for light colorschemes).
 
 `-idle-unload 5m` (the default) frees a model's weights once it has gone that long without an edit to analyse, so an idle Neovim holds about 70 MB instead of 0.4-2 GB; the next edit reloads it in about a second. `0` keeps models loaded.
 
@@ -139,9 +129,7 @@ POS tags map to standard semantic token types, so colors come from your colorsch
 
 ## Hover definition language
 
-The default is `detect,en`: the language detected in the hovered line, then English. Set `vim.g.natural_syntax_ls_wiktionary_language = "es,en"` before the server starts, or pass `init_options = { wiktionary_language = "es,en" }` in the LSP config. `:NSLang CODE` restarts the server on one language (defined above).
-
-Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's language, else `en`), `auto` (best across languages), or a comma-separated priority list (`es,en`: first language with a definition wins).
+Default `detect,en`. Set `vim.g.natural_syntax_ls_wiktionary_language = "es,en"` before the server starts, or `init_options = { wiktionary_language = ... }`. Values as `naturalSyntaxLs.wiktionaryLanguage` in [settings.md](settings.md).
 
 ## Forcing a language
 
@@ -151,4 +139,4 @@ Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's
 - detection is switched off, so the tokenizer rules in `lang/es.lua`-style scripts and the hover lookup treat all text as that language;
 - hover definitions use `es,en`.
 
-`:NSLang auto` returns to per-line detection and the default models; with an English model, a document in another language is switched to that language's installed model (see settings.md, Language detection). `:NSMode` keeps the forced language. The server flag is `-lang CODE`.
+`:NSLang auto` returns to per-line detection and the default models ([settings.md](settings.md#language-detection)). `:NSMode` keeps the forced language. The server flag is `-lang CODE`.

@@ -1,6 +1,6 @@
 # Semantic colors
 
-Semantic mode assigns each word a color derived from its contextual embedding, so that words with similar embeddings receive similar colors. This document describes the method, its accuracy and limits, the implementation, and its runtime and memory costs.
+Semantic mode colors each word by its contextual embedding, so similar embeddings get similar colors. Method, limits, code and costs.
 
 ## Overview
 
@@ -28,7 +28,7 @@ The mean color distance between words in different groups is 3.6 times the mean 
 
 Two known behaviors are excluded from the example:
 
-- **Short standalone paragraphs.** Paragraphs are embedded independently. In a short paragraph, every word's embedding is dominated by the same passage-level component, so the paragraph tends to render as a single saturated color. The one-sentence final paragraph of [test.txt](test.txt) shows this; merging it into the preceding paragraph restores per-word variation.
+- **Short standalone paragraphs.** Paragraphs are embedded independently. In a short paragraph, every word's embedding is dominated by the same passage-level component, so the paragraph tends to render as a single saturated color. The one-sentence final paragraph of [test.txt](examples/test.txt) shows this; merging it into the preceding paragraph restores per-word variation.
 - **Polysemy.** Different senses of the same word (for example, "bank" as riverside and as financial institution) receive nearly identical colors, because these models' embeddings are dominated by word identity rather than sense.
 
 ## 1. Word embeddings
@@ -140,19 +140,7 @@ Shared or similar colors therefore indicate likely, not certain, similarity in u
 
 ## 7. Implementation
 
-| Step                                                  | Code                                                                                  |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Model inference and subword pooling                   | `embedChunk` in [`embedding_model.go`](../internal/inference/embedding_model.go)      |
-| Unit vectors and tokens for a chunk                   | `EmbedChunk` in the same file                                                         |
-| Per-chunk vector storage and whole-document recoloring | `predictChunk`, `docTokens` in [`registry.go`](../internal/lspserver/registry.go)    |
-| Per-document state                                    | `SemanticPlane` (field `documentStore.plane`)                                         |
-| Refit: PCA, alignment, scale selection                | `SemanticPlane.Fit` in [`semantic_color.go`](../internal/inference/semantic_color.go) |
-| Matrix-free scatter product                           | `covMul`                                                                              |
-| Procrustes alignment                                  | `alignPlane`                                                                          |
-| Scale selection with hysteresis                       | `fitScale`                                                                            |
-| Projection, disk clamp, quantization, conversion      | `SemanticPlane.Color`, `diskPoint`, `diskColor`, `snapHue`, `oklchToSRGB`             |
-| Fixed fallback plane                                  | `InitSemantic`, `EmbeddingToColor`                                                    |
-| Rendering in VS Code                                  | `handleSemanticColors` in [`extension.js`](../vscode-extension/extension.js)          |
+Pooling: `embedChunk` in [`embedding_model.go`](../internal/inference/embedding_model.go). Fit, alignment, scale and color: `SemanticPlane.Fit` and `SemanticPlane.Color` in [`semantic_color.go`](../internal/inference/semantic_color.go) (`covMul`, `alignPlane`, `fitScale`, `diskColor`, `oklchToSRGB`; fallback plane `InitSemantic`). Per-document state and recoloring: `documentStore.plane` and `docTokens` in [`registry.go`](../internal/lspserver/registry.go). VS Code rendering: `handleSemanticColors` in [`extension.js`](../vscode-extension/extension.js).
 
 Processing of one edit:
 
@@ -181,12 +169,7 @@ Vectors are retained so that an edit re-embeds only changed chunks while the who
 | mpnet, 1,000 words  | 12.1 ms, 33 KB in 9 allocations | 2.2 ms, 1 allocation per word  |
 | mpnet, 5,000 words  | 51 ms, 82 KB in 9 allocations   | 11.5 ms, 1 allocation per word |
 
-- `Fit` performs 9 allocations regardless of document size:
-  - 5 vectors of the embedding dimension: the mean and two axis pairs for the iteration;
-  - 3 per-word arrays for scale selection: x, y and radius;
-  - the 500-pair sample.
-- `Color` allocates only the returned hex string.
-- `docTokens` additionally allocates the merged token slice and a slice of vector references (24 bytes per word); the vectors themselves are not copied.
+`Fit`'s 9 allocations are the mean, two axis pairs, three per-word arrays for scale selection and the pair sample. `Color` allocates only the hex string; `docTokens` adds the merged token slice and 24 bytes of vector reference per word.
 
 A document's first fit runs up to 30 iterations: 74 ms for 1,000 mpnet words and 415 ms for 5,000. Subsequent edits use the warm costs above.
 
@@ -199,8 +182,7 @@ For comparison, embedding a single 122-word chunk takes about 19 ms (MiniLM) or 
 
 ## 9. Behavioral notes
 
-- **Colors are document-specific.** Each document has its own plane, so the same word can receive different colors in different documents, or in the same document after it is closed and reopened.
-- **50-word threshold.** Documents below 50 words use the fixed plane. Crossing the threshold in either direction changes all colors once.
-- **Large insertions** converge over several edits, since each refit runs at most 3 iterations from the previous plane.
-- **Refit latency.** Refits run on the registry goroutine, so hover and token requests wait for them: a few milliseconds for typical documents, about 60 ms for a 5,000-word mpnet document.
-- **Low-chroma words.** Words near the document mean are rendered with low chroma and may resemble uncolored text.
+- The same word can get different colors in different documents, or after reopening one.
+- Crossing 50 words in either direction changes all colors once; large insertions converge over several edits.
+- Refits run on the registry goroutine, so hover and token requests wait: a few ms typically, about 60 ms for 5,000 mpnet words.
+- Low-chroma words near the mean may look uncolored.

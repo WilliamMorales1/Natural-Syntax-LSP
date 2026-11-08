@@ -1,10 +1,10 @@
 # Tag Reference
 
-Both lists map tags to VS Code semantic token types; color comes from your theme. `go test ./internal/tokenmap` checks both tables against the code (`ExampleNewDefault`, `ExampleDeprelBits` show the mapping from Go).
+Token types per tag; your theme picks the colors. `go test ./internal/tokenmap` checks both tables against the code; `ExampleNewDefault` and `ExampleDeprelBits` there show the same mapping from Go.
 
 ## POS classes
 
-Every POS model, English Penn or Universal Dependencies (UPOS), is reduced to one Universal class before coloring and hover, so a noun gets the same color and the same hover wording in every language. Fine Penn distinctions (number, tense, degree) are not colored. See [`internal/tokenmap/pos_bits.go`](../internal/tokenmap/pos_bits.go) and `PartOfSpeech.Canonical` in `internal/postag`.
+Penn and UPOS labels reduce to one Universal class, so a noun looks the same in every language; number, tense and degree are not colored.
 
 | Class | Penn tags | UPOS | Token Type |
 |---|---|---|---|
@@ -24,13 +24,11 @@ Every POS model, English Penn or Universal Dependencies (UPOS), is reduced to on
 | Verb | VB, VBD, VBG, VBN, VBP, VBZ | VERB | `function` |
 | Other | FW, LS | X | `string` |
 
-`tokenMapUpdate` keys are still Penn tags, and an override applies to that one tag. To recolor all nouns, override both `NN` and `NNS`.
-
-Everything else (unrecognized labels, punctuation) falls back to `comment` (deprecated), same as O.
+Unrecognized labels and punctuation get `comment` (deprecated). `tokenMapUpdate` keys are Penn tags and override that one tag: recolor all nouns with both `NN` and `NNS`.
 
 ## UD relations
 
-Universal Dependencies labels used in dependency mode, colored by [`internal/tokenmap/deprel_bits.go`](../internal/tokenmap/deprel_bits.go). Modifiers are listed in legend order.
+Dependency mode. Modifiers in legend order.
 
 | # | Relation | Meaning | Example | Token Type |
 |---|---|---|---|---|

@@ -2,6 +2,7 @@ package luaload_test
 
 import (
 	"fmt"
+	"testing/fstest"
 
 	"natural-syntax-ls/internal/lang/luaload"
 	"natural-syntax-ls/internal/postag"
@@ -77,4 +78,61 @@ func ExampleParse_schema() {
 	// "le" "" [ami]
 	// l' 0 2
 	// ami 2 5
+}
+
+// Scripts run sandboxed: os, io, debug, require and load are absent, and utf8 counts characters where # counts bytes. A hook that errors or runs past 200 ms returns nothing for that call; the next call runs normally.
+func ExampleParse_sandbox() {
+	l, err := luaload.Parse("sandbox.lua", `return {
+	code = "xx",
+	wiktionary = {
+		code = "xx",
+		forms = function(word)
+			if word == "globals" then
+				local absent = {}
+				for _, name in ipairs({ "os", "io", "debug", "require", "load", "string" }) do
+					if _G[name] == nil then absent[#absent + 1] = name end
+				end
+				return absent
+			end
+			return { utf8.len(word) .. " chars", #word .. " bytes" }
+		end,
+		rewrite = function(word)
+			if word == "loop" then while true do end end
+			if word == "os" then return os.time() end
+			return word .. "!"
+		end,
+	},
+}`)
+	if err != nil {
+		panic(err)
+	}
+	w := l.Wiktionary
+	fmt.Println(w.Forms("globals"), w.Forms("ёж"))
+	fmt.Printf("%q %q %q\n", w.Rewrite("loop", postag.NN, postag.NoDeprel), w.Rewrite("os", postag.NN, postag.NoDeprel), w.Rewrite("ok", postag.NN, postag.NoDeprel))
+	// Output:
+	// [os io debug require load] [2 chars 4 bytes]
+	// "" "" "ok!"
+}
+
+// The server parses each script directory in turn and merges them in order, so a user script replaces a shipped one with the same code; a broken script fails alone.
+func ExampleMerge() {
+	shipped := fstest.MapFS{
+		"lang/french.lua":  {Data: []byte(`return {code = "fr", model_prefixes = {"xlmr_fr"}}`)},
+		"lang/spanish.lua": {Data: []byte(`return {code = "es", model_prefixes = {"xlmr_es"}}`)},
+	}
+	user := fstest.MapFS{
+		"french.lua": {Data: []byte(`return {code = "fr", model_prefixes = {"my_fr"}}`)},
+		"bad.lua":    {Data: []byte(`return {code = 1}`)},
+		"notes.txt":  {Data: []byte(`not a script`)},
+	}
+	a, _ := luaload.ParseFS(shipped, "lang")
+	b, errs := luaload.ParseFS(user, ".")
+	for _, l := range luaload.Merge(a, b) {
+		fmt.Println(l.Code, l.ModelPrefixes)
+	}
+	fmt.Println(errs)
+	// Output:
+	// fr [my_fr]
+	// es [xlmr_es]
+	// [bad.lua: field code: must be a non-empty string]
 }
