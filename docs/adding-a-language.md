@@ -28,7 +28,7 @@ return {
 }
 ```
 
-Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running.
+Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running. `go doc -all ./internal/lang/luaload` shows `ExampleParse` (a parsed script and a field error) and `go doc -all ./internal/tokenizer` shows `ExampleParseUnigram` (`elisions` and `arabic_clitics` on a tiny vocabulary); `go test ./...` checks both.
 
 ## Sandbox
 
@@ -66,13 +66,13 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 
 ## Worked example: French
 
-French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `data/lang/french.lua`.
+French needed a word merger beyond a model: the generic split cuts `l'ami` into three words, and `elisions` gives UD's words instead (`data/lang/french.lua`; output in `ExampleParseUnigram`). Arabic needed `arabic_clitics` for the same reason.
 
 Spanish needed only prefixes and a Wiktionary section. Russian needed `forms` (stress marks and `ё`). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
 
 ## Decide what the language needs
 
-Answer these in order; stop adding hooks as soon as the answer is no.
+Answer these in order; stop adding hooks as soon as the answer is no. Names below are the Go side (`lang.Language`, see `ExampleLanguage` in `internal/lang`); in Lua they are the `tokenizer` flags and the `wiktionary` fields above.
 
 1. Does the model's own tokenizer already produce the words the model was trained on? If not, add a `WordMerger` (clitics, elision) or `Segmenter` (no spaces).
 2. Does Wiktionary file the word under something other than its surface text or lowercase? Add `Forms` (variants, lemmas, stripped diacritics) or `Rewrite` (a fixed suffix page).
@@ -90,7 +90,7 @@ Answer these in order; stop adding hooks as soon as the answer is no.
 
 ## Sentence boundaries
 
-No hook needed. `internal/inference` ends a sentence at any lone Unicode `Sentence_Terminal` word (`. ! ? 。 ？ ؟ ۔`) and keeps following non-ASCII closing brackets and quotes (`」 ） »`) with it. A script whose terminator lacks that property needs a tokenizer or inference change.
+No hook needed. `internal/inference` ends a sentence at any lone Unicode `Sentence_Terminal` word and keeps following non-ASCII closing brackets and quotes with it (`Example_sentences` there). A script whose terminator lacks that property needs a tokenizer or inference change.
 
 ## Language detection
 

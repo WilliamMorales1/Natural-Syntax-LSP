@@ -1,6 +1,6 @@
 # Tag Reference
 
-Both lists map tags to VS Code semantic token types; color comes from your theme.
+Both lists map tags to VS Code semantic token types; color comes from your theme. `go test ./internal/tokenmap` checks both tables against the code (`ExampleNewDefault`, `ExampleDeprelBits` show the mapping from Go).
 
 ## POS classes
 
@@ -30,7 +30,7 @@ Everything else (unrecognized labels, punctuation) falls back to `comment` (depr
 
 ## UD relations
 
-Universal Dependencies labels used in dependency mode. See [`internal/tokenmap/deprel_bits.go`](../internal/tokenmap/deprel_bits.go).
+Universal Dependencies labels used in dependency mode, colored by [`internal/tokenmap/deprel_bits.go`](../internal/tokenmap/deprel_bits.go). Modifiers are listed in legend order.
 
 | # | Relation | Meaning | Example | Token Type |
 |---|---|---|---|---|
@@ -67,7 +67,7 @@ Universal Dependencies labels used in dependency mode. See [`internal/tokenmap/d
 | 31 | orphan | Orphan (in gapping) | Fred bought apples, Bob oranges | `modifier` (deprecated) |
 | 32 | parataxis | Parataxis | the guy, John said, left early | `modifier` (modification) |
 | 33 | punct | Punctuation [filtered out] | Done! | `comment` (deprecated) |
-| 34 | reparandum | Overridden disfluency | she was, she went to school | `modifier` (deprecated, definition) |
+| 34 | reparandum | Overridden disfluency | she was, she went to school | `modifier` (definition, deprecated) |
 | 35 | root | Root | (the sentence's main predicate) | `class` (declaration) |
 | 36 | vocative | Vocative | Bill, are you OK? | `string` (declaration) |
 | 37 | xcomp | Open clausal complement | she wants to leave | `function` (async) |

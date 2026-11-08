@@ -1,7 +1,11 @@
 // Package tokenmap maps linguistic tags (POS, deprel) to LSP semantic token types/modifiers.
 package tokenmap
 
-import "natural-syntax-ls/internal/postag"
+import (
+	"strings"
+
+	"natural-syntax-ls/internal/postag"
+)
 
 // Bits holds the encoded LSP semantic token type and modifiers.
 type Bits struct {
@@ -153,4 +157,22 @@ func bits(t Type, mods ...Modifier) Bits {
 		}
 	}
 	return b
+}
+
+// String formats b as docs/tags.md does: the type name, then its modifier names in parentheses.
+func (b Bits) String() string {
+	s := "unknown"
+	if b.TokenType < NumTypes {
+		s = TypeNames[b.TokenType]
+	}
+	var mods []string
+	for i, name := range ModifierNames {
+		if b.TokenModifierBitset&(1<<i) != 0 {
+			mods = append(mods, name)
+		}
+	}
+	if len(mods) > 0 {
+		s += " (" + strings.Join(mods, ", ") + ")"
+	}
+	return s
 }

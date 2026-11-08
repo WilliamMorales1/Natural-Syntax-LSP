@@ -126,6 +126,11 @@ func LoadUnigram(path string, opts ...Option) (*UnigramTokenizer, error) {
 	return parseUnigram(data, opts...)
 }
 
+// ParseUnigram reads a Unigram model from the contents of a HF tokenizer.json.
+func ParseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
+	return parseUnigram(data, opts...)
+}
+
 func parseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
 	var f unigramFile
 	if err := json.Unmarshal(data, &f); err != nil {
