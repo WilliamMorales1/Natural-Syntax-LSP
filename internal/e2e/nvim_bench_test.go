@@ -31,6 +31,12 @@ type benchCase struct {
 }
 
 var paragraphs = map[string][]string{
+	"pt": {
+		"O menino comeu maçãs vermelhas na cozinha enquanto a mãe preparava o jantar.",
+		"Depois da refeição, a família saiu para passear no parque e viu muitos pássaros nas árvores.",
+		"Maria mora em Lisboa há cinco anos e trabalha numa pequena editora do centro.",
+		"Quando chegou o inverno, as ruas encheram-se de luzes e todos esperavam o Natal com alegria.",
+	},
 	"es": {
 		"El niño comió manzanas rojas en la cocina mientras su madre preparaba la cena.",
 		"Después de la comida, la familia salió a pasear por el parque y vio muchos pájaros en los árboles.",
@@ -147,6 +153,7 @@ func benchCases(t *testing.T) []benchCase {
 		benchCase{"dependency/ru", "dependency", "ru", "ru_syntagrus_DeepPavlov_dependency", ml},
 		benchCase{"dependency/ja", "dependency", "ja", "ja_gsd_mbert_dependency", ml},
 		benchCase{"dependency/zh", "dependency", "zh", "zh_ud_mbert_dependency", ml},
+		benchCase{"dependency/pt", "dependency", "pt", "pt_ud_bertimbau_dependency", ml},
 	)
 	return cases
 }

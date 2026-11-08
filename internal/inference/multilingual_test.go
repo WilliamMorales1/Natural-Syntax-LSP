@@ -236,6 +236,9 @@ func TestMultilingualDependency(t *testing.T) {
 		{"ru_syntagrus_DeepPavlov", "Красивая кошка ест свежую рыбу.", map[string][2]string{
 			"Красивая": {"кошка", "amod"}, "кошка": {"ест", "nsubj"}, "рыбу": {"ест", "obj"}, "свежую": {"рыбу", "amod"},
 		}},
+		{"pt_ud_bertimbau", "O gato preto come o peixe do rio.", map[string][2]string{
+			"gato": {"come", "nsubj"}, "preto": {"gato", "amod"}, "peixe": {"come", "obj"}, "do": {"rio", "case"},
+		}},
 	} {
 		t.Run(tc.slug+"/"+tc.text, func(t *testing.T) {
 			base := modelBase(dir, tc.slug+"_dependency")

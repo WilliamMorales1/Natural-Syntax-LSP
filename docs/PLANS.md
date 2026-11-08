@@ -8,4 +8,4 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Portuguese dependency parser: `scripts/train_dependency.py --lang pt` (UD Portuguese-Bosque and GSD, `neuralmind/bert-base-portuguese-cased`), trained on Colab; catalog entry, export, eval, docs.
+No open items.

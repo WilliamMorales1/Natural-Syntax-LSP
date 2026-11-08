@@ -157,6 +157,14 @@
       "int8": true,
       "int8_only": "/encoder/layer.",
       "int8_fp32": ["/attention/self/MatMul", "layer.6/intermediate/", "layer.6/output/", "layer.7/intermediate/", "layer.7/output/", "layer.8/intermediate/", "layer.8/output/"]
+    },
+    {
+      "name": "pt_ud.bertimbau",
+      "mode": "dependency",
+      "source": "Hydragon123/pt-ud-diaparser",
+      "language": "pt",
+      "description": "Portuguese",
+      "int8": true
     }
   ]
 }

@@ -27,6 +27,7 @@ type udToken struct {
 	form       string
 	upos, rel  string
 	mwt        bool
+	lo, hi     int // multiword token: the ids of its parts
 	begin, end int // rune offsets in text, -1 if not located
 }
 
@@ -59,7 +60,8 @@ func udDir(t *testing.T) string {
 	return filepath.Join(c, "natural-syntax-ls", "ud")
 }
 
-func loadTreebank(t *testing.T, lang string, limit int) []udSentence {
+// loadTreebank reads up to limit sentences whose words can be located in the text; written merges multiword tokens into the written words the server sees.
+func loadTreebank(t *testing.T, lang string, limit int, written bool) []udSentence {
 	t.Helper()
 	rel := udTreebanks[lang]
 	path := filepath.Join(udDir(t), filepath.Base(rel))
@@ -90,6 +92,9 @@ func loadTreebank(t *testing.T, lang string, limit int) []udSentence {
 	var out []udSentence
 	var cur udSentence
 	flush := func() {
+		if written {
+			cur.toks = mergeMWTs(cur.toks)
+		}
 		if cur.text != "" && len(cur.toks) > 0 && locate(&cur) {
 			out = append(out, cur)
 		}
@@ -111,8 +116,10 @@ func loadTreebank(t *testing.T, lang string, limit int) []udSentence {
 				continue
 			}
 			tok := udToken{form: c[1], upos: c[3], rel: c[7], begin: -1}
-			if strings.Contains(c[0], "-") {
+			if lo, hi, ok := strings.Cut(c[0], "-"); ok {
 				tok.mwt = true
+				tok.lo, _ = strconv.Atoi(lo)
+				tok.hi, _ = strconv.Atoi(hi)
 			} else {
 				tok.id, _ = strconv.Atoi(c[0])
 				tok.head, _ = strconv.Atoi(c[6])
@@ -121,6 +128,50 @@ func loadTreebank(t *testing.T, lang string, limit int) []udSentence {
 		}
 	}
 	flush()
+	return out
+}
+
+// mergeMWTs turns each multiword token (Portuguese do = de + o) into one word with the head and relation of its part whose head lies outside it, as scripts/train_dependency.py does.
+func mergeMWTs(toks []udToken) []udToken {
+	owner := map[int]int{} // part id to the multiword token's first id
+	for _, tok := range toks {
+		if tok.mwt {
+			for id := tok.lo; id <= tok.hi; id++ {
+				owner[id] = tok.lo
+			}
+		}
+	}
+	if len(owner) == 0 {
+		return toks
+	}
+	var out []udToken
+	for i := 0; i < len(toks); i++ {
+		tok := toks[i]
+		if !tok.mwt {
+			out = append(out, tok)
+			continue
+		}
+		var parts []udToken
+		for i+1 < len(toks) && !toks[i+1].mwt && toks[i+1].id <= tok.hi {
+			i++
+			parts = append(parts, toks[i])
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		pick, found := parts[len(parts)-1], false
+		for _, p := range parts {
+			if outside := p.head < tok.lo || p.head > tok.hi; outside && (!found || p.head == 0) {
+				pick, found = p, true
+			}
+		}
+		out = append(out, udToken{id: tok.lo, form: tok.form, upos: pick.upos, head: pick.head, rel: pick.rel})
+	}
+	for i := range out {
+		if o, ok := owner[out[i].head]; ok {
+			out[i].head = o
+		}
+	}
 	return out
 }
 
@@ -192,7 +243,7 @@ func TestEvalPOS(t *testing.T) {
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
 		lang, _, _ := strings.Cut(tc.lang, "-")
-		sents := loadTreebank(t, lang, evalLimit())
+		sents := loadTreebank(t, lang, evalLimit(), false)
 		for variant, dir := range dirs {
 			base := modelBase(dir, tc.prefix)
 			m, err := NewPOSModel(base+".onnx", base+tc.vocab, testTokOpts()...)
@@ -239,8 +290,8 @@ func TestEvalDependency(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov", "de": "de_hdt_dbmdz_bert_base", "it": "it_isdt_dbmdz_electra_xxl"} {
-		sents := loadTreebank(t, lang, evalLimit())
+	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov", "de": "de_hdt_dbmdz_bert_base", "it": "it_isdt_dbmdz_electra_xxl", "pt": "pt_ud_bertimbau"} {
+		sents := loadTreebank(t, lang, evalLimit(), true)
 		for variant, dir := range dirs {
 			base := modelBase(dir, slug+"_dependency")
 			vocab := base + "_vocab.txt"

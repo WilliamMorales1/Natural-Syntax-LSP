@@ -8,7 +8,7 @@ Three modes:
 
 - **POS** (default): BERT/MobileBERT tags each word's part of speech (other languages via XLM-R or RoBERTa models); your theme picks the colors.
 - **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
-- **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish, French, German, Italian, Russian, Japanese and Chinese.
+- **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish, French, German, Italian, Portuguese, Russian, Japanese and Chinese.
 
 Per-language models, accuracy and licenses: [models.md](docs/models.md). Semantic mode is measured on en, es, fr, ja and zh. The server detects each line's language, so one document can mix languages; hover definitions follow the detected language.
 
