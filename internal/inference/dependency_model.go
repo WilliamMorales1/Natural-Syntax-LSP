@@ -265,10 +265,12 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 	tokens := make([]postag.Token, 0, len(groups))
 	for _, g := range groups {
 		first, last := words[g[0]], words[g[1]]
-		text := first.Text
+		var sb strings.Builder
+		sb.WriteString(first.Text)
 		for k := g[0] + 1; k <= g[1]; k++ {
-			text += words[k].Text
+			sb.WriteString(words[k].Text)
 		}
+		text := sb.String()
 		if tokenizer.IsAllPunct(text) {
 			continue
 		}

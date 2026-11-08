@@ -78,7 +78,7 @@ func TestStemMatchesSlugCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
-		name, want, _ := strings.Cut(line, "\t")
+		name, want, _ := strings.Cut(strings.TrimSuffix(line, "\r"), "\t")
 		if got := (Model{Name: name}).Stem(); got != want {
 			t.Errorf("Stem(%q) = %q, want %q", name, got, want)
 		}

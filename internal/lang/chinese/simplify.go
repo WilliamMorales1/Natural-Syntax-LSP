@@ -22,7 +22,7 @@ var (
 func loadMap(data string) map[rune]rune {
 	m := map[rune]rune{}
 	for line := range strings.SplitSeq(data, "\n") {
-		k, v, ok := strings.Cut(line, "\t")
+		k, v, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "\t")
 		if ok {
 			kr, vr := []rune(k), []rune(v)
 			if len(kr) == 1 && len(vr) == 1 {
