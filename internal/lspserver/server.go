@@ -647,7 +647,7 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 		}
 		modelLang := s.cfg.Language
 		// A comma list is a priority order: the first language with a definition wins.
-		for _, lang := range strings.Split(spec, ",") {
+		for lang := range strings.SplitSeq(spec, ",") {
 			lang = strings.TrimSpace(lang)
 			switch lang {
 			case "detect":

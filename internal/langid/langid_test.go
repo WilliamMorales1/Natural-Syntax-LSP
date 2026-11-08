@@ -228,7 +228,7 @@ func TestUDOutOfDomain(t *testing.T) {
 		}
 		var n, ok, none int
 		confused := map[string]int{}
-		for _, line := range strings.Split(string(b), "\n") {
+		for line := range strings.SplitSeq(string(b), "\n") {
 			if line = strings.TrimSpace(line); line == "" {
 				continue
 			}

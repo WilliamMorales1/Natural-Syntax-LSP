@@ -36,7 +36,7 @@ func trainLinear(dir, extra, out string, perLang int, bits uint8, epochs int, lr
 			if err != nil {
 				continue
 			}
-			for _, line := range strings.Split(string(b), "\n") {
+			for line := range strings.SplitSeq(string(b), "\n") {
 				if line = strings.TrimSpace(line); line != "" {
 					data = append(data, sample{line, i})
 				}

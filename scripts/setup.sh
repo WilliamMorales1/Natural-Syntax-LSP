@@ -160,11 +160,11 @@ export_model() {
     slug="$(slugify "$name")"
     [[ "$int8" == 1 ]] && extra=(--int8)
     case "$mode" in
-    pos) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_labels.json" ]] && has_tokenizer "$slug" && echo y) ;;
-    semantic) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" ]] && has_tokenizer "$slug" && echo y) ;;
+    pos) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_labels.json" ]] && has_tokenizer "$slug" && echo y || true) ;;
+    semantic) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" ]] && has_tokenizer "$slug" && echo y || true) ;;
     dependency)
         slug="${slug}_dependency"
-        done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_rels.json" ]] && has_tokenizer "$slug" && echo y)
+        done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_rels.json" ]] && has_tokenizer "$slug" && echo y || true)
         ;;
     *) fail "Unknown mode '$mode' for $name in models.json" ;;
     esac

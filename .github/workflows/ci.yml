@@ -82,7 +82,7 @@ jobs:
       - name: Second run skips export (Windows)
         if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
         run: |
-          $out = .\scripts\setup.ps1 -Model bert-base | Out-String
+          $out = .\scripts\setup.ps1 -Model bert-base *>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "already exists, skipping export") { throw "export was not skipped" }
 
