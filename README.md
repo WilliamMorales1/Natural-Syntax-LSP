@@ -1,16 +1,16 @@
 # Natural Syntax LSP
 
-Parts-of-speech, semantic-embedding, or dependency-parse highlighting for English, Spanish, French, Russian, Japanese and Chinese in VS Code or Neovim, via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its relation and dependents) plus a Wiktionary definition.
+Parts-of-speech, semantic-embedding, or dependency-parse highlighting for English, Spanish, French, German, Italian, Portuguese, Russian, Arabic, Japanese and Chinese in VS Code or Neovim, via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its relation and dependents) plus a Wiktionary definition.
 
 ![screenshot showing color highlighting and hover](docs/screenshotExample.png)
 
 Three modes:
 
-- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish, French and Russian via XLM-R models); your theme picks the colors.
+- **POS** (default): BERT/MobileBERT tags each word's part of speech (other languages via XLM-R or RoBERTa models); your theme picks the colors.
 - **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
-- **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish, French and Russian.
+- **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish, French, Russian, Japanese and Chinese.
 
-Japanese (`xlmr-ja`) and Chinese (`chinese-roberta-upos`) POS models are in the catalog; no Japanese or Chinese parser yet: [models.md](docs/models.md). Semantic mode is measured on en, es, fr, ja and zh. The server detects each line's language, so one document can mix languages; hover definitions follow the detected language.
+Per-language models, accuracy and licenses: [models.md](docs/models.md). Semantic mode is measured on en, es, fr, ja and zh. The server detects each line's language, so one document can mix languages; hover definitions follow the detected language.
 
 ## Dependencies
 

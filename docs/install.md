@@ -11,6 +11,7 @@ scripts/setup.sh --model xlmr-es      # Spanish POS, XLM-R int8 (~280 MB)
 scripts/setup.sh --model xlmr-fr      # French POS, XLM-R int8 (~280 MB)
 scripts/setup.sh --model xlmr-ru      # Russian POS, XLM-R int8 (~280 MB)
 scripts/setup.sh --model xlmr-ja      # Japanese POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model xlmr-ar      # Arabic POS, XLM-R int8 (~280 MB); also xlmr-de, xlmr-it, xlmr-pt
 scripts/setup.sh --model chinese-roberta-upos  # Chinese POS, whole words (~410 MB)
 scripts/setup.sh --model multilingual-minilm  # semantic mode, paraphrase-multilingual-MiniLM-L12-v2 (~470 MB)
 scripts/setup.sh --model en_ewt.electra-base  # dependency mode, en_ewt.electra-base UD parser (~470 MB)

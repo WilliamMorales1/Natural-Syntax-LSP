@@ -31,7 +31,7 @@ func TestScriptedLanguagesLoad(t *testing.T) {
 	for _, l := range Languages(repoLang) {
 		codes = append(codes, l.Code)
 	}
-	for _, want := range []string{"en", "fr", "es", "ru", "ar"} {
+	for _, want := range []string{"en", "fr", "es", "ru", "ar", "de", "it", "pt"} {
 		if !slices.Contains(codes, want) {
 			t.Errorf("missing %q in %q", want, codes)
 		}
@@ -46,7 +46,7 @@ func TestForModel(t *testing.T) {
 	for in, want := range map[string]string{
 		"xlmr_ru_pos.onnx": "ru", "/m/XLMR_RU_int8.onnx": "ru", "ru_syntagrus.onnx": "ru",
 		"xlmr_es.onnx": "es", "es_ancora.mbert.onnx": "es",
-		"xlmr_fr.onnx": "fr", "fr_sequoia.camembert.onnx": "fr", "bert_base.onnx": "", "multilingual_minilm.onnx": "",
+		"xlmr_fr.onnx": "fr", "fr_sequoia.camembert.onnx": "fr", "xlmr_de.onnx": "de", "xlmr_it_int8.onnx": "it", "xlmr_pt.onnx": "pt", "xlmr_ar.onnx": "ar", "bert_base.onnx": "", "multilingual_minilm.onnx": "",
 	} {
 		if got := lang.ForModel(langs, in); got != want {
 			t.Errorf("ForModel(%q) = %q, want %q", in, got, want)

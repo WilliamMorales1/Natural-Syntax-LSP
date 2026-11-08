@@ -49,6 +49,38 @@
       "int8": true
     },
     {
+      "name": "xlmr-ar",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-ar",
+      "language": "ar",
+      "description": "Arabic",
+      "int8": true
+    },
+    {
+      "name": "xlmr-de",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-de",
+      "language": "de",
+      "description": "German",
+      "int8": true
+    },
+    {
+      "name": "xlmr-it",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-it",
+      "language": "it",
+      "description": "Italian",
+      "int8": true
+    },
+    {
+      "name": "xlmr-pt",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-pt",
+      "language": "pt",
+      "description": "Portuguese",
+      "int8": true
+    },
+    {
       "name": "chinese-roberta-upos",
       "mode": "pos",
       "source": "KoichiYasuoka/chinese-roberta-base-upos",

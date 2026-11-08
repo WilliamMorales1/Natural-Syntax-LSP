@@ -8,6 +8,10 @@
 | `xlmr-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
 | `xlmr-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
 | `xlmr-ja` | `xlmr-ja` | ~280 MB | POS | ja | XLM-R UPOS, int8; 96.2% on GSD with kagome words (fp32 97.1%) |
+| `xlmr-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS, int8; 93.4% on PADT (Apache-2.0) |
+| `xlmr-de` | `xlmr-de` | ~280 MB | POS | de | XLM-R UPOS, int8; 93.3% on GSD (Apache-2.0) |
+| `xlmr-it` | `xlmr-it` | ~280 MB | POS | it | XLM-R UPOS, int8; 97.1% on ISDT (Apache-2.0) |
+| `xlmr-pt` | `xlmr-pt` | ~280 MB | POS | pt | XLM-R UPOS, int8; 95.6% on GSD (Apache-2.0) |
 | `chinese-roberta-upos` | `chinese-roberta-upos` | ~410 MB | POS | zh | `KoichiYasuoka/chinese-roberta-base-upos` (Apache-2.0), whole words; 91.6% of characters on GSDSimp, fp32 only |
 | `multilingual-minilm` (default for semantic) | `multilingual-minilm` | ~470 MB | Semantic | 50+ | `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim |
 | `en_ewt.electra-base` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
@@ -31,7 +35,7 @@ Checked against the Hugging Face model cards and the UD treebank READMEs. The se
 | ----- | -------------- | ------------- |
 | `bert-base` | CC BY-NC 3.0 (**non-commercial**) | Penn Treebank, 46 labels including punctuation |
 | `mobilebert` | MIT | Penn Treebank, 34 labels |
-| `xlmr-es`, `xlmr-fr`, `xlmr-ru`, `xlmr-ja` | Apache-2.0 | Universal POS, 17 tags |
+| `xlmr-es`, `xlmr-fr`, `xlmr-ru`, `xlmr-ja`, `xlmr-ar`, `xlmr-de`, `xlmr-it`, `xlmr-pt` | Apache-2.0 | Universal POS, 17 tags |
 | `chinese-roberta-upos` | Apache-2.0 | Universal POS with `B-`/`I-` word pieces, 45 labels |
 | `multilingual-minilm` | Apache-2.0 | none (embeddings) |
 | diaparser parsers (`en_ewt`, `es_ancora`, `fr_sequoia`, `ru_syntagrus`, `ja_gsd`) | diaparser is MIT; weights follow the training treebank: EWT CC BY-SA 4.0, AnCora CC BY 4.0, Sequoia LGPL-LR, SynTagRus **CC BY-NC-SA 4.0**, Japanese-GSD CC BY-SA 4.0 | UD relations, see [tags.md](tags.md) |

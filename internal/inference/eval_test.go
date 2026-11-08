@@ -42,6 +42,10 @@ var udTreebanks = map[string]string{
 	"zh":  "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
 	"zhs": "UD_Chinese-GSDSimp/master/zh_gsdsimp-ud-test.conllu",
 	"ru":  "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
+	"ar":  "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
+	"de":  "UD_German-GSD/master/de_gsd-ud-test.conllu",
+	"it":  "UD_Italian-ISDT/master/it_isdt-ud-test.conllu",
+	"pt":  "UD_Portuguese-GSD/master/pt_gsd-ud-test.conllu",
 }
 
 func udDir(t *testing.T) string {
@@ -181,6 +185,10 @@ func TestEvalPOS(t *testing.T) {
 		{"ja", "xlmr_ja", "_tokenizer.json"},
 		{"zh", "xlmr_zh", "_tokenizer.json"},
 		{"ru", "xlmr_ru", "_tokenizer.json"},
+		{"ar", "xlmr_ar", "_tokenizer.json"},
+		{"de", "xlmr_de", "_tokenizer.json"},
+		{"it", "xlmr_it", "_tokenizer.json"},
+		{"pt", "xlmr_pt", "_tokenizer.json"},
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
 		lang, _, _ := strings.Cut(tc.lang, "-")

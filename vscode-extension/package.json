@@ -41,7 +41,7 @@
         },
         "naturalSyntaxLs.model": {
           "type": "string",
-          "examples": ["bert-base", "mobilebert", "xlmr-es", "xlmr-fr", "xlmr-ru", "xlmr-ja", "chinese-roberta-upos", "multilingual-minilm", "en_ewt.electra-base"],
+          "examples": ["bert-base", "mobilebert", "xlmr-es", "xlmr-fr", "xlmr-ru", "xlmr-ja", "xlmr-ar", "xlmr-de", "xlmr-it", "xlmr-pt", "chinese-roberta-upos", "multilingual-minilm", "en_ewt.electra-base"],
           "default": "bert-base",
           "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. Any name from models.json (bundled or your own entries in the config dir); run scripts/setup.sh --list to see them. Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
         },
