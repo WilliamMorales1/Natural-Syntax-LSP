@@ -7,16 +7,16 @@ Every install path needs the ONNX model files, which no package ships (they are 
 ```bash
 scripts/setup.sh                     # BERT-base POS model (~430 MB)
 scripts/setup.sh --model mobilebert  # lighter POS model (~105 MB)
-scripts/setup.sh --model pos-es      # Spanish POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model pos-fr      # French POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model pos-ru      # Russian POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model pos-ar      # Arabic POS, XLM-R int8 (~280 MB)
-scripts/setup.sh --model multilingual  # semantic mode, paraphrase-multilingual-MiniLM-L12-v2 (~470 MB)
-scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
-scripts/setup.sh --model dependency-es  # Spanish parser, fp32 (~750 MB)
-scripts/setup.sh --model dependency-fr  # French parser, int8 (~350 MB)
-scripts/setup.sh --model dependency-ru  # Russian parser, fp32 (~750 MB)
-scripts/setup.sh --model dependency-ar  # Arabic parser, int8 (~330 MB)
+scripts/setup.sh --model xlmr-es      # Spanish POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model xlmr-fr      # French POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model xlmr-ru      # Russian POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model xlmr-ar      # Arabic POS, XLM-R int8 (~280 MB)
+scripts/setup.sh --model multilingual-minilm  # semantic mode, paraphrase-multilingual-MiniLM-L12-v2 (~470 MB)
+scripts/setup.sh --model en_ewt.electra-base  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
+scripts/setup.sh --model es_ancora.mbert  # Spanish parser, fp32 (~750 MB)
+scripts/setup.sh --model fr_sequoia.camembert-large  # French parser, int8 (~350 MB)
+scripts/setup.sh --model ru_syntagrus.DeepPavlov  # Russian parser, fp32 (~750 MB)
+scripts/setup.sh --model ar_padt.asafaya  # Arabic parser, int8 (~330 MB)
 scripts/setup.sh --model all         # all models
 ```
 

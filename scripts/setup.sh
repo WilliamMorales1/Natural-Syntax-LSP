@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|pos-ru|pos-ar|multilingual|dependency|dependency-es|dependency-fr|dependency-ru|dependency-ar|all]
-#   --model  Which model to export (default: bert-base)
+# Usage: ./scripts/setup.sh [--model NAME|all] [--list]
+#   --model  A model name from models.json (default: bert-base), or all
+#   --list   Print the models in models.json and exit
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODEL="bert-base"
+LIST=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -15,25 +17,16 @@ while [[ $# -gt 0 ]]; do
         MODEL="$2"
         shift 2
         ;;
+    --list)
+        LIST=1
+        shift
+        ;;
     *)
         echo "Unknown arg: $1"
         exit 1
         ;;
     esac
 done
-
-# Validate early.
-case "$MODEL" in
-bert-base | mobilebert | pos-es | pos-fr | pos-ru | pos-ar | multilingual | dependency | dependency-es | dependency-fr | dependency-ru | dependency-ar | all) ;;
-minilm | mpnet)
-    echo "ERROR: '$MODEL' was replaced by 'multilingual' (paraphrase-multilingual-MiniLM-L12-v2)." >&2
-    exit 1
-    ;;
-*)
-    echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, dependency-ru, dependency-ar, or all." >&2
-    exit 1
-    ;;
-esac
 
 step() {
     echo
@@ -58,6 +51,24 @@ for cmd in python python3 py; do
 done
 [[ -n "$PYTHON" ]] || fail "Python 3 not found. Install it and add to PATH."
 ok "Python: $($PYTHON --version 2>&1)"
+
+# catalog prints one line per models.json entry: name, mode, int8 (0/1), description, tab separated.
+CATALOG="$ROOT/models.json"
+[[ -f "$CATALOG" ]] || fail "models.json not found at $CATALOG"
+catalog() {
+    "$PYTHON" -c '
+import json, sys
+for m in json.load(open(sys.argv[1], encoding="utf-8"))["models"]:
+    print("\t".join([m["name"], m["mode"], "1" if m.get("int8") else "0", m.get("description", "")]))
+' "$CATALOG"
+}
+if [[ "$LIST" == 1 ]]; then
+    catalog | while IFS=$'\t' read -r name mode int8 desc; do printf '%-30s %-10s %s\n' "$name" "$mode" "$desc"; done
+    exit 0
+fi
+if [[ "$MODEL" != "all" ]] && ! catalog | cut -f1 | grep -qxF -- "$MODEL"; then
+    fail "Unknown model '$MODEL'. Use one of: $(catalog | cut -f1 | tr '\n' ' ')or all."
+fi
 
 command -v go &>/dev/null || fail "Go not found. Install Go and add to PATH."
 ok "Go: $(go version)"
@@ -84,7 +95,7 @@ ok "Data directory: $DATA_DIR"
 step "Installing Python dependencies (transformers, torch, onnx, onnxscript, onnxruntime, requests)"
 
 PKGS=(transformers torch onnx onnxscript onnxruntime requests)
-if [[ "$MODEL" == dependency* || "$MODEL" == "all" ]]; then
+if catalog | awk -F'\t' -v m="$MODEL" '($1 == m || m == "all") && $2 == "dependency" {f=1} END {exit !f}'; then
     PKGS+=(diaparser)
 fi
 
@@ -134,97 +145,41 @@ ok "Python deps ready."
 
 # ── 4. Export ONNX model(s) + vocab + labels ──────────────────────────────
 
-slugify() { printf '%s' "$1" | tr '-./' '___'; }
+slugify() { printf '%s' "$1" | tr './-' '___'; }
 
 # has_tokenizer SLUG: WordPiece models ship _vocab.txt, SentencePiece ones only _tokenizer.json.
 has_tokenizer() {
     [[ -f "$DATA_DIR/${1}_vocab.txt" || -f "$DATA_DIR/${1}_tokenizer.json" ]]
 }
 
-# export_pos_model NAME LABEL [export_model.py args...]
-export_pos_model() {
-    local model_name="$1" label="$2"
-    shift 2
-    local slug
-    slug="$(slugify "$model_name")"
-    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_labels.json" ]] && has_tokenizer "$slug"; then
+# export_model NAME MODE INT8 DESC: skips the export when the files for NAME already exist.
+export_model() {
+    local name="$1" mode="$2" int8="$3" desc="$4" slug extra=() done_check
+    slug="$(slugify "$name")"
+    [[ "$int8" == 1 ]] && extra=(--int8)
+    case "$mode" in
+    pos) done_check=$([[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_labels.json" ]] && has_tokenizer "$slug" && echo y) ;;
+    semantic) done_check=$([[ -f "$DATA_DIR/${slug}.onnx" ]] && has_tokenizer "$slug" && echo y) ;;
+    dependency)
+        slug="${slug}_dependency"
+        done_check=$([[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_rels.json" ]] && has_tokenizer "$slug" && echo y)
+        ;;
+    *) fail "Unknown mode '$mode' for $name in models.json" ;;
+    esac
+    if [[ -n "$done_check" ]]; then
         ok "${slug}.onnx already exists, skipping export."
     else
-        step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
-        ok "$label exported."
+        step "Exporting $name ($mode: $desc) to ONNX"
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$name" ${extra[@]+"${extra[@]}"}
+        ok "$name exported."
     fi
 }
 
-export_semantic_model() {
-    local model_name="$1" label="$2"
-    shift 2
-    local slug
-    slug="$(slugify "$model_name")"
-    if [[ -f "$DATA_DIR/${slug}.onnx" ]] && has_tokenizer "$slug"; then
-        ok "${slug}.onnx already exists, skipping export."
-    else
-        step "Exporting $label to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
-        ok "$label exported."
+while IFS=$'\t' read -r name mode int8 desc; do
+    if [[ "$MODEL" == "all" || "$MODEL" == "$name" ]]; then
+        export_model "$name" "$mode" "$int8" "$desc"
     fi
-}
-
-# export_dependency_model CATALOG_NAME LABEL [export_model.py args...]
-export_dependency_model() {
-    local model_name="$1" label="$2"
-    shift 2
-    local slug
-    slug="$(slugify "$model_name")_dependency"
-    if [[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_rels.json" ]] && has_tokenizer "$slug"; then
-        ok "${slug}.onnx already exists, skipping export."
-    else
-        step "Exporting $label dependency parser to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$model_name" "$@"
-        ok "Dependency model exported."
-    fi
-}
-
-# Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
-export_pos_es() { export_pos_model xlmr-es "Spanish POS (XLM-R, int8, ~280 MB)" --int8; }
-export_pos_fr() { export_pos_model xlmr-fr "French POS (XLM-R, int8, ~280 MB)" --int8; }
-export_pos_ru() { export_pos_model xlmr-ru "Russian POS (XLM-R, int8, ~280 MB)" --int8; }
-export_pos_ar() { export_pos_model xlmr-ar "Arabic POS (XLM-R, int8, ~280 MB)" --int8; }
-export_multilingual() { export_semantic_model multilingual-minilm "multilingual MiniLM semantic (~470 MB)"; }
-export_dep_en() { export_dependency_model en_ewt.electra-base "English (en_ewt.electra-base, ~470 MB)"; }
-export_dep_es() { export_dependency_model es_ancora.mbert "Spanish (es_ancora.mbert, fp32, ~750 MB)"; }
-export_dep_fr() { export_dependency_model fr_sequoia.camembert-large "French (fr_sequoia.camembert-large, int8, ~350 MB)" --int8; }
-export_dep_ru() { export_dependency_model ru_syntagrus.DeepPavlov "Russian (ru_syntagrus.DeepPavlov, fp32, ~750 MB)"; }
-export_dep_ar() { export_dependency_model ar_padt.asafaya "Arabic (ar_padt.asafaya, int8, ~330 MB)" --int8; }
-
-case "$MODEL" in
-bert-base) export_pos_model bert-base "BERT-base POS (~400 MB)" ;;
-mobilebert) export_pos_model mobilebert "MobileBERT POS (~100 MB)" ;;
-pos-es) export_pos_es ;;
-pos-fr) export_pos_fr ;;
-pos-ru) export_pos_ru ;;
-pos-ar) export_pos_ar ;;
-multilingual) export_multilingual ;;
-dependency) export_dep_en ;;
-dependency-es) export_dep_es ;;
-dependency-fr) export_dep_fr ;;
-dependency-ru) export_dep_ru ;;
-dependency-ar) export_dep_ar ;;
-all)
-    export_pos_model bert-base "BERT-base POS (~400 MB)"
-    export_pos_model mobilebert "MobileBERT POS (~100 MB)"
-    export_pos_es
-    export_pos_fr
-    export_pos_ru
-    export_pos_ar
-    export_multilingual
-    export_dep_en
-    export_dep_es
-    export_dep_fr
-    export_dep_ru
-    export_dep_ar
-    ;;
-esac
+done < <(catalog)
 
 # ── 5. Copy onnxruntime DLL/SO/dylib to data directory ────────────────────
 #

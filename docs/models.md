@@ -1,19 +1,19 @@
 # Models
 
-| Setup name (`--model`) | `naturalSyntaxLs.model` | Size | Mode | Languages | Notes |
+| Setup name (`--model`, from `models.json`) | `naturalSyntaxLs.model` | Size | Mode | Languages | Notes |
 | ---------------------- | ----------------------- | ---- | ---- | --------- | ----- |
 | `bert-base` (default) | `bert-base` | ~430 MB | POS | en | Higher accuracy (multilingual vocab inflates size) |
 | `mobilebert` | `mobilebert` | ~105 MB | POS | en | Faster startup |
-| `pos-es` | `xlmr-es` | ~280 MB | POS | es | XLM-R UPOS, int8; 96.7% on AnCora |
-| `pos-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
-| `pos-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
-| `pos-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS (Apache-2.0), int8; 93.6% on PADT (fp32 93.7%); clitic-attached words are not scored |
-| `multilingual` (default for semantic) | `multilingual-minilm` | ~470 MB | Semantic | 50+ | `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim |
-| `dependency` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
-| `dependency-es` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
-| `dependency-fr` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
-| `dependency-ru` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
-| `dependency-ar` | `ar_padt.asafaya` | ~330 MB | Dependency | ar | int8; UAS/LAS 77.5 / 71.9 on PADT (fp32 77.7 / 72.0); parses whole written words, not PADT clitic-split words |
+| `xlmr-es` | `xlmr-es` | ~280 MB | POS | es | XLM-R UPOS, int8; 96.7% on AnCora |
+| `xlmr-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
+| `xlmr-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
+| `xlmr-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS (Apache-2.0), int8; 93.6% on PADT (fp32 93.7%); clitic-attached words are not scored |
+| `multilingual-minilm` (default for semantic) | `multilingual-minilm` | ~470 MB | Semantic | 50+ | `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim |
+| `en_ewt.electra-base` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
+| `es_ancora.mbert` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
+| `fr_sequoia.camembert-large` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
+| `ru_syntagrus.DeepPavlov` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
+| `ar_padt.asafaya` | `ar_padt.asafaya` | ~330 MB | Dependency | ar | int8; UAS/LAS 77.5 / 71.9 on PADT (fp32 77.7 / 72.0); parses whole written words, not PADT clitic-split words |
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
 
