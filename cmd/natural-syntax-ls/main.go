@@ -31,6 +31,7 @@ func run() error {
 	modelPath := flag.String("model", "", "Path to a .onnx model file")
 	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt (or Unigram _tokenizer.json) file (the model's own tokenizer, whatever mode)")
 	modeFlag := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
+	forced := flag.String("lang", "", "Language code (en, fr, es, ...) that replaces detection and picks that language's model when -model is not given; empty detects per line")
 	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
 	langDir := flag.String("lang-dir", "", "Extra directory of language *.lua scripts, loaded last, after <exe dir>/lang, <model dir>/lang and <config dir>/natural-syntax-ls/lang")
 	_ = flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
@@ -52,20 +53,28 @@ func run() error {
 		return fmt.Errorf("find config dir: %w", err)
 	}
 	dataDir := filepath.Join(cfgDir, "natural-syntax-ls")
+	// Source checkout: bin/natural-syntax-ls sits beside data/.
+	repoData := filepath.Join(exeDir, "..", "data")
 	dirs := []string{dataDir, exeDir}
 
 	if *modelPath == "" {
-		catalog, err := models.Load(exeDir, dataDir)
+		catalog, err := models.Load(repoData, exeDir, dataDir)
 		if err != nil {
 			return fmt.Errorf("read model catalog: %w", err)
 		}
 		var candidates []string
-		for _, stem := range catalog.DefaultStems(string(mode)) {
+		for _, stem := range catalog.StemsFor(string(mode), *forced) {
 			for _, dir := range dirs {
 				candidates = append(candidates, filepath.Join(dir, stem+".onnx"))
 			}
 		}
 		*modelPath = findFile(candidates...)
+		if *forced != "" && *modelPath != "" && !matchesLang(catalog, *forced, *modelPath) {
+			fmt.Fprintf(os.Stderr, "natural-syntax-ls: no installed %s model for language %q; using %s\n", mode, *forced, *modelPath)
+		}
+	}
+	if *modelPath != "" {
+		fmt.Fprintf(os.Stderr, "natural-syntax-ls: model %s\n", *modelPath)
 	}
 
 	// The vocab must belong to the chosen model; any other vocab maps subwords to the wrong ids.
@@ -91,7 +100,7 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
-	languages := builtin.Languages(filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
+	languages := builtin.Languages(filepath.Join(repoData, "lang"), filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -99,7 +108,8 @@ func run() error {
 		ModelPath: *modelPath,
 		VocabPath: *vocabPath,
 		Mode:      mode,
-		Language:  lang.ForModel(languages, *modelPath),
+		Language:  modelLanguage(languages, *modelPath, *forced),
+		Forced:    *forced,
 		Languages: languages,
 	}); err != nil {
 		return fmt.Errorf("lsp: %w", err)
@@ -133,4 +143,23 @@ func findFile(candidates ...string) string {
 		}
 	}
 	return ""
+}
+
+// modelLanguage is the forced language when set, else the language the model's file name marks.
+func modelLanguage(languages []lang.Language, modelPath, forced string) string {
+	if forced != "" {
+		return forced
+	}
+	return lang.ForModel(languages, modelPath)
+}
+
+// matchesLang reports whether the catalog marks modelPath as made for the language code.
+func matchesLang(c models.Catalog, code, modelPath string) bool {
+	base := strings.TrimSuffix(filepath.Base(modelPath), ".onnx")
+	for _, m := range c.Models {
+		if m.Stem() == base && (m.Language == code || m.Language == "") {
+			return true
+		}
+	}
+	return false
 }

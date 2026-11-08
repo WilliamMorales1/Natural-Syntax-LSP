@@ -41,36 +41,9 @@
         },
         "naturalSyntaxLs.model": {
           "type": "string",
-          "enum": [
-            "bert-base",
-            "mobilebert",
-            "xlmr-es",
-            "xlmr-fr",
-            "xlmr-ru",
-            "xlmr-ar",
-            "multilingual-minilm",
-            "en_ewt.electra-base",
-            "es_ancora.mbert",
-            "fr_sequoia.camembert-large",
-            "ru_syntagrus.DeepPavlov",
-            "ar_padt.asafaya"
-          ],
-          "enumDescriptions": [
-            "pos: English, more accurate (default for pos)",
-            "pos: English, faster",
-            "pos: Spanish",
-            "pos: French",
-            "pos: Russian",
-            "pos: Arabic",
-            "semantic: 50+ languages, 384-dim (default for semantic)",
-            "dependency: English diaparser UD parser (default for dependency)",
-            "dependency: Spanish",
-            "dependency: French",
-            "dependency: Russian",
-            "dependency: Arabic"
-          ],
+          "examples": ["bert-base", "mobilebert", "xlmr-es", "xlmr-fr", "xlmr-ru", "multilingual-minilm", "en_ewt.electra-base"],
           "default": "bert-base",
-          "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
+          "description": "Which model to use, meaning depends on naturalSyntaxLs.mode. Any name from models.json (bundled or your own entries in the config dir); run scripts/setup.sh --list to see them. Export the matching model first with scripts/setup.ps1 -Model <name> (or scripts/export_model.py --model <name> --mode <mode>) — file names are derived from this value, so it must match what you exported."
         },
         "naturalSyntaxLs.tokenMapUpdate": {
           "type": "object",
@@ -92,9 +65,9 @@
         },
         "naturalSyntaxLs.wiktionaryLanguage": {
           "type": "string",
-          "default": "en",
-          "examples": ["en", "es", "fr", "ja", "zh", "model", "auto"],
-          "description": "Wiktionary language for hover definitions: a language code (en, es, fr, ja, zh, ...), 'model' (the model's language, else en), or 'auto' (best match across languages). Read at server start."
+          "default": "detect,en",
+          "examples": ["detect,en", "en", "es", "fr", "ja", "zh", "model", "auto", "es,en"],
+          "description": "Wiktionary language priority for hover definitions: 'detect' (the language the built-in detector finds in the hovered line), a language code (en, es, fr, ja, zh, ...), 'model' (the model's language, else en), 'auto' (best match across languages), or a comma-separated priority list such as 'detect,en' (first language with a definition wins). Applies immediately."
         },
         "naturalSyntaxLs.langDir": {
           "type": "string",

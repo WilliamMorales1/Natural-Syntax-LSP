@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"natural-syntax-ls/internal/inference"
+	"natural-syntax-ls/internal/langid"
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
 	"natural-syntax-ls/internal/tokenmap"
@@ -33,10 +34,32 @@ type run struct {
 
 // document holds a processed document.
 type document struct {
-	text    string
-	tokens  []postag.Token
-	version int32
-	lines   atomic.Pointer[lineIndex] // built on first use
+	text     string
+	tokens   []postag.Token
+	version  int32
+	lines    atomic.Pointer[lineIndex] // built on first use
+	langOnce sync.Once
+	lang     string // language of the whole text, detected on first use
+}
+
+// language returns the detected language of the whole text, or "" when unsure.
+func (d *document) language(detect func(string) string) string {
+	d.langOnce.Do(func() { d.lang = detect(d.text[:min(len(d.text), docSample)]) })
+	return d.lang
+}
+
+// docSample caps how much of a text is read to guess its language.
+const docSample = 4000
+
+// lineText returns the text of the line holding the rune offset.
+func (d *document) lineText(offset int) string {
+	ix := d.lineIndex()
+	n := ix.lineOf(offset)
+	end := len(ix.runes)
+	if n+1 < len(ix.starts) {
+		end = ix.starts[n+1]
+	}
+	return string(ix.runes[ix.starts[n]:end])
 }
 
 // lineIndex returns the document's line index, building it once per document.
@@ -58,6 +81,7 @@ type dependent struct {
 type hoverQueryResult struct {
 	tok        *postag.Token
 	dependents []dependent
+	language   string // detected language of the token's line, else of the whole document; "" when unsure
 }
 
 // chunkResult holds per-chunk prediction results and the word spans used.
@@ -105,6 +129,7 @@ type documentRegistry struct {
 	workers    int // parallel chunk predictions per document
 	stores     map[string]*documentStore
 	onDocReady func(uri string, doc *document) // called after each chunk and on completion
+	detect     func(text string) string        // names a text's language for hover
 }
 
 // newDocumentRegistry starts a registry around model; the caller keeps ownership of model.
@@ -121,6 +146,7 @@ func newDocumentRegistry(model predictor) *documentRegistry {
 		tokenMap:  tokenmap.NewDefault(),
 		useDeprel: isDependency,
 		threshold: defaultScoreThreshold,
+		detect:    langid.Detect,
 		stores:    make(map[string]*documentStore),
 	}
 	return dr
@@ -241,7 +267,7 @@ func (dr *documentRegistry) hover(ctx context.Context, uri string, line, charact
 	if doc == nil {
 		return nil, nil
 	}
-	return tokenAt(doc, line, character), nil
+	return tokenAt(doc, line, character, dr.detect), nil
 }
 
 func (dr *documentRegistry) handleItem(item *textItem, words []tokenizer.WordSpan) {
@@ -307,7 +333,7 @@ func (dr *documentRegistry) finalize(uri string, store *documentStore) {
 }
 
 // tokenAt returns the token at the position and its direct dependents, or nil if none.
-func tokenAt(doc *document, line, character uint32) *hoverQueryResult {
+func tokenAt(doc *document, line, character uint32, detect func(string) string) *hoverQueryResult {
 	off, ok := doc.lineIndex().offset(line, character)
 	if !ok {
 		return nil
@@ -320,7 +346,10 @@ func tokenAt(doc *document, line, character uint32) *hoverQueryResult {
 		return nil
 	}
 	tok := doc.tokens[i]
-	res := &hoverQueryResult{tok: &tok}
+	res := &hoverQueryResult{tok: &tok, language: detect(doc.lineText(off))}
+	if res.language == "" {
+		res.language = doc.language(detect)
+	}
 	for _, d := range doc.tokens {
 		if d.HasHead && d.HeadOffsetBegin == tok.OffsetBegin {
 			res.dependents = append(res.dependents, dependent{d, hasDependents(doc.tokens, d.OffsetBegin)})

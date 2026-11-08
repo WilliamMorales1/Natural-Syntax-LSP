@@ -123,7 +123,7 @@ async function activate(context) {
     const tokenMapUpdate = config.get('tokenMapUpdate', {});
     const scoreThreshold = config.get('scoreThreshold', null);
     const wiktionaryDefinitions = config.get('wiktionaryDefinitions', true);
-    const wiktionaryLanguage = config.get('wiktionaryLanguage', 'en');
+    const wiktionaryLanguage = config.get('wiktionaryLanguage', 'detect,en');
     const semanticLightness = config.get('semanticLightness', 0.75);
     const semanticChroma = config.get('semanticChroma', 0.14);
     const mode = config.get('mode', 'pos');
@@ -162,7 +162,7 @@ async function activate(context) {
         if (Object.keys(tokenMapUpdate).length > 0) opts.token_map_update = tokenMapUpdate;
         if (scoreThreshold !== null) opts.score_threshold = scoreThreshold;
         if (!wiktionaryDefinitions) opts.wiktionary_definitions = false;
-        if (wiktionaryLanguage && wiktionaryLanguage !== 'en') opts.wiktionary_language = wiktionaryLanguage;
+        if (wiktionaryLanguage && wiktionaryLanguage !== 'detect,en') opts.wiktionary_language = wiktionaryLanguage;
         if (semanticLightness !== 0.75) opts.semantic_lightness = semanticLightness;
         if (semanticChroma !== 0.14) opts.semantic_chroma = semanticChroma;
         return Object.keys(opts).length > 0 ? opts : undefined;
@@ -177,6 +177,15 @@ async function activate(context) {
 
     await client.start();
     console.log('[nls] client started');
+
+    // Hover language switches live; no server restart needed.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (!client || !e.affectsConfiguration('naturalSyntaxLs.wiktionaryLanguage')) return;
+            const lang = vscode.workspace.getConfiguration('naturalSyntaxLs').get('wiktionaryLanguage', 'detect,en');
+            client.sendNotification('workspace/didChangeConfiguration', { settings: { wiktionary_language: lang } });
+        })
+    );
 
     if (mode === 'semantic') {
         // Listen for the server's color push notification.

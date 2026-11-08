@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"natural-syntax-ls/internal/langid"
 	"slices"
 	"strings"
 	"testing"
@@ -279,6 +280,24 @@ func TestServerRoundTrip(t *testing.T) {
 			}
 		case <-timeout:
 			t.Fatal("no response to unknown method")
+		}
+	}
+}
+
+func TestTokenAtDetectsLineLanguage(t *testing.T) {
+	text := "The quick brown fox jumps over the lazy dog.\nLe renard brun saute par-dessus le chien paresseux."
+	doc := &document{text: text, tokens: []postag.Token{
+		{Word: "quick", OffsetBegin: 4, OffsetEnd: 9},
+		{Word: "renard", OffsetBegin: 48, OffsetEnd: 54},
+	}}
+	for line, want := range map[uint32]string{0: "en", 1: "fr"} {
+		col := uint32(5)
+		if line == 1 {
+			col = 3
+		}
+		res := tokenAt(doc, line, col, langid.Detect)
+		if res == nil || res.language != want {
+			t.Errorf("line %d: language = %+v, want %q", line, res, want)
 		}
 	}
 }

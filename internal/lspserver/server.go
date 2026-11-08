@@ -70,12 +70,16 @@ func ParseMode(s string) (Mode, error) {
 	return "", fmt.Errorf("unknown mode %q (want pos, semantic, or dependency)", s)
 }
 
+// defaultWiktionaryLang looks words up in the language detected from their line, then English.
+const defaultWiktionaryLang = "detect,en"
+
 // Config configures the LSP server's model/mode.
 type Config struct {
 	ModelPath string // path to the mode's .onnx model
 	VocabPath string // path to that same model's own _vocab.txt
 	Mode      Mode
 	Language  string          // Wiktionary code of the model's language ("" when English or multilingual)
+	Forced    string          // language code that replaces detection for tokenizing and hover; "" detects
 	Languages []lang.Language // language hooks for the tokenizer and Wiktionary
 }
 
@@ -204,6 +208,7 @@ var routes = map[string]handlerFunc{
 	"initialize":                       (*lspServer).handleInitialize,
 	"initialized":                      func(*lspServer, json.RawMessage) (any, *rpcError) { return nil, nil },
 	"shutdown":                         func(s *lspServer, _ json.RawMessage) (any, *rpcError) { s.shutdown.Store(true); return nil, nil },
+	"workspace/didChangeConfiguration": typed((*lspServer).handleDidChangeConfiguration),
 	"textDocument/didOpen":             typed((*lspServer).handleDidOpen),
 	"textDocument/didChange":           typed((*lspServer).handleDidChange),
 	"textDocument/didClose":            typed((*lspServer).handleDidClose),
@@ -221,6 +226,23 @@ func typed[P any](fn func(*lspServer, P) (any, *rpcError)) handlerFunc {
 		}
 		return fn(s, p)
 	}
+}
+
+// --- workspace/didChangeConfiguration ---
+
+type didChangeConfigurationParams struct {
+	Settings struct {
+		WiktionaryLanguage *string `json:"wiktionary_language"`
+	} `json:"settings"`
+}
+
+// handleDidChangeConfiguration switches the hover definition language without a restart.
+func (s *lspServer) handleDidChangeConfiguration(p didChangeConfigurationParams) (any, *rpcError) {
+	if l := p.Settings.WiktionaryLanguage; l != nil {
+		lang := strings.ToLower(strings.TrimSpace(*l))
+		s.wiktionaryLang.Store(&lang)
+	}
+	return nil, nil
 }
 
 // --- initialize ---
@@ -287,7 +309,7 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	var pred predictor
 	var err error
-	tokOpts := lang.TokenizerOptions(s.cfg.Languages)
+	tokOpts := lang.TokenizerOptions(s.cfg.Languages, s.cfg.Forced)
 	switch s.cfg.Mode {
 	case ModeSemantic:
 		pred, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, tokOpts...)
@@ -304,6 +326,10 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	}
 	s.predictor = pred
 	reg := newDocumentRegistry(pred)
+	if s.cfg.Forced != "" {
+		forced := s.cfg.Forced
+		reg.detect = func(string) string { return forced }
+	}
 	if s.cfg.Mode == ModeSemantic {
 		// O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.
 		reg.extendTokenMap(map[postag.PartOfSpeech]*tokenmap.Override{postag.O: nil})
@@ -615,19 +641,29 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 	tok := res.tok
 	var wiktDef, wiktURL string
 	if s.wiktionary.Load() && s.wikt != nil {
-		lang := "en"
+		spec := defaultWiktionaryLang
 		if p := s.wiktionaryLang.Load(); p != nil {
-			lang = *p
+			spec = *p
 		}
 		modelLang := s.cfg.Language
-		if lang == "model" {
-			lang = modelLang
+		// A comma list is a priority order: the first language with a definition wins.
+		for _, lang := range strings.Split(spec, ",") {
+			lang = strings.TrimSpace(lang)
+			switch lang {
+			case "detect":
+				if lang = res.language; lang == "" {
+					continue // unsure: let the next entry decide
+				}
+			case "model":
+				lang = modelLang
+			}
 			if lang == "" {
 				lang = "en"
 			}
-		}
-		if def, url, ok := s.wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
-			wiktDef, wiktURL = def, url
+			if def, url, ok := s.wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
+				wiktDef, wiktURL = def, url
+				break
+			}
 		}
 	}
 	text := formatHoverContent(tok, res.dependents, wiktDef, wiktURL)
