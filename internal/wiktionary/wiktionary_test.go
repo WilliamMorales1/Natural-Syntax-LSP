@@ -255,7 +255,7 @@ func TestFetchDefWithoutTagOrRelation(t *testing.T) {
 		{"本", "ja", postag.DepObj, "a book"},
 		{"私", "ja", postag.DepNsubj, "I, me"},
 	} {
-		got, _, ok := c.FetchDef(context.Background(), tc.word, tc.lang, "", postag.O, tc.rel)
+		got, _, ok := c.FetchDef(t.Context(), tc.word, tc.lang, "", postag.O, tc.rel)
 		if !ok || !strings.HasSuffix(got, tc.want) {
 			t.Errorf("FetchDef(%s, %v) = %q, want ...%q", tc.word, tc.rel, got, tc.want)
 		}

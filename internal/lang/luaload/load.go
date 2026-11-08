@@ -42,7 +42,7 @@ func convert(sb *sandbox, t *lua.LTable) (lang.Language, error) {
 	}
 	var err error
 	if l.Code, err = str(t, "code"); err != nil || l.Code == "" {
-		return l, fmt.Errorf("field code: must be a non-empty string")
+		return l, errors.New("field code: must be a non-empty string")
 	}
 	if l.ModelPrefixes, err = strList(t, "model_prefixes"); err != nil {
 		return l, err
@@ -55,7 +55,7 @@ func convert(sb *sandbox, t *lua.LTable) (lang.Language, error) {
 			return l, err
 		}
 	} else if t.RawGetString("tokenizer") != lua.LNil {
-		return l, fmt.Errorf("field tokenizer: must be a table")
+		return l, errors.New("field tokenizer: must be a table")
 	}
 	switch wt := t.RawGetString("wiktionary").(type) {
 	case *lua.LTable:
@@ -64,7 +64,7 @@ func convert(sb *sandbox, t *lua.LTable) (lang.Language, error) {
 		}
 	case *lua.LNilType:
 	default:
-		return l, fmt.Errorf("field wiktionary: must be a table")
+		return l, errors.New("field wiktionary: must be a table")
 	}
 	return l, nil
 }

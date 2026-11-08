@@ -43,7 +43,7 @@ Every mode adds a Wiktionary definition to hover when one exists. `naturalSyntax
 
 Lookup tries the word, then forms from the language script (lemmas, variants, stripped diacritics). Known gaps:
 
-- Chinese has no lemmatizer. `nojaseg` builds have no Japanese lemmas.
+- Chinese has no lemmatizer.
 - Semantic mode has no POS, so a homograph shows its page's first section. Dependency mode picks the section from the relation.
 
 Coverage per language: [benchmarks.md](benchmarks.md#dictionary-coverage).

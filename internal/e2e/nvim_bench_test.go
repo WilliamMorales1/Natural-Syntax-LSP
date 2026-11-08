@@ -224,7 +224,7 @@ func TestNvimBench(t *testing.T) {
 		if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*timeout)
+		ctx, cancel := context.WithTimeout(t.Context(), 10*timeout)
 		cmd := exec.CommandContext(ctx, nvim, "--clean", "--headless", "-l", driver, cfgPath)
 		cmd.Dir = work
 		output, runErr := cmd.CombinedOutput()

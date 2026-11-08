@@ -48,7 +48,7 @@ func loadUD(t *testing.T, lang string) (words []udWord, texts []string) {
 	if _, err := os.Stat(path); err != nil {
 		_ = os.MkdirAll(filepath.Dir(path), 0o755)
 		resp, err := http.Get("https://raw.githubusercontent.com/UniversalDependencies/" + udFiles[lang])
-		if err != nil || resp.StatusCode != 200 {
+		if err != nil || resp.StatusCode != http.StatusOK {
 			t.Skipf("cannot fetch treebank %s: %v", lang, err)
 		}
 		defer resp.Body.Close()
@@ -136,8 +136,8 @@ func hasLetter(s string) bool { return strings.IndexFunc(s, unicode.IsLetter) >=
 
 // sectionOf finds which section of the language bucket produced def.
 func sectionOf(payload map[string][]entry, lang, def string) string {
-	if i := strings.Index(def, ")* "); strings.HasPrefix(def, "*(") && i > 0 {
-		def = def[i+3:]
+	if _, after, ok := strings.Cut(def, ")* "); ok && strings.HasPrefix(def, "*(") {
+		def = after
 	}
 	for _, b := range []string{lang, "en"} {
 		for _, e := range payload[b] {

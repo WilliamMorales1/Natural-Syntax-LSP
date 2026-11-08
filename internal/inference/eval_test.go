@@ -70,7 +70,7 @@ func loadTreebank(t *testing.T, lang string, limit int, written bool) []udSenten
 			t.Fatal(err)
 		}
 		resp, err := http.Get("https://raw.githubusercontent.com/UniversalDependencies/" + rel)
-		if err != nil || resp.StatusCode != 200 {
+		if err != nil || resp.StatusCode != http.StatusOK {
 			t.Skipf("cannot download %s: %v", rel, err)
 		}
 		defer resp.Body.Close()

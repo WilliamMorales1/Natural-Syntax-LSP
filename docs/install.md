@@ -82,12 +82,6 @@ CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" ./cmd/natural-syntax-ls/
 
 The server reads `lang/` and `models.json` from beside the executable. Copy `data/lang` and `data/models.json` next to it. Put the ONNX Runtime library next to it, in `lib/`, or at `$ORT_LIB_PATH`.
 
-### Build tags
-
-| Tag | Effect |
-| --- | ------ |
-| `nojaseg` | Leaves out the kagome Japanese dictionary: binary 11 MB instead of 48 MB, but Japanese falls back to tokenizer pieces: POS accuracy drops from 97% to 74% and dependency accuracy collapses. |
-
 ### Use your own binary in VS Code
 
 ```json

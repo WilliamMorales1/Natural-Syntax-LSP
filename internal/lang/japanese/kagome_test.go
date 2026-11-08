@@ -1,5 +1,3 @@
-//go:build !nojaseg
-
 package japanese
 
 import (

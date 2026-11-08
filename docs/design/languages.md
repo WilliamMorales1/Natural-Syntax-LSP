@@ -6,11 +6,11 @@ Per-language choices behind the [catalog](../models.md#catalog): segmenters, tok
 
 ### POS
 
-Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
+Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Kanji-only text cannot be told from Chinese and also uses pieces.
 
 ### Dependency
 
-Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
+Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
 
 ### Rejected: long-unit DeBERTa
 

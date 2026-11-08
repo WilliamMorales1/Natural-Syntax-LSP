@@ -324,9 +324,9 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 	ordered := func(b bucket) []*entry {
 		var es []*entry
 		if numeralGlyph {
-			es = append(b.trans, b.main...)
+			es = slices.Concat(b.trans, b.main)
 		} else {
-			es = append(b.main, b.trans...)
+			es = slices.Concat(b.main, b.trans)
 		}
 		slices.SortStableFunc(es, func(x, y *entry) int {
 			return cmp.Compare(b2i(altForm(firstNonEmpty(x))), b2i(altForm(firstNonEmpty(y))))

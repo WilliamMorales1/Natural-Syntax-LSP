@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestSmoke(t *testing.T) {
 				if !ok {
 					t.Fatalf("server exited before answering %s", method)
 				}
-				if m.ID != nil && string(*m.ID) == fmt.Sprint(id) {
+				if m.ID != nil && string(*m.ID) == strconv.Itoa(id) {
 					return m
 				}
 			case <-timeout:

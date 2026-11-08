@@ -5,7 +5,6 @@
 ```bash
 go test ./...                     # unit tests and Example functions
 go test -short -race ./...        # what CI runs (.github/workflows/ci.yml)
-go build -tags nojaseg ./...      # build without the Japanese dictionary
 ```
 
 `Example` functions double as reference docs, e.g. `ExampleParse` in `internal/lang/luaload` and `ExampleParseLabel` in `internal/postag`.

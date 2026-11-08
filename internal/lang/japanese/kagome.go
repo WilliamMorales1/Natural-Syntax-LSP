@@ -1,5 +1,3 @@
-//go:build !nojaseg
-
 package japanese
 
 import (
@@ -20,8 +18,6 @@ var kagome = sync.OnceValue(func() *tokenizer.Tokenizer {
 	}
 	return t
 })
-
-const hasDictionary = true
 
 // lemmas returns headword candidates for a word or model piece: the first content token's dictionary form, then its surface when the piece carries trailing particles ("私は" gives 私).
 func lemmas(word string) []string {

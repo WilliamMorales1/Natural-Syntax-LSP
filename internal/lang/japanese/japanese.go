@@ -1,5 +1,4 @@
 // Package japanese segments Japanese text into UniDic short-unit words with kagome, the word standard of UD Japanese-GSD, and looks up dictionary forms in Wiktionary.
-// Build with -tags nojaseg to leave out the 37 MB embedded dictionary.
 package japanese
 
 import (
@@ -11,18 +10,14 @@ import (
 
 // Language returns the Japanese hooks.
 func Language() lang.Language {
-	l := lang.Language{
+	return lang.Language{
 		Code:          "ja",
 		ModelPrefixes: []string{"xlmr_ja", "ja_gsd"},
+		Tokenizer:     []tokenizer.Option{tokenizer.WithSegmenter(segmenter{})},
 		Wiktionary: &lang.Wiktionary{
-			Code: "ja", Sections: []string{"Japanese"}, Wikitext: true, Script: unicode.Han,
+			Code: "ja", Sections: []string{"Japanese"}, Wikitext: true, Script: unicode.Han, Forms: lemmas,
 		},
 	}
-	if hasDictionary {
-		l.Tokenizer = []tokenizer.Option{tokenizer.WithSegmenter(segmenter{})}
-		l.Wiktionary.Forms = lemmas
-	}
-	return l
 }
 
 // segmenter applies to text with kana, since Han runs alone cannot tell Japanese from Chinese.

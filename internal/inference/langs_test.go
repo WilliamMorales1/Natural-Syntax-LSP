@@ -7,4 +7,6 @@ import (
 )
 
 // testTokOpts is what the server passes models: every built-in language's tokenizer rules.
-func testTokOpts() []tokenizer.Option { return lang.TokenizerOptions(builtin.Languages("../../data/lang"), "") }
+func testTokOpts() []tokenizer.Option {
+	return lang.TokenizerOptions(builtin.Languages("../../data/lang"), "")
+}
