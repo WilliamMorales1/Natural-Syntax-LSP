@@ -126,24 +126,35 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 
 ## Startup and latency per language
 
-Through headless Neovim on the ThinkPad X280 (i7-8650U, hover on), one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench`. Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it.
+Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-1200 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. ru dependency was not exported locally.
 
-| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median (ms) | RSS ready (MB) | Peak RSS (MB) |
-| ---- | ---------- | -------------- | ---------------------- | ----------------- | -------------- | ------------- |
-| pos/en/bert_base | 593 | 749 | 99 / 134 | 0 | 405 | 422 |
-| semantic/en/mpnet | 879 | 88 | 80 / 93 | 0 | 400 | 415 |
-| dependency/en/electra | 953 | 987 | 127 / 142 | 0 | 679 | 685 |
-| pos/es | 1088 | 451 | 62 / 84 | 0 | 458 | 566 |
-| pos/fr | 1120 | 475 | 61 / 68 | 0 | 462 | 564 |
-| pos/ru | 1110 | 469 | 59 / 69 | 0 | 453 | 566 |
-| pos/ja | 3390 | 1006 | 136 / 168 | 0 | 1017 | 1039 |
-| pos/zh | 538 | 788 | 104 / 122 | 0 | 396 | 411 |
-| semantic/es | 999 | 29 | 27 / 36 | 0 | 213 | 224 |
-| semantic/fr | 903 | 30 | 30 / 34 | 0 | 222 | 237 |
-| semantic/ja | 3004 | 54 | 32 / 40 | 0 | 764 | 772 |
-| semantic/zh | 855 | 26 | 22 / 29 | 0 | 218 | 224 |
-| semantic/ru | 886 | 28 | 25 / 31 | 0 | 248 | 257 |
-| dependency/es | 1219 | 979 | 125 / 140 | 0 | 916 | 1123 |
-| dependency/fr | 1278 | 1720 | 227 / 241 | 0 | 510 | 521 |
-| dependency/ja | 2788 | 753 | 94 / 100 | 0 | 784 | 785 |
-| dependency/zh | 999 | 1325 | 171 / 178 | 0 | 640 | 644 |
+| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median / max (ms) | Hover cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
+| ---- | ---------- | -------------- | ---------------------- | ----------------------- | ----------------- | ----------- | -------------- | ------------- |
+| pos/en/bert_base | 458 | 744 | 97 / 100 | 1 / 75 | 0.6 | 16/16 | 405 | 423 |
+| semantic/en/mpnet | 864 | 77 | 79 / 101 | 4 / 356 | 0.7 | 16/16 | 395 | 415 |
+| dependency/en/electra | 875 | 998 | 132 / 171 | 14 / 106 | 0.7 | 16/16 | 663 | 668 |
+| pos/es | 1020 | 475 | 65 / 77 | 16 / 313 | 0.4 | 14/15 | 457 | 566 |
+| pos/fr | 1031 | 541 | 64 / 68 | 15 / 143 | 0.2 | 18/18 | 457 | 564 |
+| pos/ru | 1022 | 474 | 61 / 67 | 15 / 152 | 0.6 | 16/16 | 457 | 564 |
+| pos/ja | 3425 | 1033 | 132 / 144 | 15 / 138 | 0.6 | 19/20 | 1013 | 1037 |
+| pos/zh | 464 | 853 | 110 / 144 | 15 / 428 | 0.5 | 13/15 | 399 | 418 |
+| semantic/es | 964 | 31 | 28 / 36 | 16 / 193 | 0.5 | 14/15 | 214 | 224 |
+| semantic/fr | 926 | 49 | 31 / 46 | 15 / 84 | 0.7 | 18/18 | 207 | 225 |
+| semantic/ja | 3077 | 38 | 33 / 41 | 15 / 143 | 0.6 | 19/20 | 794 | 804 |
+| semantic/zh | 875 | 27 | 22 / 29 | 205 / 1162 | 0.6 | 14/19 | 207 | 219 |
+| semantic/ru | 935 | 28 | 24 / 31 | 15 / 331 | 0.6 | 16/16 | 211 | 221 |
+| dependency/es | 1211 | 967 | 119 / 125 | 15 / 119 | 0.6 | 14/15 | 934 | 1124 |
+| dependency/fr | 1181 | 1959 | 264 / 292 | 15 / 358 | 0.7 | 18/18 | 504 | 517 |
+| dependency/ja | 2842 | 746 | 98 / 104 | 15 / 156 | 0.6 | 19/20 | 783 | 786 |
+| dependency/zh | 1005 | 1284 | 168 / 198 | 67 / 392 | 0.6 | 12/15 | 640 | 646 |
+
+### Other platforms
+
+The `e2e` CI job runs the English POS row on each GitHub Actions runner (`.github/workflows/ci.yml`, job summary). macOS keeps no peak RSS counter, so its peak is the largest sample taken between steps.
+
+| Runner | Ready (ms) | Open long (ms) | Edit median (ms) | Hover max / cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
+| ------ | ---------- | -------------- | ---------------- | ----------------------- | ----------- | -------------- | ------------- |
+| X280, Linux | 458 | 744 | 97 | 75 / 0.6 | 16/16 | 405 | 423 |
+| ubuntu-latest | 474 | 581 | 75 | 416 / 0.11 | 16/16 | 445 | 474 |
+| macos-latest | 595 | 1192 | 163 | 376 / 0.12 | 16/16 | 404 | 424 |
+| windows-latest | 1152 | 1094 | 143 | 525 / 0.22 | 16/16 | 396 | 420 |

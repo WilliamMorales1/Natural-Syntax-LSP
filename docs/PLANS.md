@@ -8,8 +8,7 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Benchmark on another platform, with hover on.
-2. `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -30,7 +29,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ### Validation
 
-- Benchmark on a platform other than the X280, and with hover on (Wiktionary on).
 - VS Code (1.138, extension host) passes for ja and zh in pos and dependency modes (semantic tokens, hover with Wiktionary, edits) and for hover in semantic mode. Not observed: semantic-mode color decorations, which the extension draws from a server notification and the API cannot read.
 - The extension only attaches to `file` scheme documents, so untitled buffers get no highlighting.
 - Opt-in tests (`NSLS_ML_DIR=~/.config/natural-syntax-ls/models`) pass for es, fr, ja POS, semantic and es/fr dependency. Not run: ja, zh and ru dependency (models not exported locally), the `NSLS_EVAL` treebank evals, langid and Unigram reference tests.

@@ -75,7 +75,7 @@ Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (depe
 | `NSLS_ML_DIR` | `internal/inference` multilingual tests | Sample sentences per language through the exported models |
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
 | `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across languages (the table in models.md covers en, es, fr, zh, ja; ru is in the test but not yet in that table) |
-| `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency and server memory, through a real headless Neovim; `NSLS_BENCH_ONLY` filters cases |
+| `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency (Wiktionary on; `NSLS_BENCH_WIKT=0` off) and server memory, through a real headless Neovim on Linux, macOS or Windows; `NSLS_BENCH_ONLY` filters cases |
 
 `go test -short -race ./...` is the CI check (`.github/workflows/ci.yml`). Fuzz targets run with `go test ./internal/lspserver -run xxx -fuzz FuzzApplyContentChange`; others are `FuzzParseCPUList` (`internal/inference`) and `FuzzStripHTML` (`internal/wiktionary`).
 
