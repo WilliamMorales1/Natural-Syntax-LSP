@@ -8,7 +8,8 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Performance.
+1. Documentation as testable examples.
+2. Performance.
 
 ## Multilingual
 
@@ -56,6 +57,19 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Replace nested for-loops in hot paths (inference pre/post-processing, decoding, span mapping) with matrix multiplication or batched/concurrent equivalents where the result stays identical. Measure ms and RSS before and after with the existing bench.
 - Run no model or highlighting until language identification has settled on a document's language. Today work done before identification is wasted; skipping it should save RSS (no model loaded for the wrong language) and startup ms.
+
+## Documentation as testable examples
+
+Move example and reference material that restates code into Go testable examples (`func ExampleXxx` in `example_test.go`, with `// Output:` comments; see https://go.dev/blog/examples). `go test ./...` then checks it, and `go doc` / pkg.go.dev show it beside the API. Replace each moved doc section with a one-line pointer to the example. Keep prose that explains why or covers non-Go users (Lua authors, editor setup).
+
+- `docs/tags.md` POS and UD tables duplicate `internal/tokenmap/pos_bits.go` and `deprel_bits.go`. Add `ExampleDeprelBits` and a POS example in `internal/tokenmap` printing tag, class and token type for a few rows; generate or test the full tables against `tokenmap.NewDefault()` so they cannot drift.
+- `docs/adding-a-language.md` "Schema" Lua block and "Worked example: French": add `ExampleParse` in `internal/lang/luaload` that parses a minimal script (Spanish-style) and one with `tokenizer.elisions`, printing the resulting `lang.Language` fields and a split of `l'ami`. Keep the field table; point the schema to the example.
+- `docs/adding-a-language.md` "Decide what the language needs" names `WordMerger`, `Segmenter`, `Forms`, `Rewrite`, `Wikitext`, `Script` as Go fields; check they still match `lang.Language` and move the Go side to an `ExampleLanguage` in `internal/lang`. Lua authors keep the Lua-field wording.
+- `docs/adding-a-language.md` "Sentence boundaries": add an example in `internal/inference` splitting `Hi. 「はい。」 ok؟ next` to show terminators and trailing closers.
+- `internal/postag`: `ExampleParseLabel` covering Penn, UPOS, `B-`/`I-` prefixes and an unknown label decoding as `O` (the silent failure noted in "Decide what the language needs").
+- `internal/tokenizer`: example for elision merge and Arabic clitic split on a tiny in-memory vocabulary, replacing prose examples in `docs/models.md` where they only show input and output.
+- Leave as prose: `docs/semantic-colors.md` derivation, install, Neovim and VS Code setup, settings, benchmark tables.
+- Verify with `go test ./...` and `go doc ./internal/<pkg>`; examples need no model files, so they run in CI on all three runners.
 
 ## Language identification
 
