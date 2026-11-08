@@ -84,7 +84,23 @@ end, { nargs = 1, complete = function() return vim.tbl_keys(models) end })
 vim.api.nvim_create_user_command("NSLang", function(opts)
   local code = opts.args:lower()
   restart(vim.g.natural_syntax_ls_mode or "pos", code == "auto" and "" or code)
-end, { nargs = 1, complete = function() return { "auto", "en", "fr", "es", "de", "it", "pt", "ru", "ja", "zh", "ar" } end })
+end, {
+  nargs = 1,
+  -- Language codes come from the model catalog, so a new language needs no edit here.
+  complete = function()
+    local codes, seen = { "auto" }, {}
+    local f = io.open(vim.fs.joinpath(dir, "models.json"))
+    local ok, cat = pcall(vim.json.decode, f and f:read("*a") or "{}")
+    if f then f:close() end
+    for _, m in ipairs(ok and cat.models or {}) do
+      if m.language and not seen[m.language] then
+        seen[m.language] = true
+        codes[#codes + 1] = m.language
+      end
+    end
+    return codes
+  end,
+})
 ```
 
 If you use `mason-lspconfig`, the `vim.lsp.enable` call is still needed: its `automatic_enable` only covers servers Mason installed. With LazyVim, put the snippet in `lua/config/options.lua` or any file under `lua/plugins/` inside a `config` function.

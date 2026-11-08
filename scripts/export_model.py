@@ -2,17 +2,10 @@
 """
 Export a POS-tagging, sentence-transformer, or dependency-parsing model to ONNX.
 
-Supported models:
-  mobilebert  mrm8488/mobilebert-finetuned-pos  (fast, ~100 MB)
-  bert-base   QCRI/bert-base-multilingual-cased-pos-english  (~400 MB)
-  xlmr-es     wietsedv/xlm-roberta-base-ft-udpos28-es  Spanish UPOS (XLM-R base)
-  xlmr-fr     wietsedv/xlm-roberta-base-ft-udpos28-fr  French UPOS (XLM-R base)
-  xlmr-ru     wietsedv/xlm-roberta-base-ft-udpos28-ru  Russian UPOS (XLM-R base)
-  multilingual-minilm
-              sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-              384-dim, 12-layer, 50+ languages (semantic mode)
+Supported models: every entry of data/models.json (run scripts/setup.sh --list),
+or any Hugging Face repo id with an explicit --mode.
 
---model values other than the names above are treated as a
+--model values that are neither catalog names nor repo ids are treated as a
 diaparser (github.com/Unipisa/diaparser) catalog name and export a biaffine
 UD dependency parser (default en_ewt.electra-base) as a 3-input/2-output
 ONNX graph: input_ids, attention_mask, pool_matrix -> arc_logits, rel_logits.

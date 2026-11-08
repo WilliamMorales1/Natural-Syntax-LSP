@@ -63,8 +63,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ## New-language workflow (de, it, pt)
 
-- `export_model.py` docstring lists model names by hand, against the "no model name in Python" rule.
-- `:NSLang` completion is a static list.
 - Auto-detect never switches the model, so a German file under the default setup gets English POS tags. Only `:NSLang` changes models.
 - Arabic hover now strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms and other clitics still miss.
 - Semantic mode has no POS, so homographs pick the wrong sense (`amico`, `faulen`, `كلب`).
