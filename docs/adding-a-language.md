@@ -2,7 +2,7 @@
 
 A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; restart the server after an edit.
 
-The shipped scripts are in `lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags english` drops both.
+The shipped scripts are in `lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags nojaseg` drops the kagome dictionary.
 
 Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
 
@@ -85,7 +85,7 @@ Answer these in order; stop adding hooks as soon as the answer is no.
 - `NSLS_EVAL=1` accuracy run (`internal/inference/eval_test.go`) against the language's UD test treebank; add it to the table in `docs/models.md`.
 - `NSLS_WIKT_EVAL=1` live Wiktionary check (`internal/wiktionary/live_eval_test.go`); add the treebank to `udFiles` there.
 - Latency and memory with `NSLS_NVIM_BENCH=1` (`internal/e2e`).
-- `go build -tags english ./...` still builds.
+- `go build -tags nojaseg ./...` still builds.
 
 ## Sentence boundaries
 

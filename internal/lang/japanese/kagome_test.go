@@ -1,4 +1,4 @@
-//go:build !nojaseg && !english
+//go:build !nojaseg
 
 package japanese
 

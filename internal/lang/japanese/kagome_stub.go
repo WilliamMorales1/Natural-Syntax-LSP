@@ -1,8 +1,8 @@
-//go:build nojaseg || english
+//go:build nojaseg
 
 package japanese
 
-// Builds with -tags nojaseg or english leave out the kagome dictionary.
+// Builds with -tags nojaseg leave out the kagome dictionary.
 const hasDictionary = false
 
 func lemmas(string) []string { return nil }

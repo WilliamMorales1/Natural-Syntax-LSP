@@ -1,5 +1,3 @@
-//go:build !english
-
 package chinese
 
 import (

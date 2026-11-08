@@ -1,5 +1,4 @@
 // Package chinese maps between Simplified and Traditional characters so Wiktionary lookups find whichever spelling has the page.
-// Build with -tags english to leave out the conversion tables.
 package chinese
 
 import (
