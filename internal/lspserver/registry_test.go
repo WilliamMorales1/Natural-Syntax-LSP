@@ -132,7 +132,7 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 		check func(t *testing.T, before, after *hoverQueryResult)
 	}{
 		{"pos", func() (predictor, error) {
-			return inference.NewPOSModel(filepath.Join(dir, "bert_base.onnx"), filepath.Join(dir, "bert_base_vocab.txt"))
+			return inference.NewPOSModel(modelFiles(dir, "bert_base"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			if b.tok.Tag == a.tok.Tag {
 				t.Errorf("change kept tag %v", b.tok.Tag)
@@ -140,14 +140,14 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 			t.Logf("change: %v -> %v", b.tok.Tag, a.tok.Tag)
 		}},
 		{"semantic", func() (predictor, error) {
-			inference.InitSemantic(768)
-			return inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"))
+			inference.InitSemantic(384)
+			return inference.NewEmbeddingModel(modelFiles(dir, "multilingual_minilm"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			// Re-embedding is checked on the stored embedding: a sub-visible shift can snap to the same color.
 			t.Logf("change: %s -> %s", b.tok.Color, a.tok.Color)
 		}},
 		{"dependency", func() (predictor, error) {
-			return inference.NewDependencyModel(filepath.Join(dir, "en_ewt_electra_base_dependency.onnx"), filepath.Join(dir, "en_ewt_electra_base_dependency_vocab.txt"))
+			return inference.NewDependencyModel(modelFiles(dir, "en_ewt_electra_base_dependency"))
 		}, func(t *testing.T, b, a *hoverQueryResult) {
 			if !slices.Contains(dependentWords(a), "state") {
 				t.Errorf("state not a dependent of change: %v", dependentWords(a))
@@ -339,6 +339,23 @@ func storeTokens(reg *documentRegistry, uri string) []postag.Token {
 	return out
 }
 
+// modelFiles returns slug's model and tokenizer file (_tokenizer.json, else _vocab.txt), from the setup.sh layout (models/<slug>/) if present, else flat in dir.
+func modelFiles(dir, slug string) (string, string) {
+	if sub := filepath.Join(dir, "models", slug); dirExists(sub) {
+		dir = sub
+	}
+	vocab := filepath.Join(dir, slug+"_tokenizer.json")
+	if _, err := os.Stat(vocab); err != nil {
+		vocab = filepath.Join(dir, slug+"_vocab.txt")
+	}
+	return filepath.Join(dir, slug+".onnx"), vocab
+}
+
+func dirExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
 func hexDist(a, b string) int {
 	d := 0
 	for i := 1; i < 7; i += 2 {
@@ -363,10 +380,10 @@ func TestModelEditLatency(t *testing.T) {
 		t.Skipf("missing %s", lib)
 	}
 	inference.SetORTLibPath(lib)
-	inference.InitSemantic(768)
-	model, err := inference.NewEmbeddingModel(filepath.Join(dir, "mpnet.onnx"), filepath.Join(dir, "mpnet_vocab.txt"))
+	inference.InitSemantic(384)
+	model, err := inference.NewEmbeddingModel(modelFiles(dir, "multilingual_minilm"))
 	if err != nil {
-		t.Skipf("mpnet model unavailable: %v", err)
+		t.Skipf("semantic model unavailable: %v", err)
 	}
 	t.Cleanup(func() { model.Close() })
 
@@ -379,7 +396,7 @@ func TestModelEditLatency(t *testing.T) {
 	elapsed := time.Since(started)
 	const maxEditLatency = 2 * time.Second
 	if elapsed > maxEditLatency {
-		t.Fatalf("single-chunk mpnet edit took %v; maximum is %v", elapsed, maxEditLatency)
+		t.Fatalf("single-chunk semantic edit took %v; maximum is %v", elapsed, maxEditLatency)
 	}
 }
 

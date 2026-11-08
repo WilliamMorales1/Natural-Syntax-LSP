@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 // Semantic quality across languages. Off by default: set NSLS_SEMANTIC_EVAL=1.
 //
-//	NSLS_ML_DIR   dir with multilingual_minilm.* (default: the config dir)
+//	NSLS_ML_DIR   config dir or dir holding multilingual_minilm.onnx (default: the config dir)
 //
 // Each language gets one paragraph of six sentences, every sentence holding one word from each of four groups (animals, food, technology, emotions), as in docs/examples/semantic-example.txt.
 // Quality is measured on the 24 target words only, with embeddings taken as the server takes them (contextual, mean of overlapping pieces):
@@ -194,7 +193,8 @@ func TestSemanticQualityAcrossLanguages(t *testing.T) {
 		testDataDir(t)
 	}
 	langs := []string{"en", "es", "fr", "ja", "zh", "ru"}
-	m := openSemModel(t, filepath.Join(dir, "multilingual_minilm"), 384)
+	onnx, _ := testModelFiles(dir, "multilingual_minilm")
+	m := openSemModel(t, strings.TrimSuffix(onnx, ".onnx"), 384)
 
 	emb := map[string]semEmbeds{}
 	accs := map[string]float64{}
@@ -212,25 +212,6 @@ func TestSemanticQualityAcrossLanguages(t *testing.T) {
 	}
 	m.Close() // one ORT environment at a time
 
-	// English-only baselines on the English paragraph.
-	cfg, _ := os.UserConfigDir()
-	for _, b := range []struct {
-		name string
-		dim  int
-	}{{"mpnet", 768}, {"minilm", 384}} {
-		path := filepath.Join(cfg, "natural-syntax-ls", b.name)
-		if _, err := os.Stat(path + ".onnx"); err != nil {
-			continue
-		}
-		bm := openSemModel(t, path, b.dim)
-		e := semEmbed(t, bm, "en")
-		sep := sepRatio(24, func(i, j int) float64 { return chord(e.targets[i], e.targets[j]) })
-		col := sepRatio(24, func(i, j int) float64 {
-			return math.Hypot(float64(e.disk[i][0]-e.disk[j][0]), float64(e.disk[i][1]-e.disk[j][1]))
-		})
-		rows = append(rows, fmt.Sprintf("%-22s sep %.2f  colsep %.2f  grp %.2f", "english/"+b.name+"/en", sep, col, groupAcc(e.targets)))
-		bm.Close()
-	}
 	t.Log("\n" + strings.Join(rows, "\n"))
 	for _, l := range []string{"en", "es", "fr", "zh", "ja", "ja2", "ru"} {
 		if accs[l] < 0.7 {

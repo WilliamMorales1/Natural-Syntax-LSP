@@ -22,25 +22,25 @@ var testModels = []testModel{
 	{"pos", func(dir string) (Predictor, error) {
 		return NewPOSModel(testModelFiles(dir, "bert_base"))
 	}},
-	{"minilm", func(dir string) (Predictor, error) {
+	{"semantic", func(dir string) (Predictor, error) {
 		InitSemantic(384)
-		return NewEmbeddingModel(testModelFiles(dir, "minilm"))
-	}},
-	{"mpnet", func(dir string) (Predictor, error) {
-		InitSemantic(768)
-		return NewEmbeddingModel(testModelFiles(dir, "mpnet"))
+		return NewEmbeddingModel(testModelFiles(dir, "multilingual_minilm"))
 	}},
 	{"dependency", func(dir string) (Predictor, error) {
 		return NewDependencyModel(testModelFiles(dir, "en_ewt_electra_base_dependency"))
 	}},
 }
 
-// testModelFiles returns slug's model and vocab, from the setup.sh layout (models/<slug>/) if present, else flat in dir.
+// testModelFiles returns slug's model and tokenizer file (_tokenizer.json, else _vocab.txt), from the setup.sh layout (models/<slug>/) if present, else flat in dir.
 func testModelFiles(dir, slug string) (string, string) {
 	if sub := filepath.Join(dir, "models", slug); dirExists(sub) {
 		dir = sub
 	}
-	return filepath.Join(dir, slug+".onnx"), filepath.Join(dir, slug+"_vocab.txt")
+	vocab := filepath.Join(dir, slug+"_tokenizer.json")
+	if _, err := os.Stat(vocab); err != nil {
+		vocab = filepath.Join(dir, slug+"_vocab.txt")
+	}
+	return filepath.Join(dir, slug+".onnx"), vocab
 }
 
 func dirExists(p string) bool {

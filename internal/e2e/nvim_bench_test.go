@@ -126,7 +126,7 @@ func benchCases(t *testing.T) []benchCase {
 	cases = append(
 		cases,
 		benchCase{"pos/en/bert_base", "pos", "en", "bert_base", en},
-		benchCase{"semantic/en/mpnet", "semantic", "en", "mpnet", en},
+		benchCase{"semantic/en", "semantic", "en", "multilingual_minilm", en},
 		benchCase{"dependency/en/electra", "dependency", "en", "en_ewt_electra_base_dependency", en},
 		// English model on a Spanish document: the server switches to the installed Spanish model.
 		benchCase{"switch/pos/es", "pos", "es", "bert_base", en},

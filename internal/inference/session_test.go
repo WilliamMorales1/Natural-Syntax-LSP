@@ -54,10 +54,10 @@ func TestUnloadReloads(t *testing.T) {
 	})
 }
 
-// TestIdleUnloadConcurrent races predictions against a session that unloads every few milliseconds; the locking is the same for every model, so the smallest one is enough.
+// TestIdleUnloadConcurrent races predictions against a session that unloads every few milliseconds; the locking is the same for every model, so one model is enough.
 func TestIdleUnloadConcurrent(t *testing.T) {
 	dir := testDataDir(t)
-	i := slices.IndexFunc(testModels, func(tm testModel) bool { return tm.name == "minilm" })
+	i := slices.IndexFunc(testModels, func(tm testModel) bool { return tm.name == "semantic" })
 	m, err := sharedModel(dir, testModels[i].name, testModels[i].load)
 	if err != nil {
 		t.Skip(err)
