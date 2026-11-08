@@ -28,7 +28,7 @@ func newSwitcher(cfg Config) *switcher {
 	return &switcher{cfg: cfg, loaded: map[string]predictor{}, pending: map[string]bool{}, skip: map[string]bool{}}
 }
 
-// pick returns the model for text: the loaded one for its language, else base. A text too short to tell keeps cur.
+// pick returns the model for text: the loaded one for its language, nil while that model loads, else base. A text too short to tell keeps cur.
 func (sw *switcher) pick(text string, cur, base predictor) predictor {
 	code := langid.Detect(text[:min(len(text), docSample)])
 	if code == "" {
@@ -42,18 +42,30 @@ func (sw *switcher) pick(text string, cur, base predictor) predictor {
 	if m, ok := sw.loaded[code]; ok {
 		return m
 	}
-	if !sw.pending[code] && !sw.skip[code] && len(sw.loaded)+len(sw.pending) < maxSwitched {
+	if sw.pending[code] {
+		return nil
+	}
+	if !sw.skip[code] && len(sw.loaded)+len(sw.pending) < maxSwitched {
 		sw.pending[code] = true
 		go sw.load(code)
+		return nil
 	}
 	return base
 }
 
+// load runs onReady whether or not the model loads, so documents waiting on it get analysed either way.
 func (sw *switcher) load(code string) {
+	m := sw.open(code)
+	sw.finish(code, m)
+	if sw.onReady != nil {
+		sw.onReady()
+	}
+}
+
+func (sw *switcher) open(code string) predictor {
 	path, vocab := sw.cfg.Switch(code)
 	if path == "" || vocab == "" {
-		sw.finish(code, nil)
-		return
+		return nil
 	}
 	opts := lang.TokenizerOptions(sw.languages(), "")
 	var m predictor
@@ -68,13 +80,9 @@ func (sw *switcher) load(code string) {
 	}
 	if err != nil {
 		slog.Warn("load model for language", "lang", code, "err", err)
-		sw.finish(code, nil)
-		return
+		return nil
 	}
-	sw.finish(code, m)
-	if sw.onReady != nil {
-		sw.onReady()
-	}
+	return m
 }
 
 func (sw *switcher) finish(code string, m predictor) {

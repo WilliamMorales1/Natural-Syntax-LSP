@@ -614,6 +614,41 @@ func TestRegistrySwitchesModelAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestRegistryWaitsForLanguageModel(t *testing.T) {
+	for _, loads := range []bool{true, false} {
+		base, alt := &countingModel{}, &countingModel{}
+		reg := newDocumentRegistry(base)
+		ready := false
+		reg.pick = func(_ string, cur predictor) predictor {
+			switch {
+			case !ready:
+				return nil
+			case loads:
+				return alt
+			}
+			return cur
+		}
+		if got := syncTokens(reg, "der hund läuft.", 1); got != nil {
+			t.Errorf("tokens before load = %v, want none", got)
+		}
+		if base.calls.Load() != 0 || alt.calls.Load() != 0 {
+			t.Fatal("a model ran before the language's model was ready")
+		}
+		ready = true
+		reg.refresh()
+		if _, err := reg.semanticTokens(t.Context(), testURI); err != nil {
+			t.Fatal(err)
+		}
+		want, other := alt, base
+		if !loads {
+			want, other = base, alt
+		}
+		if want.calls.Load() != 1 || other.calls.Load() != 0 {
+			t.Errorf("loads=%v: want %d, other %d calls; want 1 and 0", loads, want.calls.Load(), other.calls.Load())
+		}
+	}
+}
+
 func TestRegistryResetRepredictsEverything(t *testing.T) {
 	m := &countingModel{}
 	reg := newDocumentRegistry(m)

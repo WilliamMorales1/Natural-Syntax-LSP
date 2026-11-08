@@ -114,6 +114,7 @@ type documentStore struct {
 	model         predictor // model of the pass in flight or last finished; nil before the first
 	lastItem      *textItem // latest accepted text, for re-running under another model
 	dropCache     bool      // next pass must not reuse chunk results
+	deferred      bool      // lastItem waits for its language's model to load
 	processing    bool
 	doc           *document
 	run           *run // in-flight pass while processing
@@ -148,7 +149,7 @@ type documentRegistry struct {
 	stores     map[string]*documentStore
 	onDocReady func(uri string, doc *document)            // called after each chunk and on completion
 	detect     func(text string) string                   // names a text's language for hover
-	pick       func(text string, cur predictor) predictor // chooses the model for a text; nil keeps model
+	pick       func(text string, cur predictor) predictor // chooses the model for a text, nil while it loads; nil func keeps model
 }
 
 // newDocumentRegistry starts a registry around model; the caller keeps ownership of model.
@@ -192,6 +193,10 @@ func (dr *documentRegistry) do(f func()) bool {
 // update queues a new document version for prediction.
 func (dr *documentRegistry) update(item *textItem) {
 	m := dr.modelFor(item)
+	if m == nil {
+		dr.do(func() { dr.deferItem(item) })
+		return
+	}
 	words := tokenizeWith(m, item.text)
 	dr.do(func() { dr.handleItem(item, words, m) })
 }
@@ -218,11 +223,23 @@ func (dr *documentRegistry) modelFor(item *textItem) predictor {
 	return m
 }
 
+// deferItem records item without analysing it; refresh runs it once its model is ready. Analysing it with another language's model first would be thrown away.
+func (dr *documentRegistry) deferItem(item *textItem) {
+	store := dr.storeFor(item.uri)
+	if store.latestVersion >= item.version {
+		return
+	}
+	store.latestVersion = item.version
+	store.lastItem = item
+	store.deferred = true
+	store.queued, store.queuedWords, store.queuedModel = nil, nil, nil
+}
+
 // reset re-analyses every document from scratch, e.g. after tokenizer rules changed.
 func (dr *documentRegistry) reset() {
 	dr.do(func() {
 		for _, st := range dr.stores {
-			if st.lastItem == nil || st.model == nil {
+			if st.lastItem == nil || st.model == nil || st.deferred {
 				continue
 			}
 			st.dropCache = true
@@ -235,11 +252,15 @@ func (dr *documentRegistry) reset() {
 func (dr *documentRegistry) refresh() {
 	dr.do(func() {
 		for _, st := range dr.stores {
-			if st.lastItem == nil || st.model == nil || dr.pick == nil {
+			if st.lastItem == nil || dr.pick == nil || st.model == nil && !st.deferred {
 				continue
 			}
-			m := dr.pick(st.lastItem.text, st.model)
-			if m == st.model && (st.queuedModel == nil || st.queuedModel == m) {
+			cur := st.model
+			if cur == nil {
+				cur = dr.model
+			}
+			m := dr.pick(st.lastItem.text, cur)
+			if m == nil || !st.deferred && m == st.model && (st.queuedModel == nil || st.queuedModel == m) {
 				continue
 			}
 			dr.scheduleProcessing(st.lastItem, tokenizeWith(m, st.lastItem.text), m, st)
@@ -459,6 +480,7 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 		store.plane = inference.SemanticPlane{}
 		store.model = m
 	}
+	store.deferred = false
 	store.processing = true
 	store.run = &run{done: make(chan struct{})}
 	store.queued, store.queuedWords, store.queuedModel = nil, nil, nil

@@ -55,7 +55,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ## Performance
 
 - Replace nested for-loops in hot paths (inference pre/post-processing, decoding, span mapping) with matrix multiplication or batched/concurrent equivalents where the result stays identical. Measure ms and RSS before and after with the existing bench.
-- Run no model or highlighting until language identification has settled on a document's language. Today work done before identification is wasted; skipping it should save RSS (no model loaded for the wrong language) and startup ms.
+- Load the configured English model only when a document needs it. A document in another language now waits for its own model instead of being analysed in English first (`switch/pos/es` bench: about 300 ms less per run, peak RSS 924 to 914 MB), but the English model still loads at startup (about 400 MB of the 790 MB ready RSS).
 
 ## Language identification
 
