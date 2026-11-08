@@ -10,14 +10,13 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 
 1. Auto-detect never switches the model (German file gets English tags).
 2. Wiktionary lemma lookup for ru and ar inflected forms.
-3. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-4. Evaluate ja int8 POS with kagome words.
-5. Katakana pieces in semantic mode show one color per piece.
-6. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-7. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-8. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-9. Benchmark on another platform, with hover on.
-10. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+3. Evaluate ja int8 POS with kagome words.
+4. Katakana pieces in semantic mode show one color per piece.
+5. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+6. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+7. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+8. Benchmark on another platform, with hover on.
+9. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -28,7 +27,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 - Katakana words in semantic mode show one color per piece. Kagome gives whole words but one word was still off.
 - ja int8 POS with kagome words: not evaluated.
 - Dependency mode has no POS, so definitions pick senses from the relation alone: ja `私` (nsubj) shows the noun sense "a personal or private matter", `本` and `読み` show rare senses. Use the lemma or a coarse POS guess.
-- zh dependency int8 loses about 5 points (UAS 85.6 to 80.0). Try quantizing only the encoder, or per-channel.
+- zh dependency int8 still loses accuracy (full GSD, UAS/LAS): fp32 86.9 / 83.3; dynamic int8 of the encoder only 82.6 / 77.7; per-channel (all or encoder only) collapses to 8 / 1, so ONNX Runtime's per-channel path is unusable here. Not shipped. Untried: static quantization with calibration, or int8 on the feed-forward layers only.
 - `KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos`: untested (LUW B-/I- tags over char-sized Unigram pieces, would need piece merging after tagging).
 
 ### Definition lookup
