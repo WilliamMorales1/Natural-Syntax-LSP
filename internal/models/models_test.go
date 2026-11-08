@@ -17,7 +17,7 @@ func write(t *testing.T, body string) string {
 }
 
 func TestShippedCatalog(t *testing.T) {
-	c, err := Load("../..")
+	c, err := Load("../../data")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,5 +50,23 @@ func TestLoadOverridesByName(t *testing.T) {
 func TestLoadBadJSON(t *testing.T) {
 	if _, err := Load(write(t, `{`)); err == nil {
 		t.Error("want error")
+	}
+}
+
+func TestStemsForPrefersLanguage(t *testing.T) {
+	dir := write(t, `{"models":[
+	 {"name":"en-a","mode":"pos","language":"en","default":true},
+	 {"name":"xlmr-es","mode":"pos","language":"es"},
+	 {"name":"multi","mode":"pos"},
+	 {"name":"other","mode":"semantic","language":"es"}]}`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := c.StemsFor("pos", "es"), []string{"xlmr_es", "multi", "en_a"}; !slices.Equal(got, want) {
+		t.Errorf("StemsFor(pos, es) = %q, want %q", got, want)
+	}
+	if got, want := c.StemsFor("pos", ""), []string{"en_a"}; !slices.Equal(got, want) {
+		t.Errorf("StemsFor(pos, \"\") = %q, want %q", got, want)
 	}
 }

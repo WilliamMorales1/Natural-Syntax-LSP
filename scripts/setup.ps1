@@ -19,7 +19,7 @@ function Step($msg) { Write-Host; Write-Host "==> $msg" }
 function Ok($msg)   { Write-Host "    $msg" }
 function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
-$catalogPath = Join-Path $ROOT "models.json"
+$catalogPath = Join-Path $ROOT "data/models.json"
 if (-not (Test-Path $catalogPath)) { Fail "models.json not found at $catalogPath" }
 $CATALOG = (Get-Content $catalogPath -Raw -Encoding UTF8 | ConvertFrom-Json).models
 if ($List) { $CATALOG | ForEach-Object { "{0,-30} {1,-10} {2}" -f $_.name, $_.mode, $_.description }; exit 0 }
@@ -183,13 +183,11 @@ Ok "Built: $exePath"
 Step "Installing language scripts"
 $langDest = Join-Path $DATA_DIR "lang"
 New-Item -ItemType Directory -Force $langDest | Out-Null
-Get-ChildItem (Join-Path $ROOT "lang") -Filter *.lua | ForEach-Object {
+Get-ChildItem (Join-Path $ROOT "data/lang") -Filter *.lua | ForEach-Object {
     $dest = Join-Path $langDest $_.Name
     if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
 }
-$catDest = Join-Path $DATA_DIR "models.json"
-if (-not (Test-Path $catDest)) { Copy-Item (Join-Path $ROOT "models.json") $catDest }
-Ok "Language scripts: $langDest; model catalog: $catDest"
+Ok "Language scripts: $langDest (add entries in $(Join-Path $DATA_DIR "models.json") to extend the bundled catalog)"
 
 # ── 7. Install binary to user bin directory ───────────────────────────────────
 

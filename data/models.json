@@ -1,0 +1,81 @@
+{
+  "models": [
+    {
+      "name": "bert-base",
+      "mode": "pos",
+      "source": "QCRI/bert-base-multilingual-cased-pos-english",
+      "language": "en",
+      "description": "English, more accurate",
+      "default": true
+    },
+    {
+      "name": "mobilebert",
+      "mode": "pos",
+      "source": "mrm8488/mobilebert-finetuned-pos",
+      "language": "en",
+      "description": "English, faster",
+      "default": true
+    },
+    {
+      "name": "xlmr-es",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-es",
+      "language": "es",
+      "description": "Spanish",
+      "int8": true
+    },
+    {
+      "name": "xlmr-fr",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-fr",
+      "language": "fr",
+      "description": "French",
+      "int8": true
+    },
+    {
+      "name": "xlmr-ru",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-ru",
+      "language": "ru",
+      "description": "Russian",
+      "int8": true
+    },
+    {
+      "name": "multilingual-minilm",
+      "mode": "semantic",
+      "source": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "description": "50+ languages, 384-dim",
+      "default": true
+    },
+    {
+      "name": "en_ewt.electra-base",
+      "mode": "dependency",
+      "source": "en_ewt.electra-base",
+      "language": "en",
+      "description": "English diaparser UD parser",
+      "default": true
+    },
+    {
+      "name": "es_ancora.mbert",
+      "mode": "dependency",
+      "source": "es_ancora.mbert",
+      "language": "es",
+      "description": "Spanish"
+    },
+    {
+      "name": "fr_sequoia.camembert-large",
+      "mode": "dependency",
+      "source": "fr_sequoia.camembert-large",
+      "language": "fr",
+      "description": "French",
+      "int8": true
+    },
+    {
+      "name": "ru_syntagrus.DeepPavlov",
+      "mode": "dependency",
+      "source": "ru_syntagrus.DeepPavlov",
+      "language": "ru",
+      "description": "Russian"
+    }
+  ]
+}

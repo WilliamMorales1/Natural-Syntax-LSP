@@ -8,7 +8,6 @@ Supported models:
   xlmr-es     wietsedv/xlm-roberta-base-ft-udpos28-es  Spanish UPOS (XLM-R base)
   xlmr-fr     wietsedv/xlm-roberta-base-ft-udpos28-fr  French UPOS (XLM-R base)
   xlmr-ru     wietsedv/xlm-roberta-base-ft-udpos28-ru  Russian UPOS (XLM-R base)
-  xlmr-ar     wietsedv/xlm-roberta-base-ft-udpos28-ar  Arabic UPOS (XLM-R base)
   multilingual-minilm
               sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
               384-dim, 12-layer, 50+ languages (semantic mode)
@@ -75,15 +74,20 @@ class _DropsTokenTypeIds(torch.nn.Module):
 
 
 def _load_catalog():
-    """Read models.json: next to the repo root, else the config dir, so no model name lives in this script."""
+    """Merge models.json from the repo, then the config dir; later entries replace same-named ones, as in the server."""
     here = os.path.dirname(os.path.abspath(__file__))
     cfg = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
-    for d in (os.path.join(here, ".."), os.path.join(cfg, "natural-syntax-ls")):
+    merged, found = {}, False
+    for d in (os.path.join(here, "..", "data"), os.path.join(cfg, "natural-syntax-ls")):
         path = os.path.join(d, "models.json")
         if os.path.exists(path):
+            found = True
             with open(path, encoding="utf-8") as f:
-                return json.load(f)["models"]
-    raise SystemExit("models.json not found next to the repo or in the config dir")
+                for m in json.load(f)["models"]:
+                    merged[m["name"]] = m
+    if not found:
+        raise SystemExit("models.json not found next to the repo or in the config dir")
+    return list(merged.values())
 
 
 _CATALOG = _load_catalog()

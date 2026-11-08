@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -65,6 +66,24 @@ func Load(dirs ...string) (Catalog, error) {
 		}
 	}
 	return out, nil
+}
+
+// StemsFor lists model stems for mode in the order to try them for a forced language: models made for lang, then language-neutral ones, then the defaults.
+func (c Catalog) StemsFor(mode, lang string) []string {
+	var out []string
+	add := func(keep func(Model) bool) {
+		for _, m := range c.Models {
+			if m.Mode == mode && keep(m) && !slices.Contains(out, m.Stem()) {
+				out = append(out, m.Stem())
+			}
+		}
+	}
+	if lang != "" {
+		add(func(m Model) bool { return m.Language == lang })
+		add(func(m Model) bool { return m.Language == "" })
+	}
+	add(func(m Model) bool { return m.Default })
+	return out
 }
 
 // DefaultStems lists default model stems for mode in catalog order; an empty mode lists every default.

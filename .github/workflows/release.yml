@@ -61,7 +61,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
-        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+        run: |
+          go build -trimpath -ldflags "-s -w" -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+          ls -lh vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }}
 
       - name: Build binary (windows)
         if: matrix.os == 'windows-latest'
@@ -71,7 +73,9 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: "1"
           CC: gcc
-        run: go build -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+        run: |
+          go build -trimpath -ldflags "-s -w" -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
+          ls -lh vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }}
 
       - name: Download and extract ORT (unix)
         if: matrix.os != 'windows-latest'
@@ -105,7 +109,7 @@ jobs:
       # The server reads language scripts from <exe dir>/lang.
       - name: Bundle language scripts
         shell: bash
-        run: cp -r lang models.json vscode-extension/bin/${{ matrix.platform }}/
+        run: cp -r data/lang data/models.json vscode-extension/bin/${{ matrix.platform }}/
 
       - uses: actions/upload-artifact@v4.6.2
         with:

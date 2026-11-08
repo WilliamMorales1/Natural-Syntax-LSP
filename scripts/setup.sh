@@ -53,7 +53,7 @@ done
 ok "Python: $($PYTHON --version 2>&1)"
 
 # catalog prints one line per models.json entry: name, mode, int8 (0/1), description, tab separated.
-CATALOG="$ROOT/models.json"
+CATALOG="$ROOT/data/models.json"
 [[ -f "$CATALOG" ]] || fail "models.json not found at $CATALOG"
 catalog() {
     "$PYTHON" -c '
@@ -261,11 +261,10 @@ ok "Built: $ROOT/bin/$BIN_NAME"
 # Language scripts: copied per file, never overwriting a user-edited one.
 step "Installing language scripts"
 mkdir -p "$DATA_DIR/lang"
-for f in "$ROOT"/lang/*.lua; do
+for f in "$ROOT"/data/lang/*.lua; do
     [[ -f "$DATA_DIR/lang/$(basename "$f")" ]] || cp "$f" "$DATA_DIR/lang/"
 done
-[[ -f "$DATA_DIR/models.json" ]] || cp "$ROOT/models.json" "$DATA_DIR/models.json"
-ok "Language scripts: $DATA_DIR/lang; model catalog: $DATA_DIR/models.json"
+ok "Language scripts: $DATA_DIR/lang (add entries in $DATA_DIR/models.json to extend the bundled catalog)"
 
 # ── 7. Install binary to user bin directory ────────────────────────────────
 
