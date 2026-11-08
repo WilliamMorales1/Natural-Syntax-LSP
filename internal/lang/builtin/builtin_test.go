@@ -80,10 +80,24 @@ func TestRussianAdjectiveLemmas(t *testing.T) {
 	}
 }
 
+func TestRussianNounVerbLemmas(t *testing.T) {
+	forms := byCode(t, "ru").Wiktionary.Forms
+	for in, want := range map[string]string{
+		"книги": "книга", "столом": "стол", "окна": "окно", "станции": "станция", "возможности": "возможность", "решения": "решение",
+		"делает": "делать", "говорит": "говорить", "читали": "читать", "учится": "учиться", "работают": "работать", "Москвы": "Москва", "Париже": "Париж", "Юрия": "Юрий", "Венгрией": "Венгрия",
+	} {
+		if got := forms(in); !slices.Contains(got, want) {
+			t.Errorf("Forms(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+}
+
 func TestArabicForms(t *testing.T) {
 	forms := byCode(t, "ar").Wiktionary.Forms
 	for in, want := range map[string]string{
 		"المدرسة": "مدرسة", "كَلْب": "كلب", "للعدل": "عدل", "بالمدرسة": "مدرسة", "والكلب": "كلب", "الكَلْب": "كلب",
+		"دمائ": "دماء", "أبناؤ": "أبناء", "مدرست": "مدرسة", "المدرست": "مدرسة",
+		"الادارة": "إدارة", "الختـــامية": "ختامية", "ارتفاعاً": "ارتفاع", "الجماعات": "جماعة", "الامنية": "أمنية",
 	} {
 		if got := forms(in); !slices.Contains(got, want) {
 			t.Errorf("Forms(%q) = %q, want it to contain %q", in, got, want)

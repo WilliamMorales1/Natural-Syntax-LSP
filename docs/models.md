@@ -88,7 +88,7 @@ Measured on the PADT sentences whose words align with the text (int8 model, per 
 | test, 312 sentences, rules tuned here | 89.8 / 90.3 | 84.8 to 90.5% | 39.9 to 82.2% | 93.4 to 92.2% |
 | dev, held out | 82.6 / 86.7 | 84.8 to 89.2% | 45.2 to 79.4% | |
 
-The cost is false splits of rare words and names that start with `و ف ب ل ك` (`وقائية`, `بريطانيا`), which lowers clitic-free words by about a point. Hover looks up the host word, so live Wiktionary hits on the pipeline's words rose from 62% to 72%. Set `arabic_clitics = false` in a copied script to keep written words whole.
+The cost is false splits of rare words and names that start with `و ف ب ل ك` (`وقائية`, `بريطانيا`), which lowers clitic-free words by about a point. Hover looks up the host word, so live Wiktionary hits on the pipeline's words rose from 62% to 72%. Hover forms in `arabic.lua` also restore what a suffix or spelling changes: a seated hamza or `ت` back to `ء` or `ة` (`دمائ` to `دماء`), a dropped hamza on an initial alef (`ادارة` to `إدارة`), tanween alef, tatweel and the sound feminine plural (`جماعات` to `جماعة`), taking UD words from 84% to 90% and the pipeline's words from 78% (the 72% above, rerun 2026-11-08) to 86% on the same 100-word samples. Set `arabic_clitics = false` in a copied script to keep written words whole.
 
 ### Japanese and Chinese dependency parsers
 
@@ -104,9 +104,9 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 | -------- | --- | ----------------- | ----------------- |
 | it | 93% | 90% | proper nouns |
 | pt | 87% | 92% | proper nouns, rare forms |
-| ru | 86% | 98% | proper nouns (was 73% before adjective lemma forms) |
+| ru | 87% | 98% | proper nouns, participles (was 73% before adjective lemma forms; noun and verb endings in `russian.lua` take the tokenizer's own words from 79% to 82%) |
 | de | 85% | 92% | compounds, inflected verbs |
-| ar | 84% | 92% | inflected forms, names (72% of the tokenizer's own words, 62% before clitic splitting) |
+| ar | 90% | 93% | broken plurals, names (86% of the tokenizer's own words, 62% before clitic splitting) |
 | zh | 84% | 91% | rare words, names |
 
 

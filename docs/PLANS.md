@@ -10,12 +10,10 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 
 Ranked by value per effort. Fixes first, experiments next; items that only state a lasting limit move to the docs that describe the behavior.
 
-1. Arabic hover: hamza seat before a suffix (`دمائها` to `دماء`) (Russian and Arabic).
-2. Russian hover: noun and verb lemma forms in `data/lang/russian.lua`, measured with `NSLS_WIKT_EVAL` (Russian and Arabic).
-3. Run the opt-in tests not yet run: langid held-out, Unigram reference, `NSLS_EVAL` for exported models; export ja, zh, ru dependency (Validation).
-4. zh dependency int8 on feed-forward layers only, then static calibration if that fails (Quality gaps).
-5. Portuguese dependency parser trained on UD Portuguese-Bosque with `scripts/train_zh_dependency.py`'s recipe, on Colab (New-language workflow).
-6. Move lasting limits into docs and drop them here: katakana compounds, zh lemmatizer and particle hover, semantic decorations unreadable from the VS Code API, one model per document, semantic homographs, German compounds, Arabic false splits, langid notes; check the Acceptance list against docs and drop it.
+1. Run the opt-in tests not yet run: langid held-out, Unigram reference, `NSLS_EVAL` for exported models; export ja, zh, ru dependency (Validation).
+2. zh dependency int8 on feed-forward layers only, then static calibration if that fails (Quality gaps).
+3. Portuguese dependency parser trained on UD Portuguese-Bosque with `scripts/train_zh_dependency.py`'s recipe, on Colab (New-language workflow).
+4. Move lasting limits into docs and drop them here: katakana compounds, zh lemmatizer and particle hover, semantic decorations unreadable from the VS Code API, one model per document, semantic homographs, German compounds, Arabic false splits, langid notes; check the Acceptance list against docs and drop it.
 
 ## Multilingual
 
@@ -45,13 +43,13 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ## Russian and Arabic
 
-- Russian misses left are proper nouns; noun and verb inflections have no lemmatizer (adjectives do, `data/lang/russian.lua`). German compounds and inflected verbs miss the same way.
-- Arabic clitic splitting falsely splits rare words and names starting with و ف ب ل ك (dev boundary precision 82.6%); a lexicon or a small trained splitter would cut that. Hover misses forms whose hamza seat changes before a suffix (`دمائها` gives `دمائ`).
+- German compounds and inflected verbs miss Wiktionary; Russian misses left are proper nouns and participles.
+- Arabic clitic splitting falsely splits rare words and names starting with و ف ب ل ك (dev boundary precision 82.6%); a lexicon or a small trained splitter would cut that.
 
 ## New-language workflow
 
 - Model switching follows the whole document's language; a mixed-language file gets one model.
-- Arabic hover strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms still miss.
+- Arabic hover misses broken plurals (`اليتامى`) and names.
 - Semantic mode has no POS, so a homograph gets its page's first non-variant section (`faulen` in `faulen Hund` shows the verb "to rot").
 - No Portuguese diaparser parser found; dependency mode has no pt model.
 

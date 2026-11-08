@@ -47,6 +47,68 @@ local function adjective_lemmas(word)
 	return out
 end
 
+-- Noun and verb endings to dictionary forms, longest first; the first matching ending wins per table.
+local NOUN = {
+	{ "остями", { "ость" } }, { "остях", { "ость" } }, { "остям", { "ость" } }, { "остью", { "ость" } }, { "остей", { "ость" } }, { "ости", { "ость" } },
+	{ "ениями", { "ение" } }, { "ениях", { "ение" } }, { "ением", { "ение" } }, { "ения", { "ение" } }, { "ению", { "ение" } }, { "ении", { "ение" } }, { "ений", { "ение" } },
+	{ "иями", { "ия", "ие" } }, { "ия", { "ий", "ие" } }, { "иях", { "ия", "ие" } }, { "ией", { "ия" } }, { "ием", { "ие" } }, { "ию", { "ия", "ие" } }, { "ии", { "ия", "ие" } }, { "ий", { "ия", "ие" } },
+	{ "ами", { "", "а", "о" } }, { "ями", { "ь", "я", "е" } }, { "ах", { "", "а", "о" } }, { "ях", { "ь", "я", "е" } },
+	{ "ам", { "", "а" } }, { "ям", { "ь", "я" } }, { "ов", { "", "о" } }, { "ев", { "ь", "й" } }, { "ей", { "ь", "я" } },
+	{ "ом", { "", "о" } }, { "ой", { "а" } }, { "ою", { "а" } }, { "ем", { "ь", "й", "е" } }, { "ью", { "ь" } },
+	{ "ы", { "", "а" } }, { "у", { "", "а" } }, { "а", { "", "о" } }, { "и", { "а", "ь", "я" } }, { "е", { "", "а", "о" } }, { "ю", { "ь", "я" } }, { "я", { "ь", "е" } },
+}
+local VERB = {
+	{ "ывает", { "ывать" } }, { "ивает", { "ивать" } }, { "ывают", { "ывать" } }, { "ивают", { "ивать" } },
+	{ "ает", { "ать" } }, { "ают", { "ать" } }, { "аешь", { "ать" } }, { "аем", { "ать" } }, { "аете", { "ать" } }, { "аю", { "ать" } },
+	{ "яет", { "ять" } }, { "яют", { "ять" } }, { "яю", { "ять" } }, { "еет", { "еть" } }, { "еют", { "еть" } },
+	{ "ует", { "овать" } }, { "уют", { "овать" } }, { "ую", { "овать" } },
+	{ "ала", { "ать" } }, { "али", { "ать" } }, { "ало", { "ать" } }, { "ял", { "ять" } }, { "яла", { "ять" } }, { "яли", { "ять" } },
+	{ "ела", { "еть" } }, { "ели", { "еть" } }, { "ила", { "ить" } }, { "или", { "ить" } }, { "ило", { "ить" } },
+	{ "ишь", { "ить" } }, { "ите", { "ить" } }, { "ит", { "ить", "еть" } }, { "ят", { "ить", "еть" } }, { "ал", { "ать" } }, { "ил", { "ить" } }, { "ел", { "еть" } },
+}
+local MAX_LEMMAS = 4 -- each candidate costs a request when the word itself misses
+
+local function by_endings(word, rules, min_stem, wrap)
+	local out = {}
+	for _, rule in ipairs(rules) do
+		local ending = rule[1]
+		if endswith(word, ending) then
+			local stem = string.sub(word, 1, #word - #ending)
+			-- One-letter endings need a longer stem: все is not a form of вс.
+			if utf8.len(stem) >= (utf8.len(ending) == 1 and min_stem or 2) then
+				for _, suffix in ipairs(rule[2]) do
+					out[#out + 1] = wrap(stem .. suffix)
+				end
+			end
+			break
+		end
+	end
+	return out
+end
+
+-- Reflexive verbs keep -ся on their headword: учится, учился to учиться.
+local function verb_lemmas(word)
+	for _, refl in ipairs({ "ся", "сь" }) do
+		if endswith(word, refl) then
+			return by_endings(string.sub(word, 1, #word - #refl), VERB, 2, function(v)
+				return v .. "ся"
+			end)
+		end
+	end
+	return by_endings(word, VERB, 2, function(v)
+		return v
+	end)
+end
+
+local function noun_lemmas(word)
+	if endswith(word, "ся") or endswith(word, "сь") then
+		return {}
+	end
+	return by_endings(word, NOUN, MIN_STEM, function(v)
+		return v
+	end)
+end
+
 return {
 	code = "ru",
 	model_prefixes = { "xlmr_ru", "ru_syntagrus" },
@@ -56,8 +118,22 @@ return {
 		-- Headwords carry no stress marks, and ё words are filed under ё though texts write е.
 		forms = function(word)
 			local function with_lemmas(out)
-				for _, lemma in ipairs(adjective_lemmas(lowerfirst(word) or word)) do
-					out[#out + 1] = lemma
+				local base = lowerfirst(word) or word
+				local groups = { adjective_lemmas(base), verb_lemmas(base), noun_lemmas(base) }
+				if base ~= word then -- proper nouns keep their capital: Париже to Париж
+					table.insert(groups, 3, noun_lemmas(word))
+				end
+				local added, seen = 0, {}
+				-- Round-robin, since the hook has no POS to say which reading is right.
+				for i = 1, 3 do
+					for _, lemmas in ipairs(groups) do
+						local lemma = lemmas[i]
+						if lemma and added < MAX_LEMMAS and lemma ~= base and not seen[lemma] then
+							seen[lemma] = true
+							added = added + 1
+							out[#out + 1] = lemma
+						end
+					end
 				end
 				return out
 			end
