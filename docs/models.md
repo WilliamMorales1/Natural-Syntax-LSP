@@ -109,3 +109,17 @@ The XLM-R Chinese model tags the multi-character pieces of its SentencePiece voc
 Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
 
 diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` trains one on UD Chinese-GSD (Traditional) and GSDSimp (CC BY-SA 4.0) with `hfl/chinese-roberta-wwm-ext` as encoder (about 20 minutes on a Colab T4). The parser works on characters and finds word boundaries itself: the tokenizer's units (one Han character, one punctuation mark, one letter/digit run) are the parser tokens, and a multi-unit word links each unit but the last to the last with the relation `wp`. The server merges `wp` chains into whole-word tokens, and the last unit supplies the word's head and relation, so no separate segmenter is needed and labels are native UD (no mapping). Training drops about 5% of sentences whose units straddle two gold words. On the first 300 test sentences, counting a word only when its span matches the gold word: UAS/LAS 85.6 / 82.3 on GSD and 85.5 / 82.2 on GSDSimp. int8 drops that to about 80 / 76, so keep fp32 (~470 MB). Setup exports it from the Hugging Face repo, which also holds the training script.
+
+## Definition lookup coverage
+
+`NSLS_WIKT_EVAL=1 go test ./internal/wiktionary -run TestLiveAccuracy -v` looks up 100 unique content words per language from the UD test treebank (POS mode) and counts the words with a Wiktionary definition (hit) and, of those, how many matched the model's POS section.
+
+| Language | Hit | POS section match | Misses are mostly |
+| -------- | --- | ----------------- | ----------------- |
+| it | 93% | 90% | proper nouns |
+| pt | 87% | 92% | proper nouns, rare forms |
+| ru | 86% | 98% | proper nouns (was 73% before adjective lemma forms) |
+| de | 85% | 92% | compounds, inflected verbs |
+| ar | 83% | 92% | words with no clitic-free page |
+| zh | 84% | 91% | rare words, names |
+

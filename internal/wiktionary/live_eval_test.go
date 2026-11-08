@@ -33,6 +33,10 @@ var udFiles = map[string]string{
 	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
 	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
 	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
+	"ar": "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
+	"de": "UD_German-GSD/master/de_gsd-ud-test.conllu",
+	"it": "UD_Italian-ISDT/master/it_isdt-ud-test.conllu",
+	"pt": "UD_Portuguese-GSD/master/pt_gsd-ud-test.conllu",
 }
 
 type udWord struct{ form, upos, rel string }
@@ -177,7 +181,8 @@ func TestLiveAccuracy(t *testing.T) {
 	tokFiles := map[string]string{
 		"en": "bert_base_vocab.txt", "es": "xlmr_es_tokenizer.json", "fr": "xlmr_fr_tokenizer.json",
 		"ja": "multilingual_minilm_tokenizer.json", "zh": "multilingual_minilm_tokenizer.json",
-		"ru": "xlmr_ru_tokenizer.json",
+		"ru": "xlmr_ru_tokenizer.json", "ar": "xlmr_ar_tokenizer.json", "de": "xlmr_de_tokenizer.json",
+		"it": "xlmr_it_tokenizer.json", "pt": "xlmr_pt_tokenizer.json",
 	}
 
 	var out *os.File

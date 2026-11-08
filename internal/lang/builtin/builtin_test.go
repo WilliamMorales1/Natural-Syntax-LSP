@@ -66,6 +66,20 @@ func TestRussianForms(t *testing.T) {
 	}
 }
 
+func TestRussianAdjectiveLemmas(t *testing.T) {
+	forms := byCode(t, "ru").Wiktionary.Forms
+	for in, want := range map[string]string{
+		"неудачного": "неудачный", "спортивной": "спортивный", "Советского": "советский", "хорошего": "хороший", "зарубежных": "зарубежный",
+	} {
+		if got := forms(in); !slices.Contains(got, want) {
+			t.Errorf("Forms(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+	if got := forms("дом"); len(got) != 0 {
+		t.Errorf("Forms(дом) = %q, want none", got)
+	}
+}
+
 func TestArabicForms(t *testing.T) {
 	forms := byCode(t, "ar").Wiktionary.Forms
 	for in, want := range map[string]string{
