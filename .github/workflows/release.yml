@@ -75,7 +75,7 @@ jobs:
           CC: gcc
         run: |
           go build -trimpath -ldflags "-s -w" -o vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }} ./cmd/natural-syntax-ls/
-          ls -lh vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }}
+          Get-Item vscode-extension/bin/${{ matrix.platform }}/${{ matrix.binary }}
 
       - name: Download and extract ORT (unix)
         if: matrix.os != 'windows-latest'
