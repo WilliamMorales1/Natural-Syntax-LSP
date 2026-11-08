@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"math"
 	"os"
 	"slices"
@@ -57,7 +58,12 @@ func loadLabels(labelsPath string) ([]postag.PartOfSpeech, []bool, []string, err
 		cont[i] = postag.IsContinuation(tag)
 		descs[i] = postag.LabelDescription(tag)
 	}
-	// unknown tags treated as O
+	// Unknown labels decode as O, so name them rather than lose the words silently.
+	for _, tag := range tags {
+		if _, ok := postag.ParseLabel(tag); !ok {
+			slog.Warn("unknown POS label decodes as O", "label", tag, "labels", labelsPath)
+		}
+	}
 	return decodeEnumList(tags, postag.ParseLabel, postag.O), cont, descs, nil
 }
 

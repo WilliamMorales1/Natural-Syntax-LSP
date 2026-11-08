@@ -122,3 +122,23 @@ func TestDescriptionIsLanguageNeutral(t *testing.T) {
 		}
 	}
 }
+
+func TestParseLabelEAGLESAndCKIP(t *testing.T) {
+	for label, want := range map[string]PartOfSpeech{
+		"NCMS000": NN, "NP00000": NNP, "VMIP3S0": VB, "VAIP3S0": MD, "AQ0CS0": JJ, "RG": RB,
+		"DA0MS0": DT, "PP3CNA00": PRP, "CC": CC, "CS": IN, "SP": IN, "Z": CD, "Fc": O, "Zm": CD,
+		"Na": NN, "Nb": NNP, "Nh": PRP, "Neu": CD, "VC": VB, "VH": VB, "DE": RP, "D": RB, "P": IN,
+		"COMMACATEGORY": O, "Cbb": IN, "FW": FW, "B-Na": NN,
+	} {
+		got, ok := ParseLabel(label)
+		if !ok || got != want {
+			t.Errorf("ParseLabel(%q) = %v, %v; want %v", label, got, ok, want)
+		}
+	}
+	if _, ok := ParseLabel("???"); ok {
+		t.Error("unknown label accepted")
+	}
+	if d := LabelDescription("NCMS000"); d != "Noun" {
+		t.Errorf("LabelDescription = %q", d)
+	}
+}

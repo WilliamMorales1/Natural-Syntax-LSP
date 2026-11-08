@@ -162,7 +162,7 @@ var upos = map[string]PartOfSpeech{
 	"SCONJ": IN, "SYM": SYM, "VERB": VB, "X": FW,
 }
 
-// ParseLabel maps a model label, Penn or Universal, to a PartOfSpeech; a B-/I- chunk prefix is ignored and compound labels such as "VERB+AUX" use their first part.
+// ParseLabel maps a model label, Penn, Universal, EAGLES or CKIP, to a PartOfSpeech; a B-/I- chunk prefix is ignored and compound labels such as "VERB+AUX" use their first part.
 func ParseLabel(label string) (PartOfSpeech, bool) {
 	if p, ok := ParsePartOfSpeech(label); ok {
 		return p, true
@@ -171,8 +171,11 @@ func ParseLabel(label string) (PartOfSpeech, bool) {
 		label = label[2:]
 	}
 	head, _, _ := strings.Cut(label, "+")
-	p, ok := upos[head]
-	return p, ok
+	u, ok := universalOf(head)
+	if !ok {
+		return O, false
+	}
+	return upos[u], true
 }
 
 // IsContinuation reports whether label is an I- chunk label, which extends the previous word.
@@ -186,9 +189,13 @@ var uposNames = map[string]string{
 
 // LabelDescription returns language-neutral hover wording for a Universal POS label, or "" for a Penn label so English output keeps its Penn wording.
 func LabelDescription(label string) string {
+	if _, penn := ParsePartOfSpeech(label); penn {
+		return ""
+	}
 	if len(label) > 2 && (label[:2] == "B-" || label[:2] == "I-") {
 		label = label[2:]
 	}
 	head, _, _ := strings.Cut(label, "+")
-	return uposNames[head]
+	u, _ := universalOf(head)
+	return uposNames[u]
 }
