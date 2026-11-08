@@ -8,27 +8,26 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows checks (10) run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports (18, 14) run on Colab, VS Code is installed for 9.
 
-1. Particle senses: ja `は`, `が` and zh `的` pick the wrong Wiktionary entry. Small, in the code just touched.
-2. Hover returns a result for only 18 of 20 positions in semantic mode. Likely a real bug.
-3. Unknown labels decode as `O`; map EAGLES and CKIP tags onto Universal classes.
-4. Run `go test ./...` and the opt-in tests before any language counts as supported.
-5. Hidden size inferred from "minilm" in the file name: use explicit metadata.
-6. Model slug rule duplicated in Python, PowerShell, bash and JS: one source.
-7. Record license and tag inventory per model in `docs/models.md`.
-8. ja and zh dependency: full GSD test set, then hover and semantic-token check.
-9. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-10. Test `setup.ps1` and the Lua script loading on Windows.
-11. Auto-detect never switches the model (German file gets English tags).
-12. Arabic hover: strip `ال` and tashkeel.
-13. Wiktionary lemma lookup for ru and ar inflected forms.
-14. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-15. Evaluate ja int8 POS with kagome words.
-16. Katakana pieces in semantic mode show one color per piece.
-17. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-18. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-19. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-20. Benchmark on another platform, with hover on.
-21. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Hover returns a result for only 18 of 20 positions in semantic mode. Likely a real bug.
+2. Unknown labels decode as `O`; map EAGLES and CKIP tags onto Universal classes.
+3. Run `go test ./...` and the opt-in tests before any language counts as supported.
+4. Hidden size inferred from "minilm" in the file name: use explicit metadata.
+5. Model slug rule duplicated in Python, PowerShell, bash and JS: one source.
+6. Record license and tag inventory per model in `docs/models.md`.
+7. ja and zh dependency: full GSD test set, then hover and semantic-token check.
+8. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
+9. Test `setup.ps1` and the Lua script loading on Windows.
+10. Auto-detect never switches the model (German file gets English tags).
+11. Arabic hover: strip `ال` and tashkeel.
+12. Wiktionary lemma lookup for ru and ar inflected forms.
+13. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+14. Evaluate ja int8 POS with kagome words.
+15. Katakana pieces in semantic mode show one color per piece.
+16. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+17. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+18. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+19. Benchmark on another platform, with hover on.
+20. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -50,7 +49,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ### Definition lookup
 
 - Hover in Neovim resolves ja and zh words; kagome and the zh model already split `私は` and `学生们的`, so the ja lemma fallback and zh prefix trimming only cover pieces that still carry a particle or suffix (unit-tested, not seen in an editor). zh has no lemmatizer; `-tags nojaseg` builds have no ja lemmas.
-- Particles pick the wrong sense: ja `は`, `が` show the kana syllable entry, zh `的` shows "bright; clear". Prefer particle/grammar senses when the POS tag is Adposition or Particle.
 - Check ja/zh hover in VS Code.
 
 ### Export and setup

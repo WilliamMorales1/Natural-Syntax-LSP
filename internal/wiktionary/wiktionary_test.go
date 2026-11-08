@@ -196,3 +196,23 @@ func TestNegativeCache(t *testing.T) {
 		t.Errorf("transient failure cached: %d fetches", calls)
 	}
 }
+
+func TestParticleSenseRanking(t *testing.T) {
+	ja := []entry{
+		{PartOfSpeech: "Syllable", Language: "Japanese", Definitions: []sense{{"The hiragana syllable は"}}},
+		{PartOfSpeech: "Particle", Language: "Japanese", Definitions: []sense{{"marks the topic"}}},
+	}
+	if def, _, m := pickDef(ja, "Preposition", false); def != "marks the topic" || !m {
+		t.Errorf("ja = %q %v", def, m)
+	}
+	zh := []entry{
+		{PartOfSpeech: "Hanzi", Language: "Chinese", Definitions: []sense{{"bright; clear"}}},
+		{PartOfSpeech: "Hanzi", Language: "Chinese", Definitions: []sense{{"genitive case marker"}}},
+	}
+	if def, _, _ := pickDef(zh, "Particle", false); def != "genitive case marker" {
+		t.Errorf("zh = %q", def)
+	}
+	if def, _, _ := pickDef(zh, "Noun", false); def != "bright; clear" {
+		t.Errorf("zh noun = %q", def)
+	}
+}

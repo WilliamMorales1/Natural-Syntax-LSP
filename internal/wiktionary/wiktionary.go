@@ -306,7 +306,9 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 		lpos := strings.ToLower(e.PartOfSpeech)
 		switch {
 		case strings.EqualFold(e.PartOfSpeech, target), target == "Noun" && lpos == "proper noun",
-			(target == "Verb" || target == "Adjective") && lpos == "participle":
+			(target == "Verb" || target == "Adjective") && lpos == "participle",
+			target == "Preposition" && (lpos == "particle" || lpos == "postposition"),
+			(target == "Particle" || target == "Preposition") && lpos == "hanzi" && grammaticalGloss(e):
 			addTo(&matched, e)
 		case lowPriPOS[lpos]:
 			addTo(&lowPri, e)
@@ -334,6 +336,18 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 		}
 	}
 	return "", "", false
+}
+
+var grammarGlossRe = regexp.MustCompile(`(?i)\b(?:marker|particle|nominali[sz]er|auxiliary|possessive|genitive|topic|complementi[sz]er)\b`)
+
+// grammaticalGloss reports whether an entry's first senses read as a function word. Chinese pages label every sense "Hanzi", so the gloss is the only signal.
+func grammaticalGloss(e *entry) bool {
+	for _, d := range e.Definitions[:min(len(e.Definitions), 3)] {
+		if grammarGlossRe.MatchString(stripHTML(d.Definition)) {
+			return true
+		}
+	}
+	return false
 }
 
 // lowPriPOS are Wiktionary sections ranked after every other non-matching section.
