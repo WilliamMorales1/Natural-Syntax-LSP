@@ -107,6 +107,18 @@ func (s *idleSession) expire() {
 	slog.Info("model unloaded while idle", "model", filepath.Base(s.path), "idle", d)
 }
 
+// unload frees the weights now; the next Run reloads them.
+func (s *idleSession) unload() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.s == nil {
+		return
+	}
+	s.s.Destroy()
+	s.s = nil
+	slog.Info("model unloaded until used", "model", filepath.Base(s.path))
+}
+
 // loaded reports whether the session currently holds its weights.
 func (s *idleSession) loaded() bool {
 	s.mu.RLock()

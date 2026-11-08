@@ -70,6 +70,11 @@ func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (
 	return &DependencyModel{session: session, tok: newTokHolder(tok, vocabPath), rels: rels, wordPart: max(wordPart, 0)}, nil
 }
 
+// Unload frees the model's weights until its next prediction.
+func (m *DependencyModel) Unload() { m.session.unload() }
+
+func (m *DependencyModel) loadedSession() bool { return m.session.loaded() }
+
 // Close releases the ORT session and environment.
 func (m *DependencyModel) Close() error {
 	err := m.session.Destroy()

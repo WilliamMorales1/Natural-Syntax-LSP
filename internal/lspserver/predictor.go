@@ -26,3 +26,8 @@ type embedder interface {
 type deprelModel interface {
 	UsesDeprel() bool
 }
+
+// unloader is a predictor that can free its weights until next used.
+type unloader interface {
+	Unload()
+}

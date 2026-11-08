@@ -235,6 +235,20 @@ func (dr *documentRegistry) deferItem(item *textItem) {
 	store.queued, store.queuedWords, store.queuedModel = nil, nil, nil
 }
 
+// uses reports whether any document is or will be analysed by m.
+func (dr *documentRegistry) uses(m predictor) bool {
+	used := false
+	dr.do(func() {
+		for _, st := range dr.stores {
+			if st.model == m || st.queuedModel == m {
+				used = true
+				return
+			}
+		}
+	})
+	return used
+}
+
 // reset re-analyses every document from scratch, e.g. after tokenizer rules changed.
 func (dr *documentRegistry) reset() {
 	dr.do(func() {

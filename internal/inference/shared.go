@@ -162,6 +162,11 @@ func (h *tokHolder) reload(opts ...tokenizer.Option) error {
 	return nil
 }
 
+// Unload frees the model's weights until its next prediction.
+func (m *baseModel) Unload() { m.session.unload() }
+
+func (m *baseModel) loadedSession() bool { return m.session.loaded() }
+
 // Close releases the ORT session and environment.
 func (m *baseModel) Close() error {
 	err := m.session.Destroy()

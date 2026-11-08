@@ -47,6 +47,35 @@ func TestIdleUnloadReloads(t *testing.T) {
 	})
 }
 
+// TestUnloadReloads frees a model's weights on request and requires identical output once it reloads.
+func TestUnloadReloads(t *testing.T) {
+	words := tokenizer.BasicTokenize("The cat sat on the mat.")
+	forEachModel(t, func(t *testing.T, m Predictor) {
+		u, ok := m.(interface {
+			Unload()
+			loadedSession() bool
+		})
+		if !ok {
+			t.Skipf("no session on %T", m)
+		}
+		before, err := m.PredictChunk(words)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u.Unload()
+		if u.loadedSession() {
+			t.Fatal("session loaded after Unload")
+		}
+		after, err := m.PredictChunk(words)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !u.loadedSession() || !slices.Equal(before, after) {
+			t.Fatalf("reload changed output or did not load: %v vs %v", before, after)
+		}
+	})
+}
+
 // TestIdleUnloadConcurrent races predictions against a session that unloads every few milliseconds.
 func TestIdleUnloadConcurrent(t *testing.T) {
 	SetIdleUnload(3 * time.Millisecond)

@@ -367,6 +367,10 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	for _, item := range queued {
 		reg.update(item)
 	}
+	// With switching, the open documents may all be in other languages; their models should not sit beside unused English weights.
+	if u, ok := pred.(unloader); ok && s.switcher != nil && !reg.uses(pred) {
+		u.Unload()
+	}
 	close(s.ready)
 	// Tell VS Code to re-request semantic tokens for all open documents.
 	s.sendRequest("workspace/semanticTokens/refresh")
