@@ -102,6 +102,11 @@ jobs:
           Write-Host "Copying $($lib.FullName)"
           Copy-Item $lib.FullName "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}"
 
+      # The server reads language scripts from <exe dir>/lang.
+      - name: Bundle language scripts
+        shell: bash
+        run: cp -r lang vscode-extension/bin/${{ matrix.platform }}/lang
+
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: bin-${{ matrix.platform }}
@@ -138,6 +143,7 @@ jobs:
           mkdir -p $D
           go build -tags english -trimpath -ldflags "-s -w" -o $D/${{ matrix.binary }} ./cmd/natural-syntax-ls/
           cp LICENSE vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }} $D/
+          cp -r lang $D/lang
           chmod +x $D/${{ matrix.binary }}
           tar czf dist/natural-syntax-ls_${{ matrix.platform }}_english.tar.gz -C $D .
 
@@ -154,6 +160,7 @@ jobs:
           New-Item -ItemType Directory -Force $d
           go build -tags english -trimpath -ldflags "-s -w" -o "$d/${{ matrix.binary }}" ./cmd/natural-syntax-ls/
           Copy-Item LICENSE, "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}" $d/
+          Copy-Item lang "$d/lang" -Recurse
           Compress-Archive -Path "$d/*" -DestinationPath dist/natural-syntax-ls_${{ matrix.platform }}_english.zip
 
       - uses: actions/upload-artifact@v4.6.2

@@ -353,9 +353,10 @@ Arabic scores whole written words against PADT heads at matching word starts, so
 
 ## Progress
 
-- Steps 1-4, 6-8 done. `internal/lang/luaload` (gopher-lua v1.1.1, pure Go) builds `lang.Language` from scripts; `internal/lang/scripts/*.lua` embeds English, French, Spanish, Russian, Arabic. Only Japanese (kagome) and Chinese (tables) stay Go packages, in `internal/lang/builtin/native.go`; `-tags english` drops both. Go versions of the five ported languages deleted after a 5000-input differential run (ru/ar forms, en rewrite) matched; tests moved to `internal/lang/builtin/builtin_test.go`.
+- Steps 1-4, 6-8 done. `internal/lang/luaload` (gopher-lua v1.1.1, pure Go) builds `lang.Language` from scripts; `lang/*.lua` holds English, French, Spanish, Russian, Arabic. Only Japanese (kagome) and Chinese (tables) stay Go packages, in `internal/lang/builtin/native.go`; `-tags english` drops both. Go versions of the five ported languages deleted after a 5000-input differential run (ru/ar forms, en rewrite) matched; tests moved to `internal/lang/builtin/builtin_test.go`.
 - Search path: embedded, `<model dir>/lang`, `~/.config/natural-syntax-ls/lang`, `--lang-dir` / `naturalSyntaxLs.langDir`; later overrides by `code`. A broken script is logged and skipped.
 - French elision stays native as the named tokenizer flag `elisions` (clitic and word lists come from Lua), so no French string remains in Go.
 - Sandbox: no `os io package debug coroutine load* dofile require print`; `string.rep` capped; load 2 s, hook 200 ms via context; tests in `luaload_test.go`. Heap cannot be capped from outside, documented.
 - gopher-lua quirk: `x = (string.gsub(...))` on a parameter miscompiles; assign through a new local.
 - Open: step 5 (model metadata: labels, UPOS mapping, hidden size, `export_model.py` emitting `<model>.lua`), per-language startup timing, `Reload` on file change, Windows check.
+- Scripts moved out of the binary: `lang/*.lua` in the repo, installed by `setup.sh`/`setup.ps1` into the config dir (no overwrite), bundled by release archives and the extension as `<exe dir>/lang`. Embed and `Seed` removed. Search path now `<exe dir>/lang`, `<model dir>/lang`, config `lang`, `--lang-dir`. A binary with no scripts has only ja and zh.

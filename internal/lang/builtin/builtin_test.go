@@ -11,9 +11,12 @@ import (
 	"natural-syntax-ls/internal/tokenizer"
 )
 
+// repoLang is the shipped script directory, which setup scripts copy into the config dir.
+const repoLang = "../../../lang"
+
 func byCode(t *testing.T, code string, dirs ...string) lang.Language {
 	t.Helper()
-	for _, l := range Languages(dirs...) {
+	for _, l := range Languages(append([]string{repoLang}, dirs...)...) {
 		if l.Code == code {
 			return l
 		}
@@ -24,7 +27,7 @@ func byCode(t *testing.T, code string, dirs ...string) lang.Language {
 
 func TestScriptedLanguagesLoad(t *testing.T) {
 	var codes []string
-	for _, l := range Languages() {
+	for _, l := range Languages(repoLang) {
 		codes = append(codes, l.Code)
 	}
 	for _, want := range []string{"en", "fr", "es", "ru", "ar"} {
@@ -38,7 +41,7 @@ func TestScriptedLanguagesLoad(t *testing.T) {
 }
 
 func TestForModel(t *testing.T) {
-	langs := Languages()
+	langs := Languages(repoLang)
 	for in, want := range map[string]string{
 		"xlmr_ru_pos.onnx": "ru", "/m/XLMR_RU_int8.onnx": "ru", "ru_syntagrus.onnx": "ru",
 		"xlmr_ar_pos.onnx": "ar", "ar_padt.onnx": "ar", "xlmr_es.onnx": "es", "es_ancora.mbert.onnx": "es",
@@ -138,7 +141,7 @@ func TestDirOverridesByCode(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "bad.lua"), []byte(`return {code = 1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	langs := Languages(dir)
+	langs := Languages(repoLang, dir)
 	if got := lang.ForModel(langs, "custom_es.onnx"); got != "es" {
 		t.Errorf("override not applied: %q", got)
 	}
@@ -147,28 +150,5 @@ func TestDirOverridesByCode(t *testing.T) {
 	}
 	if got := lang.ForModel(langs, "xlmr_fr.onnx"); got != "fr" {
 		t.Errorf("fr lost: %q", got)
-	}
-}
-
-func TestSeedKeepsExistingFiles(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "lang")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mine := filepath.Join(dir, "french.lua")
-	if err := os.WriteFile(mine, []byte(`return {code = "fr"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := Seed(dir); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(mine); string(b) != `return {code = "fr"}` {
-		t.Errorf("existing file overwritten: %q", b)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "russian.lua")); err != nil {
-		t.Error(err)
-	}
-	if got := byCode(t, "ru", dir); got.Wiktionary == nil {
-		t.Error("seeded russian.lua did not load")
 	}
 }

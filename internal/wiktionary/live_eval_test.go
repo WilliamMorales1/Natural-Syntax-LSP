@@ -161,7 +161,7 @@ func TestLiveAccuracy(t *testing.T) {
 	if v := os.Getenv("NSLS_WIKT_N"); v != "" {
 		fmt.Sscan(v, &n)
 	}
-	wl := nlang.WiktionaryLangs(builtin.Languages())
+	wl := nlang.WiktionaryLangs(builtin.Languages("../../lang"))
 	if os.Getenv("NSLS_WIKT_NOFORMS") != "" { // baseline without the Forms hooks
 		for i := range wl {
 			wl[i].Forms = nil
@@ -274,7 +274,7 @@ func TestLiveAccuracy(t *testing.T) {
 		run("semantic", sample, func(udWord) (postag.PartOfSpeech, postag.Deprel) { return postag.O, postag.DepRoot }, false)
 
 		// pipeline: words the shipped tokenizer cuts from raw sentences, looked up with no tag.
-		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]), nlang.TokenizerOptions(builtin.Languages())...)
+		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]), nlang.TokenizerOptions(builtin.Languages("../../lang"))...)
 		if err != nil {
 			t.Logf("%s: pipeline tokens skipped: %v", lang, err)
 			continue

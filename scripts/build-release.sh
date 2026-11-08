@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Language scripts are copied to dist/lang and must ship next to the binary.
 # Builds two server variants into dist/: full (all languages) and english (no kagome dictionary, no CJK tables).
 # Usage: ./scripts/build-release.sh [version]
 set -euo pipefail
@@ -10,6 +11,7 @@ EXT=""
 PLATFORM="$(go env GOOS)-$(go env GOARCH)"
 
 mkdir -p dist
+cp -r lang dist/
 for variant in full english; do
     tags=""
     [ "$variant" = "english" ] && tags="english"

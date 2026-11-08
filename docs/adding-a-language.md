@@ -1,8 +1,8 @@
 # Adding a language
 
-A language is a Lua script. Drop `<code>.lua` into `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, or the directory named by `naturalSyntaxLs.langDir` (`--lang-dir`), and restart the server. No Go build needed. Later directories override earlier ones, and all override the built-in scripts, by `code`.
+A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; restart the server after an edit.
 
-On first start the server copies the embedded defaults (`internal/lang/scripts/*.lua`) into `~/.config/natural-syntax-ls/lang/` without overwriting existing files, so edit them there. Delete a file to get the current default back. Built-in scripts: English, French, Spanish, Russian, Arabic. Built in as Go packages, because they need native assets: Japanese (kagome dictionary) and Chinese (Simplified/Traditional tables). Use Go only when a hook needs a native library or big table; `-tags english` drops those two.
+The shipped scripts are in `lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags english` drops both.
 
 Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
 
@@ -56,7 +56,7 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 ## Steps
 
 1. Write `<code>.lua`. A language with no special rules is only `code`, `model_prefixes` and `wiktionary.code`/`sections` (see `spanish.lua`).
-2. To ship it built in, put it in `internal/lang/scripts/` and add tests to `internal/lang/builtin/builtin_test.go`.
+2. To ship it built in, put it in `lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
 3. Not Lua, one line each:
    - `scripts/export_model.py`: entry in `POS_MODELS` (and a diaparser name for dependency).
    - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list.
@@ -65,7 +65,7 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 
 ## Worked example: French
 
-French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `internal/lang/scripts/french.lua`.
+French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `lang/french.lua`.
 
 Spanish needed only prefixes and a Wiktionary section. Russian and Arabic needed `forms` (stress marks and `ё`; tashkeel and tatweel). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
 

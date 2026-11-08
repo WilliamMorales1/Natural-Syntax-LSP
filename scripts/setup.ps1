@@ -220,6 +220,16 @@ if ($LASTEXITCODE -ne 0) { Fail "go build failed." }
 Pop-Location
 Ok "Built: $exePath"
 
+# Language scripts: copied per file, never overwriting a user-edited one.
+Step "Installing language scripts"
+$langDest = Join-Path $DATA_DIR "lang"
+New-Item -ItemType Directory -Force $langDest | Out-Null
+Get-ChildItem (Join-Path $ROOT "lang") -Filter *.lua | ForEach-Object {
+    $dest = Join-Path $langDest $_.Name
+    if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
+}
+Ok "Language scripts: $langDest"
+
 # ── 7. Install binary to user bin directory ───────────────────────────────────
 
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\natural-syntax-ls"

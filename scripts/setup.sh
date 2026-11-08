@@ -303,6 +303,14 @@ rm -f "$ROOT/natural-syntax-ls.exe" "$ROOT/natural-syntax-ls.exe~" "$ROOT/natura
 (cd "$ROOT" && go build -o "bin/$BIN_NAME" ./cmd/natural-syntax-ls/)
 ok "Built: $ROOT/bin/$BIN_NAME"
 
+# Language scripts: copied per file, never overwriting a user-edited one.
+step "Installing language scripts"
+mkdir -p "$DATA_DIR/lang"
+for f in "$ROOT"/lang/*.lua; do
+    [[ -f "$DATA_DIR/lang/$(basename "$f")" ]] || cp "$f" "$DATA_DIR/lang/"
+done
+ok "Language scripts: $DATA_DIR/lang"
+
 # ── 7. Install binary to user bin directory ────────────────────────────────
 
 INSTALL_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
