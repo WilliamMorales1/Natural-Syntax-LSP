@@ -5,7 +5,7 @@
 - [Installation](install.md): export models, install a release, build from source.
 - [Features](features.md): the three modes, hover, language detection.
 - [Settings](settings.md): VS Code settings, server flags, initialization options.
-- [Neovim](neovim.md): client config, `:NSMode`, `:NSLang`.
+- [Neovim](neovim.md): plugin install, `:NSMode`, `:NSLang`, optional linguistic palette.
 - [Tags](tags.md): POS classes and UD relations, with their token types.
 - [Models](models.md): catalog, licenses, exporting other models.
 - [Examples](examples/): sample text per language.

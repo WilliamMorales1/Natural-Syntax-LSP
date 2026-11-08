@@ -269,15 +269,37 @@ mkdir -p "$DATA_DIR/lang"
 for f in "$ROOT"/data/lang/*.lua; do
     [[ -f "$DATA_DIR/lang/$(basename "$f")" ]] || cp "$f" "$DATA_DIR/lang/"
 done
-ok "Language scripts: $DATA_DIR/lang (add entries in $DATA_DIR/models.json to extend the bundled catalog)"
+ok "Language scripts: $DATA_DIR/lang"
 
 # ── 7. Install binary to user bin directory ────────────────────────────────
+#
+# The server reads the bundled catalog from beside its real path, so the
+# binary and models.json share one directory and PATH gets a symlink, the
+# same layout as the release archive. Your own entries go in
+# $DATA_DIR/models.json, which re-running setup never touches.
 
 INSTALL_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp "$ROOT/bin/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
-ok "Installed: $INSTALL_DIR/$BIN_NAME"
+if [[ "$BIN_NAME" == *.exe ]]; then
+    # Symlinks under MSYS/Cygwin are copies, so the catalog sits in the bin directory itself.
+    SHARE_DIR="$INSTALL_DIR"
+else
+    SHARE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/natural-syntax-ls"
+fi
+mkdir -p "$SHARE_DIR"
+cp "$ROOT/data/models.json" "$SHARE_DIR/models.json"
+if [[ "$SHARE_DIR" != "$INSTALL_DIR" ]]; then
+    # Copy then rename: overwriting a binary a running editor still uses fails with "text file busy".
+    cp "$ROOT/bin/$BIN_NAME" "$SHARE_DIR/$BIN_NAME.new"
+    mv -f "$SHARE_DIR/$BIN_NAME.new" "$SHARE_DIR/$BIN_NAME"
+    ln -sfn "$SHARE_DIR/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
+    ok "Installed: $SHARE_DIR/$BIN_NAME (linked from $INSTALL_DIR)"
+else
+    cp "$ROOT/bin/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
+    ok "Installed: $INSTALL_DIR/$BIN_NAME"
+fi
+ok "Model catalog: $SHARE_DIR/models.json (add your own entries in $DATA_DIR/models.json)"
 case ":$PATH:" in
 *":$INSTALL_DIR:"*) ;;
 *) echo "    WARNING: $INSTALL_DIR is not on your PATH. Add it to use 'natural-syntax-ls' by name." ;;
@@ -289,7 +311,13 @@ echo
 echo "Done!"
 echo
 echo "Server binary: $INSTALL_DIR/$BIN_NAME"
-echo "(Set naturalSyntaxLs.serverPath in VS Code to this to use it instead of the bundled one.)"
+echo "Model files:   $DATA_DIR"
 echo
-echo "Model files are in: $DATA_DIR"
-echo "The extension finds them automatically."
+echo "VS Code: the extension finds the model files itself. To use this binary"
+echo "  instead of the bundled one, set naturalSyntaxLs.serverPath to it."
+if command -v nvim &>/dev/null; then
+    echo
+    echo "Neovim 0.11+: load the plugin from this checkout (docs/neovim.md)."
+    echo "  lazy.nvim:   { dir = \"$ROOT\", main = \"natural_syntax_ls\", opts = {} }"
+    echo "  no manager:  vim.opt.rtp:append(\"$ROOT\"); require(\"natural_syntax_ls\").setup()"
+fi

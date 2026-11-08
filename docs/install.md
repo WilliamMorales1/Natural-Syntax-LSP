@@ -28,8 +28,9 @@ On Windows: `scripts/setup.ps1 -Model <name>` and `-List`.
 The script also:
 
 - downloads the ONNX Runtime library;
-- copies `data/lang/` and `data/models.json` into the config dir, keeping files you edited;
-- builds the server and installs it to `~/.local/bin` (`$XDG_BIN_HOME` if set; Windows: `%LOCALAPPDATA%\Programs\natural-syntax-ls`, added to your `PATH`).
+- copies `data/lang/` into the config dir, keeping files you edited;
+- builds the server and installs it with `models.json` beside it: `~/.local/share/natural-syntax-ls/`, linked from `~/.local/bin` (`$XDG_DATA_HOME`, `$XDG_BIN_HOME` if set; Windows: `%LOCALAPPDATA%\Programs\natural-syntax-ls`, added to your `PATH`);
+- prints the Neovim plugin line for your checkout when `nvim` is installed.
 
 Models already exported are skipped. Catalog entries marked `int8` are quantized on export, about 4x smaller. See [models.md](models.md).
 
@@ -46,7 +47,7 @@ Layout:
 models/<slug>/    one directory per model
 lib/              ONNX Runtime library
 lang/             language scripts
-models.json       model catalog
+models.json       your own catalog entries (optional; merged over the bundled one)
 ```
 
 A flat layout from older installs still works.
@@ -61,7 +62,7 @@ code --install-extension natural-syntax-ls-*.vsix
 
 **Standalone binary**: `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holds the server, ONNX Runtime, `lang/`, `models.json` and `LICENSE`. Extract anywhere and put the binary on `PATH`. A symlink works; the server finds its files beside the real binary.
 
-**Neovim**: use the standalone binary, then follow [neovim.md](neovim.md).
+**Neovim**: use the standalone binary, then add the plugin ([neovim.md](neovim.md)).
 
 ## Build from source
 

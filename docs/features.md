@@ -25,7 +25,7 @@ Each word gets a color from its contextual embedding. Words used alike get simil
 - `semanticLightness` sets the shared lightness. Raise it for light themes.
 - `semanticChroma` sets how vivid the strongest colors are.
 
-Hover shows the hex code. Colors are not semantic tokens: the server pushes them in `$/nls/semanticColors` (`{ uri, tokens: [{ line, character, length, color }] }`, columns in codepoints) after each edit. VS Code draws them as decorations; Neovim needs the handler in [neovim.md](neovim.md).
+Hover shows the hex code. Colors are not semantic tokens: the server pushes them in `$/nls/semanticColors` (`{ uri, tokens: [{ line, character, length, color }] }`, columns in codepoints) after each edit. VS Code draws them as decorations; the Neovim plugin paints them as extmarks ([neovim.md](neovim.md)).
 
 How it works: [design/semantic-colors.md](design/semantic-colors.md).
 

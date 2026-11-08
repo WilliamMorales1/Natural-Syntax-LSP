@@ -190,16 +190,22 @@ Get-ChildItem (Join-Path $ROOT "data/lang") -Filter *.lua | ForEach-Object {
     $dest = Join-Path $langDest $_.Name
     if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
 }
-Ok "Language scripts: $langDest (add entries in $(Join-Path $DATA_DIR "models.json") to extend the bundled catalog)"
+Ok "Language scripts: $langDest"
 
 # ── 7. Install binary to user bin directory ───────────────────────────────────
+#
+# The server reads the bundled catalog from beside its executable, the same
+# layout as the release archive. Your own entries go in the config dir's
+# models.json, which re-running setup never touches.
 
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\natural-syntax-ls"
 Step "Installing to $installDir"
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 $installedExe = Join-Path $installDir "natural-syntax-ls.exe"
 Copy-Item $exePath $installedExe -Force
+Copy-Item (Join-Path $ROOT "data/models.json") (Join-Path $installDir "models.json") -Force
 Ok "Installed: $installedExe"
+Ok "Model catalog: $(Join-Path $installDir "models.json") (add your own entries in $(Join-Path $DATA_DIR "models.json"))"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (($userPath -split ";") -notcontains $installDir) {
     [Environment]::SetEnvironmentVariable("Path", ($userPath.TrimEnd(";") + ";" + $installDir).TrimStart(";"), "User")
@@ -212,7 +218,14 @@ Write-Host
 Write-Host "Done!"
 Write-Host
 Write-Host "Server binary: $installedExe"
-Write-Host "(Set naturalSyntaxLs.serverPath in VS Code to this to use it instead of the bundled one.)"
+Write-Host "Model files:   $DATA_DIR"
 Write-Host
-Write-Host "Model files are in: $DATA_DIR"
-Write-Host "The extension finds them automatically."
+Write-Host "VS Code: the extension finds the model files itself. To use this binary"
+Write-Host "  instead of the bundled one, set naturalSyntaxLs.serverPath to it."
+if (Get-Command nvim -ErrorAction SilentlyContinue) {
+    $luaRoot = $ROOT -replace "\\", "/"
+    Write-Host
+    Write-Host "Neovim 0.11+: load the plugin from this checkout (docs/neovim.md)."
+    Write-Host "  lazy.nvim:   { dir = `"$luaRoot`", main = `"natural_syntax_ls`", opts = {} }"
+    Write-Host "  no manager:  vim.opt.rtp:append(`"$luaRoot`"); require(`"natural_syntax_ls`").setup()"
+}
