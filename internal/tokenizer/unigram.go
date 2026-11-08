@@ -157,7 +157,7 @@ func parseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
 		if _, dup := t.ids[piece]; !dup {
 			t.ids[piece] = int32(i)
 		}
-		minScore = math.Min(minScore, score)
+		minScore = min(minScore, score)
 		t.maxPiece = max(t.maxPiece, len([]rune(piece)))
 	}
 	// SentencePiece scores unknown characters ten below the worst real piece so they only win as a last resort.

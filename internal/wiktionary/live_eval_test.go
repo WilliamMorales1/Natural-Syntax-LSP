@@ -213,7 +213,7 @@ func TestLiveAccuracy(t *testing.T) {
 			}
 		}
 		var sample []udWord
-		for i := 0; i < min(n, len(uniq)); i++ {
+		for i := range min(n, len(uniq)) {
 			sample = append(sample, uniq[i*len(uniq)/min(n, len(uniq))])
 		}
 
@@ -291,7 +291,7 @@ func TestLiveAccuracy(t *testing.T) {
 			}
 		}
 		var pick []udWord
-		for i := 0; i < min(n, len(piped)); i++ {
+		for i := range min(n, len(piped)) {
 			pick = append(pick, piped[i*len(piped)/min(n, len(piped))])
 		}
 		run("pipeline-tok", pick, func(udWord) (postag.PartOfSpeech, postag.Deprel) { return postag.O, postag.DepRoot }, false)

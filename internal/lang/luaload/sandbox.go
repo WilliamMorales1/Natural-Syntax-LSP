@@ -63,30 +63,30 @@ func newSandbox(name string) *sandbox {
 }
 
 // utf8Lib is the small rune API scripts get, since Lua strings are bytes.
-func utf8Lib(L *lua.LState) *lua.LTable {
-	t := L.NewTable()
-	L.SetFuncs(t, map[string]lua.LGFunction{
+func utf8Lib(l *lua.LState) *lua.LTable {
+	t := l.NewTable()
+	l.SetFuncs(t, map[string]lua.LGFunction{
 		// chars returns the characters of a string as an array of strings.
-		"chars": func(L *lua.LState) int {
-			out := L.NewTable()
-			for _, r := range L.CheckString(1) {
+		"chars": func(l *lua.LState) int {
+			out := l.NewTable()
+			for _, r := range l.CheckString(1) {
 				out.Append(lua.LString(string(r)))
 			}
-			L.Push(out)
+			l.Push(out)
 			return 1
 		},
 		// codepoint returns the code point of the first character.
-		"codepoint": func(L *lua.LState) int {
-			r, _ := utf8.DecodeRuneInString(L.CheckString(1))
-			L.Push(lua.LNumber(r))
+		"codepoint": func(l *lua.LState) int {
+			r, _ := utf8.DecodeRuneInString(l.CheckString(1))
+			l.Push(lua.LNumber(r))
 			return 1
 		},
-		"char": func(L *lua.LState) int {
-			L.Push(lua.LString(string(rune(L.CheckInt(1)))))
+		"char": func(l *lua.LState) int {
+			l.Push(lua.LString(string(rune(l.CheckInt(1)))))
 			return 1
 		},
-		"len": func(L *lua.LState) int {
-			L.Push(lua.LNumber(utf8.RuneCountInString(L.CheckString(1))))
+		"len": func(l *lua.LState) int {
+			l.Push(lua.LNumber(utf8.RuneCountInString(l.CheckString(1))))
 			return 1
 		},
 	})

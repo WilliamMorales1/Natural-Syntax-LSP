@@ -9,17 +9,22 @@ import (
 	"github.com/ikawaha/kagome/v2/tokenizer"
 )
 
-var (
-	once sync.Once
-	mu   sync.Mutex
-	tk   *tokenizer.Tokenizer
-)
+var mu sync.Mutex
+
+// The dictionary decodes to about 370 MB of heap, so it is loaded only when Japanese text first appears.
+var kagome = sync.OnceValue(func() *tokenizer.Tokenizer {
+	t, err := tokenizer.New(uni.Dict(), tokenizer.OmitBosEos())
+	if err != nil {
+		return nil
+	}
+	return t
+})
 
 const hasDictionary = true
 
 // lemmas returns candidate dictionary forms for an inflected Japanese word, nil if there are none.
 func lemmas(word string) []string {
-	segmentInit()
+	tk := kagome()
 	if tk == nil {
 		return nil
 	}
@@ -38,18 +43,9 @@ func lemmas(word string) []string {
 	return out
 }
 
-func segmentInit() {
-	once.Do(func() {
-		// The dictionary decodes to about 370 MB of heap, so it is loaded only when Japanese text first appears.
-		if t, err := tokenizer.New(uni.Dict(), tokenizer.OmitBosEos()); err == nil {
-			tk = t
-		}
-	})
-}
-
 // segment returns the rune ranges of the words in run, which must be a Han/kana run; nil if the dictionary cannot be loaded.
 func segment(run string) [][2]int {
-	segmentInit()
+	tk := kagome()
 	if tk == nil {
 		return nil
 	}

@@ -1,6 +1,7 @@
 package luaload
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -170,7 +171,7 @@ func strList(t *lua.LTable, key string) ([]string, error) {
 func ParseFS(fsys fs.FS, dir string) ([]lang.Language, []error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, []error{err}

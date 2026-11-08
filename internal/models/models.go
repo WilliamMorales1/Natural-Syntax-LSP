@@ -3,6 +3,8 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +42,7 @@ func Load(dirs ...string) (Catalog, error) {
 	var out Catalog
 	for _, d := range dirs {
 		b, err := os.ReadFile(filepath.Join(d, "models.json"))
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
