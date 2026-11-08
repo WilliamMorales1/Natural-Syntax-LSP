@@ -1,35 +1,63 @@
 # Adding a language
 
-Language-specific code lives under `internal/lang/<name>`. Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value.
+A language is a Lua script. Drop `<code>.lua` into `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, or the directory named by `naturalSyntaxLs.langDir` (`--lang-dir`), and restart the server. No Go build needed. Later directories override earlier ones, and all override the built-in scripts, by `code`.
 
-## Layout
+Built in as embedded scripts (`internal/lang/scripts/*.lua`): English, French, Spanish, Russian, Arabic. Built in as Go packages, because they need native assets: Japanese (kagome dictionary) and Chinese (Simplified/Traditional tables). Use Go only when a hook needs a native library or big table; `-tags english` drops those two.
 
-| Package | Role |
-| ------- | ---- |
-| `internal/lang` | `Language` struct, `ForModel`, hook collectors. Imports only `tokenizer` and `postag`. |
-| `internal/lang/<name>` | One language: exports `Language() lang.Language`. |
-| `internal/lang/builtin` | The list compiled into the binary; `-tags english` shrinks it. |
-| `internal/models` | Language-neutral model facts: default file stems, embedding size from file name. |
+Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
+
+## Schema
+
+```lua
+return {
+  code = "fr",                              -- required, Wiktionary language code
+  model_prefixes = { "xlmr_fr", "fr_sequoia" }, -- lowercase model file-name prefixes
+  tokenizer = {                             -- closed set of named flags, implemented in Go
+    elisions = {
+      clitics = { "l", "d", "qu" },         -- glued to a following apostrophe: l'  d'  qu'
+      words = { "aujourd'hui" },            -- apostrophe words kept whole
+    },
+  },
+  wiktionary = {
+    code = "fr",
+    sections = { "French" },                -- English Wiktionary L2 headings
+    wikitext = false, script = "Han",       -- read wikitext for words in this Unicode script
+    rewrite = function(word, pos, deprel) end, -- Penn tag and UD relation as strings; return a headword or nil
+    forms = function(word) return {} end,   -- extra headwords to try
+  },
+}
+```
+
+Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running.
+
+## Sandbox
+
+- Available: base functions (no `load*`, `dofile`, `require`, `print`, `setfenv`, `collectgarbage`), `table`, `string` (no `dump`; `rep` capped at 64 KB), `math`, and a `utf8` table: `chars(s)` (array of characters), `codepoint(ch)`, `char(n)`, `len(s)`. Lua strings are bytes, so use `utf8` for non-ASCII text.
+- Not available: `os`, `io`, `package`, `debug`, `coroutine`. No file, network or process access.
+- Load has a 2 s limit and each hook call 200 ms. A hook that errors, loops or panics returns nothing for that call and is logged.
+- Trust model: scripts sit beside downloaded models, so treat them like config, not like code you would run unreviewed. The sandbox limits damage but cannot cap heap use beyond `string.rep`.
+- Keep per-token work out of Lua. Only per-lookup hooks (`rewrite`, `forms`) are scripted; tokenizer behavior is chosen by flag.
 
 ## Hooks
 
-Every `Language` field but `Code` is optional.
+Every field but `code` is optional.
 
 | Field | Use when |
 | ----- | -------- |
-| `ModelPrefixes` | Models whose file name starts with the prefix are this language's (drives `wiktionaryLanguage: "model"` and `auto`). |
-| `Tokenizer` | The generic split cuts words wrongly. `tokenizer.WithWordMerger` rewrites the whitespace/punctuation split (French elision). `tokenizer.WithSegmenter` replaces model pieces for unspaced scripts (Japanese kagome). Unigram tokenizers only. |
-| `Wiktionary.Rewrite` | A token's headword differs from its text (English `'s` to `-'s`). |
-| `Wiktionary.Forms` | Extra headwords to try (Japanese dictionary forms, Chinese script variants). |
-| `Wiktionary.Sections` | Always: the English Wiktionary L2 headings (`"Spanish"`) that map to the language code. |
-| `Wiktionary.Wikitext`, `Script` | The REST endpoint cannot parse the language's entries, so read wikitext for words in `Script`. |
+| `model_prefixes` | Models whose file name starts with the prefix are this language's (drives `wiktionaryLanguage: "model"` and `auto`). |
+| `tokenizer.elisions` | The generic split cuts clitics wrongly (French `l'ami`). Unigram tokenizers only. |
+| `wiktionary.rewrite` | A token's headword differs from its text (English `'s` to `-'s`). |
+| `wiktionary.forms` | Extra headwords to try (stripped diacritics, `ё` variants). |
+| `wiktionary.sections` | Always: the English Wiktionary L2 headings (`"Spanish"`) that map to the language code. |
+| `wiktionary.wikitext`, `script` | The REST endpoint cannot parse the language's entries, so read wikitext for words in `script`. |
+
+Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a native library needs Go: add a named flag in `luaload/options.go`, or a package under `internal/lang/<name>` exporting `Language()` and list it in `internal/lang/builtin/native.go`.
 
 ## Steps
 
-1. `internal/lang/<name>/<name>.go` with `Language()`. A language with no special rules is only `Code` and `ModelPrefixes` (see `spanish`).
-2. Add `<name>.Language()` to `internal/lang/builtin/builtin.go` (and `builtin_english.go` if it needs no heavy assets).
-3. Tests next to the hook. Tokenizer hooks are plain functions, so test them without a model (see `french_test.go`).
-4. Not Go, one line each:
+1. Write `<code>.lua`. A language with no special rules is only `code`, `model_prefixes` and `wiktionary.code`/`sections` (see `spanish.lua`).
+2. To ship it built in, put it in `internal/lang/scripts/` and add tests to `internal/lang/builtin/builtin_test.go`.
+3. Not Lua, one line each:
    - `scripts/export_model.py`: entry in `POS_MODELS` (and a diaparser name for dependency).
    - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list.
    - `vscode-extension/package.json`: `naturalSyntaxLs.model` enum and description.
@@ -37,12 +65,9 @@ Every `Language` field but `Code` is optional.
 
 ## Worked example: French
 
-French needed two things beyond a model:
+French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `internal/lang/scripts/french.lua`.
 
-- `internal/lang/french`: `Language{Code: "fr", ModelPrefixes: ["xlmr_fr", "fr_sequoia"], Tokenizer: [WithWordMerger(MergeElisions)]}`. The generic split cuts `l'ami` into `l`, `'`, `ami`; the merger rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole.
-- Model entries in `export_model.py`, both setup scripts and the extension enum (`xlmr-fr`, `fr_sequoia.camembert-large`).
-
-Spanish needed only the second item plus a `Language` with prefixes. Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback.
+Spanish needed only prefixes and a Wiktionary section. Russian and Arabic needed `forms` (stress marks and `ё`; tashkeel and tatweel). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
 
 ## Decide what the language needs
 
@@ -56,7 +81,7 @@ Answer these in order; stop adding hooks as soon as the answer is no.
 
 ## Verifying
 
-- Unit tests for each hook with no model files.
+- Unit tests for each hook with no model files (`internal/lang/builtin/builtin_test.go`).
 - `NSLS_EVAL=1` accuracy run (`internal/inference/eval_test.go`) against the language's UD test treebank; add it to the table in `docs/models.md`.
 - `NSLS_WIKT_EVAL=1` live Wiktionary check (`internal/wiktionary/live_eval_test.go`); add the treebank to `udFiles` there.
 - Latency and memory with `NSLS_NVIM_BENCH=1` (`internal/e2e`).

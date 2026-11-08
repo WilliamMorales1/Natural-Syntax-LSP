@@ -12,6 +12,7 @@
 | `naturalSyntaxLs.tokenMapUpdate`        | `{}`                        | Override POS → token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true`                      | Show Wiktionary definitions in hover |
 | `naturalSyntaxLs.wiktionaryLanguage`    | `"en"`                      | Hover definition language: a code (`en`, `es`, `fr`, `ja`, `zh`, ...), `model` (model's language, else `en`), or `auto` (best across languages). Read at server start |
+| `naturalSyntaxLs.langDir`               | `""`                        | Extra directory of language `*.lua` scripts (see `docs/adding-a-language.md`). Read at server start |
 | `naturalSyntaxLs.semanticLightness`     | `0.75`                      | OKLCH lightness for semantic colors (0–1); increase for light themes |
 | `naturalSyntaxLs.semanticChroma`        | `0.14`                      | OKLCH chroma of the most vivid semantic colors |
 

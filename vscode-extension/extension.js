@@ -146,6 +146,8 @@ async function activate(context) {
     console.log('[nls] model =', modelFile);
 
     const serverArgs = ['--mode', mode, '--model', modelFile, '--vocab', vocabFile];
+    const langDir = config.get('langDir', '');
+    if (langDir) serverArgs.push('--lang-dir', langDir);
 
     const serverOptions = {
         command: serverPath,

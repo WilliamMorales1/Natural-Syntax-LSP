@@ -10,4 +10,7 @@ require (
 	golang.org/x/text v0.32.0
 )
 
-require github.com/ikawaha/kagome-dict v1.1.7 // indirect
+require (
+	github.com/ikawaha/kagome-dict v1.1.7 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+)

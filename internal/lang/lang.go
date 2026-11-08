@@ -11,7 +11,7 @@ import (
 
 // Language is one language's hooks into the generic code. Every field but Code is optional, so a language with no special rules is just a name and its model prefixes.
 //
-// To add a language: create internal/lang/<name> exporting Language(), then list it in internal/lang/builtin. Nothing in the tokenizer, wiktionary, inference or lspserver packages changes.
+// To add a language: write a Lua script (see docs/adding-a-language.md), or for native code a package exporting Language() listed in internal/lang/builtin/native.go. Nothing in the tokenizer, wiktionary, inference or lspserver packages changes.
 type Language struct {
 	// Code is the Wiktionary language code ("en", "ja").
 	Code string

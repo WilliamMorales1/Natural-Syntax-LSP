@@ -350,3 +350,12 @@ Results (first 200 UD test sentences, `TestEvalDependency`):
 | ar | PADT | 77.7 / 72.0 | 77.5 / 71.9 | int8 |
 
 Arabic scores whole written words against PADT heads at matching word starts, so clitic-attached words are not scored; the gap versus the README figure (87.75) is raw input, as predicted. Anchor tests in `TestMultilingualDependency` pass. Neovim (X280): dependency/ru fp32 ready 1213 ms, edit 125 ms, RSS 955 MB (peak 1118); dependency/ar int8 ready 1121 ms, edit 182 ms, RSS 494 MB. Wired: `setup.sh`/`setup.ps1` (`dependency-ru`, `dependency-ar`), extension enum, `ModelPrefixes` (`ru_syntagrus`, `ar_padt`), `docs/models.md`, `docs/install.md`. Lesson: verify a catalog name against the release assets (`gh api repos/Unipisa/diaparser/releases`) and check the exported vocab size before trusting it.
+
+## Progress
+
+- Steps 1-4, 6-8 done. `internal/lang/luaload` (gopher-lua v1.1.1, pure Go) builds `lang.Language` from scripts; `internal/lang/scripts/*.lua` embeds English, French, Spanish, Russian, Arabic. Only Japanese (kagome) and Chinese (tables) stay Go packages, in `internal/lang/builtin/native.go`; `-tags english` drops both. Go versions of the five ported languages deleted after a 5000-input differential run (ru/ar forms, en rewrite) matched; tests moved to `internal/lang/builtin/builtin_test.go`.
+- Search path: embedded, `<model dir>/lang`, `~/.config/natural-syntax-ls/lang`, `--lang-dir` / `naturalSyntaxLs.langDir`; later overrides by `code`. A broken script is logged and skipped.
+- French elision stays native as the named tokenizer flag `elisions` (clitic and word lists come from Lua), so no French string remains in Go.
+- Sandbox: no `os io package debug coroutine load* dofile require print`; `string.rep` capped; load 2 s, hook 200 ms via context; tests in `luaload_test.go`. Heap cannot be capped from outside, documented.
+- gopher-lua quirk: `x = (string.gsub(...))` on a parameter miscompiles; assign through a new local.
+- Open: step 5 (model metadata: labels, UPOS mapping, hidden size, `export_model.py` emitting `<model>.lua`), per-language startup timing, `Reload` on file change, Windows check.

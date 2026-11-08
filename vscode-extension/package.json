@@ -96,6 +96,11 @@
           "examples": ["en", "es", "fr", "ja", "zh", "model", "auto"],
           "description": "Wiktionary language for hover definitions: a language code (en, es, fr, ja, zh, ...), 'model' (the model's language, else en), or 'auto' (best match across languages). Read at server start."
         },
+        "naturalSyntaxLs.langDir": {
+          "type": "string",
+          "default": "",
+          "description": "Extra directory of language definition scripts (*.lua), loaded after the built-in ones and after <model dir>/lang and ~/.config/natural-syntax-ls/lang. Read at server start."
+        },
         "naturalSyntaxLs.semanticLightness": {
           "type": "number",
           "default": 0.75,

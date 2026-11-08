@@ -32,6 +32,7 @@ func run() error {
 	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt (or Unigram _tokenizer.json) file (the model's own tokenizer, whatever mode)")
 	modeFlag := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
 	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
+	langDir := flag.String("lang-dir", "", "Extra directory of language *.lua scripts, loaded after <model dir>/lang and <config dir>/natural-syntax-ls/lang")
 	_ = flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
@@ -89,7 +90,7 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
-	languages := builtin.Languages()
+	languages := builtin.Languages(filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
