@@ -8,8 +8,6 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Performance.
-
 ## Multilingual
 
 Constraints that still apply: tokenization follows the model's own tokenizer; SentencePiece BPE (mmBERT, Llama-style) is unsupported; `naturalSyntaxLs.model` is the only selector.
@@ -51,10 +49,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 - Arabic hover strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms still miss.
 - Semantic mode has no POS, so a homograph gets its page's first non-variant section (`faulen` in `faulen Hund` shows the verb "to rot").
 - No Portuguese diaparser parser found; dependency mode has no pt model.
-
-## Performance
-
-- Replace nested for-loops in hot paths (inference pre/post-processing, decoding, span mapping) with matrix multiplication or batched/concurrent equivalents where the result stays identical. Measure ms and RSS before and after with the existing bench.
 
 ## Language identification
 

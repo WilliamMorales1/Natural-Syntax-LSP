@@ -114,6 +114,8 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 
 Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-1200 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. ru dependency was not exported locally.
 
+Where edit time goes (`go test -bench PredictChunk -cpuprofile` in `internal/inference`): over 99% is inside ONNX Runtime. Tokenizing, pooling, decoding and span mapping in Go take about 0.3% (10-20 ms of 3.6 s per 20 dependency runs), so rewriting those loops as matrix products would not show. `BenchmarkRegistryOpen` (20 paragraphs, stub model) takes 6 ms, mostly garbage collection.
+
 | Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median / max (ms) | Hover cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
 | ---- | ---------- | -------------- | ---------------------- | ----------------------- | ----------------- | ----------- | -------------- | ------------- |
 | pos/en/bert_base | 458 | 744 | 97 / 100 | 1 / 75 | 0.6 | 16/16 | 405 | 423 |
