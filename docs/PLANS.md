@@ -8,7 +8,7 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -18,7 +18,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Semantic mode colors katakana words whole (キツネ, コンピューター); UniDic short units still split compounds such as スマートフォン into スマート and フォン, matching UD Japanese-GSD.
 - zh dependency int8 still loses accuracy (full GSD, UAS/LAS): fp32 86.9 / 83.3; dynamic int8 of the encoder only 82.6 / 77.7; per-channel (all or encoder only) collapses to 8 / 1, so ONNX Runtime's per-channel path is unusable here. Not shipped. Untried: static quantization with calibration, or int8 on the feed-forward layers only.
-- `KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos`: untested (LUW B-/I- tags over char-sized Unigram pieces, would need piece merging after tagging).
 
 ### Definition lookup
 
