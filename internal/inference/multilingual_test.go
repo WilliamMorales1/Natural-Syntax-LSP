@@ -22,7 +22,14 @@ func multilingualDir(t *testing.T) string {
 	return dir
 }
 
-const udposPrefix = "wietsedv_xlm_roberta_base_ft_udpos28_"
+// modelBase returns the path stem of an exported model: dir/stem/stem as setup.sh lays it out, else a flat dir/stem.
+func modelBase(dir, stem string) string {
+	nested := filepath.Join(dir, stem, stem)
+	if _, err := os.Stat(nested + ".onnx"); err == nil {
+		return nested
+	}
+	return filepath.Join(dir, stem)
+}
 
 // TestMultilingualPOS tags sample sentences with the XLM-R UPOS models and checks anchor words, mapped onto Penn tags.
 func TestMultilingualPOS(t *testing.T) {
@@ -42,7 +49,7 @@ func TestMultilingualPOS(t *testing.T) {
 		{"zh", "中华人民共和国成立于1949年。", anchor{"中华人民共和国": postag.NNP, "1949": postag.CD, "年": postag.NN}},
 	} {
 		t.Run(tc.lang+"/"+tc.text, func(t *testing.T) {
-			base := filepath.Join(dir, udposPrefix+tc.lang)
+			base := modelBase(dir, "xlmr_"+tc.lang)
 			m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 			if err != nil {
 				t.Skip(err)
@@ -70,12 +77,12 @@ func TestMultilingualPOS(t *testing.T) {
 	}
 }
 
-const yasukoZHPrefix = "KoichiYasuoka_chinese_roberta_base_upos"
+const yasukoZHPrefix = "chinese_roberta_upos"
 
 // TestChineseCharPOS checks that the character-level B-/I- Chinese model comes out as whole words.
 func TestChineseCharPOS(t *testing.T) {
 	dir := multilingualDir(t)
-	base := filepath.Join(dir, yasukoZHPrefix)
+	base := modelBase(dir, yasukoZHPrefix)
 	m, err := NewPOSModel(base+".onnx", base+"_vocab.txt", testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
@@ -105,7 +112,7 @@ func TestChineseCharPOS(t *testing.T) {
 // TestMultilingualSemantic checks that word embeddings of one concept sit closer across languages than embeddings of different concepts.
 func TestMultilingualSemantic(t *testing.T) {
 	dir := multilingualDir(t)
-	base := filepath.Join(dir, "multilingual_minilm")
+	base := modelBase(dir, "multilingual_minilm")
 	InitSemantic(384)
 	m, err := NewEmbeddingModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 	if err != nil {
@@ -172,7 +179,7 @@ func TestMultilingualSemantic(t *testing.T) {
 // TestMultilingualLongCJK runs a long unspaced Japanese document through chunking and tagging, checking offsets stay exact.
 func TestMultilingualLongCJK(t *testing.T) {
 	dir := multilingualDir(t)
-	base := filepath.Join(dir, udposPrefix+"ja")
+	base := modelBase(dir, "xlmr_ja")
 	m, err := NewPOSModel(base+".onnx", base+"_tokenizer.json", testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
@@ -231,7 +238,7 @@ func TestMultilingualDependency(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.slug+"/"+tc.text, func(t *testing.T) {
-			base := filepath.Join(dir, tc.slug+"_dependency")
+			base := modelBase(dir, tc.slug+"_dependency")
 			vocab := base + "_vocab.txt"
 			if _, err := os.Stat(vocab); err != nil {
 				vocab = base + "_tokenizer.json"

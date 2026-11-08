@@ -8,21 +8,20 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
 
-1. Run `go test ./...` and the opt-in tests before any language counts as supported.
-2. ja and zh dependency: full GSD test set, then hover and semantic-token check.
-3. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-4. Test `setup.ps1` and the Lua script loading on Windows.
-5. Auto-detect never switches the model (German file gets English tags).
-6. Arabic hover: strip `ال` and tashkeel.
-7. Wiktionary lemma lookup for ru and ar inflected forms.
-8. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-9. Evaluate ja int8 POS with kagome words.
-10. Katakana pieces in semantic mode show one color per piece.
-11. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-12. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-13. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-14. Benchmark on another platform, with hover on.
-15. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. ja and zh dependency: full GSD test set, then hover and semantic-token check.
+2. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
+3. Test `setup.ps1` and the Lua script loading on Windows.
+4. Auto-detect never switches the model (German file gets English tags).
+5. Arabic hover: strip `ال` and tashkeel.
+6. Wiktionary lemma lookup for ru and ar inflected forms.
+7. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+8. Evaluate ja int8 POS with kagome words.
+9. Katakana pieces in semantic mode show one color per piece.
+10. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+11. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+12. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+13. Benchmark on another platform, with hover on.
+14. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -49,7 +48,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Benchmark on a platform other than the X280, and with hover on (Wiktionary on).
 - VS Code checks: semantic tokens, hover, edits, definitions.
-- Run `go test ./...` and the opt-in tests before marking a language supported.
+- Opt-in tests (`NSLS_ML_DIR=~/.config/natural-syntax-ls/models`) pass for es, fr, ja POS, semantic and es/fr dependency. Not run: ja, zh and ru dependency (models not exported locally), the `NSLS_EVAL` treebank evals, langid and Unigram reference tests.
 
 ### Acceptance
 

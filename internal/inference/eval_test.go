@@ -176,17 +176,17 @@ func TestEvalPOS(t *testing.T) {
 	}
 	dirs := evalDirs(t)
 	for _, tc := range []struct{ lang, prefix, vocab string }{
-		{"es", udposPrefix + "es", "_tokenizer.json"},
-		{"fr", udposPrefix + "fr", "_tokenizer.json"},
-		{"ja", udposPrefix + "ja", "_tokenizer.json"},
-		{"zh", udposPrefix + "zh", "_tokenizer.json"},
+		{"es", "xlmr_es", "_tokenizer.json"},
+		{"fr", "xlmr_fr", "_tokenizer.json"},
+		{"ja", "xlmr_ja", "_tokenizer.json"},
+		{"zh", "xlmr_zh", "_tokenizer.json"},
 		{"ru", "xlmr_ru", "_tokenizer.json"},
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
 		lang, _, _ := strings.Cut(tc.lang, "-")
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
-			base := filepath.Join(dir, tc.prefix)
+			base := modelBase(dir, tc.prefix)
 			m, err := NewPOSModel(base+".onnx", base+tc.vocab, testTokOpts()...)
 			if err != nil {
 				t.Logf("%s %s: skipped: %v", tc.lang, variant, err)
@@ -234,7 +234,7 @@ func TestEvalDependency(t *testing.T) {
 	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov"} {
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
-			base := filepath.Join(dir, slug+"_dependency")
+			base := modelBase(dir, slug+"_dependency")
 			vocab := base + "_vocab.txt"
 			if _, err := os.Stat(vocab); err != nil {
 				vocab = base + "_tokenizer.json"
