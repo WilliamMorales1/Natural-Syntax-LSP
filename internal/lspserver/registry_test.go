@@ -509,3 +509,41 @@ func TestWaiterHonorsContext(t *testing.T) {
 		t.Errorf("err = %v, want Canceled", err)
 	}
 }
+
+// gateModel blocks any chunk starting with "Second" until released.
+type gateModel struct {
+	contextModel
+	release chan struct{}
+}
+
+func (m gateModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
+	if len(words) > 0 && words[0].Text == "Second" {
+		<-m.release
+	}
+	return m.contextModel.PredictChunk(words)
+}
+
+func TestHoverWaitsForUnanalysedChunk(t *testing.T) {
+	m := gateModel{release: make(chan struct{})}
+	reg := newDocumentRegistry(m)
+	reg.update(&textItem{uri: testURI, text: "First para here.\n\nSecond one now.", version: 1})
+	for partial := false; !partial; {
+		reg.do(func() { s := reg.stores[testURI]; partial = s != nil && s.doc != nil && s.processing })
+		time.Sleep(time.Millisecond)
+	}
+	type out struct {
+		res *hoverQueryResult
+		err error
+	}
+	done := make(chan out)
+	go func() {
+		res, err := reg.hover(t.Context(), testURI, 2, 1)
+		done <- out{res, err}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	close(m.release)
+	o := <-done
+	if o.err != nil || o.res == nil || o.res.tok.Word != "Second" {
+		t.Fatalf("hover = %+v, %v", o.res, o.err)
+	}
+}

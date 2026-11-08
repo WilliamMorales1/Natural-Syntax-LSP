@@ -251,13 +251,19 @@ func (dr *documentRegistry) hover(ctx context.Context, uri string, line, charact
 	if !dr.do(func() {
 		if store := dr.stores[uri]; store != nil {
 			doc = store.doc
-			if doc == nil && store.processing {
+			if store.processing {
 				r = store.run
 			}
 		}
 	}) {
 		return nil, errClosed
 	}
+	if doc != nil {
+		if res := tokenAt(doc, line, character, dr.detect); res != nil {
+			return res, nil
+		}
+	}
+	// A partial doc lacks the chunks still being analysed, so a miss waits for the run to finish.
 	if r != nil {
 		var err error
 		if doc, err = dr.wait(ctx, r); err != nil {

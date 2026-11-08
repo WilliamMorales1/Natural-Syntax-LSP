@@ -6,28 +6,27 @@ Only unfinished items are listed. Shipped behavior and measurements live in `doc
 
 After finishing each item: run `go test ./...`, commit it, then start the next one without waiting. Drop the item from this file in the same commit.
 
-Blocked-looking items are not blocked: Windows checks (10) run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports (18, 14) run on Colab, VS Code is installed for 9.
+Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
 
-1. Hover returns a result for only 18 of 20 positions in semantic mode. Likely a real bug.
-2. Unknown labels decode as `O`; map EAGLES and CKIP tags onto Universal classes.
-3. Run `go test ./...` and the opt-in tests before any language counts as supported.
-4. Hidden size inferred from "minilm" in the file name: use explicit metadata.
-5. Model slug rule duplicated in Python, PowerShell, bash and JS: one source.
-6. Record license and tag inventory per model in `docs/models.md`.
-7. ja and zh dependency: full GSD test set, then hover and semantic-token check.
-8. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-9. Test `setup.ps1` and the Lua script loading on Windows.
-10. Auto-detect never switches the model (German file gets English tags).
-11. Arabic hover: strip `ال` and tashkeel.
-12. Wiktionary lemma lookup for ru and ar inflected forms.
-13. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-14. Evaluate ja int8 POS with kagome words.
-15. Katakana pieces in semantic mode show one color per piece.
-16. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-17. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-18. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-19. Benchmark on another platform, with hover on.
-20. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Unknown labels decode as `O`; map EAGLES and CKIP tags onto Universal classes.
+2. Run `go test ./...` and the opt-in tests before any language counts as supported.
+3. Hidden size inferred from "minilm" in the file name: use explicit metadata.
+4. Model slug rule duplicated in Python, PowerShell, bash and JS: one source.
+5. Record license and tag inventory per model in `docs/models.md`.
+6. ja and zh dependency: full GSD test set, then hover and semantic-token check.
+7. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
+8. Test `setup.ps1` and the Lua script loading on Windows.
+9. Auto-detect never switches the model (German file gets English tags).
+10. Arabic hover: strip `ال` and tashkeel.
+11. Wiktionary lemma lookup for ru and ar inflected forms.
+12. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+13. Evaluate ja int8 POS with kagome words.
+14. Katakana pieces in semantic mode show one color per piece.
+15. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+16. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+17. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+18. Benchmark on another platform, with hover on.
+19. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -60,7 +59,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ### Validation
 
-- Hover returned a result for 18 of 20 positions in semantic mode (English and multilingual). Find out why.
 - Benchmark on a platform other than the X280, and with hover on (Wiktionary on).
 - VS Code checks: semantic tokens, hover, edits, definitions.
 - Run `go test ./...` and the opt-in tests before marking a language supported.
