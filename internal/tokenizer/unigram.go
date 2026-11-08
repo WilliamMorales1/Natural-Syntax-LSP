@@ -272,9 +272,7 @@ func (t *UnigramTokenizer) Tokenize(text string) []WordSpan {
 		}
 	}
 	words := basicTokenize(text, false, true)
-	for _, merge := range t.opts.mergers {
-		words = merge(runes, words)
-	}
+	words = t.opts.merge(runes, words)
 	var out []WordSpan
 	for _, w := range words {
 		out = append(out, t.splitCJK(runes, w, seg)...)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -209,5 +210,41 @@ func TestUnigramMatchesHF(t *testing.T) {
 				t.Errorf("%s %q: got %v (%q), want %v (%q)", name, w, got, tok.Pieces(got), want, tok.Pieces(want))
 			}
 		}
+	}
+}
+
+func TestLanguageScopedMergerFollowsDetectedLine(t *testing.T) {
+	join := func(runes []rune, words []WordSpan) []WordSpan {
+		var out []WordSpan
+		for k := 0; k < len(words); k++ {
+			w := words[k]
+			if k+1 < len(words) && words[k+1].Text == "'" {
+				w.Text, w.End = w.Text+"'", words[k+1].End
+				k++
+			}
+			out = append(out, w)
+		}
+		return out
+	}
+	detect := func(s string) string {
+		switch {
+		case strings.Contains(s, "FR"):
+			return "fr"
+		case strings.Contains(s, "EN"):
+			return "en"
+		}
+		return ""
+	}
+	tok := tinyTokenizer(t, WithDetector(detect), WithLanguage("fr", WithWordMerger(join)))
+	if got := texts(tok.Tokenize("FR l'ami\nEN l'ami")); !slices.Equal(got, []string{"FR", "l'", "ami", "EN", "l", "'", "ami"}) {
+		t.Errorf("mixed doc = %q", got)
+	}
+	// A line too short to tell takes its predecessor's language, not the whole text's (fr here).
+	if got := texts(tok.Tokenize("FR l'ami\nEN x\nl'ami")); !slices.Equal(got[len(got)-3:], []string{"l", "'", "ami"}) {
+		t.Errorf("undetected line after EN = %q", got)
+	}
+	// An undetectable text keeps the old behavior of running every merger.
+	if got := texts(tok.Tokenize("l'ami")); !slices.Equal(got, []string{"l'", "ami"}) {
+		t.Errorf("undetected = %q", got)
 	}
 }

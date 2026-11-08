@@ -321,10 +321,10 @@ func splitPunct(runes []rune, offset uint32, charCJK, hfPunct bool) []WordSpan {
 	n := len(runes)
 	for i := 0; i < n; {
 		r := runes[i]
-		isPossessiveApostrophe := !hfPunct && r == '\'' &&
+		isPossessiveApostrophe := !hfPunct && isApostrophe(r) &&
 			i+1 < n && (runes[i+1] == 's' || runes[i+1] == 'S') &&
 			(i+2 >= n || !unicode.IsLetter(runes[i+2]))
-		isMidWordApostrophe := !hfPunct && r == '\'' && i > 0 && i+1 < n &&
+		isMidWordApostrophe := !hfPunct && isApostrophe(r) && i > 0 && i+1 < n &&
 			unicode.IsLetter(runes[i-1]) && unicode.IsLetter(runes[i+1]) &&
 			!isPossessiveApostrophe
 		switch {
@@ -345,6 +345,9 @@ func splitPunct(runes []rune, offset uint32, charCJK, hfPunct bool) []WordSpan {
 	emit(start, n)
 	return spans
 }
+
+// isApostrophe covers the typewriter apostrophe and the curly one word processors insert.
+func isApostrophe(r rune) bool { return r == '\'' || r == '’' }
 
 // IsAllPunct reports whether s consists entirely of punctuation/symbol runes.
 func IsAllPunct(s string) bool {
