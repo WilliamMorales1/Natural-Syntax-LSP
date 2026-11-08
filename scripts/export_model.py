@@ -73,6 +73,11 @@ class _DropsTokenTypeIds(torch.nn.Module):
         return self.inner(input_ids=input_ids, attention_mask=attention_mask)
 
 
+def slugify(name):
+    """Return the model directory stem: - . / become _ (kept in step with internal/models, setup.sh, setup.ps1 and extension.js; see data/slug_cases.tsv)."""
+    return name.replace("-", "_").replace(".", "_").replace("/", "_")
+
+
 def _load_catalog():
     """Merge models.json from the repo, then the config dir; later entries replace same-named ones, as in the server."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -355,7 +360,7 @@ def _export_dependency(model_name, out_dir):
         dtype=torch.float32,
     )
 
-    slug = model_name.replace("-", "_").replace("/", "_").replace(".", "_")
+    slug = slugify(model_name)
     out_dir = os.path.join(out_dir, f"{slug}_dependency")
     os.makedirs(out_dir, exist_ok=True)
     onnx_path = os.path.join(out_dir, f"{slug}_dependency.onnx")
@@ -414,7 +419,7 @@ if mode == "dependency":
 if args.model is None:
     args.model = "bert-base"
 model_id = MODELS.get(args.model, args.model)
-slug = args.model.replace("-", "_").replace("/", "_")
+slug = slugify(args.model)
 out_dir = os.path.join(out_dir, slug)
 os.makedirs(out_dir, exist_ok=True)
 

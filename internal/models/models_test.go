@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +69,18 @@ func TestStemsForPrefersLanguage(t *testing.T) {
 	}
 	if got, want := c.StemsFor("pos", ""), []string{"en_a"}; !slices.Equal(got, want) {
 		t.Errorf("StemsFor(pos, \"\") = %q, want %q", got, want)
+	}
+}
+
+func TestStemMatchesSlugCases(t *testing.T) {
+	raw, err := os.ReadFile("../../data/slug_cases.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
+		name, want, _ := strings.Cut(line, "\t")
+		if got := (Model{Name: name}).Stem(); got != want {
+			t.Errorf("Stem(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

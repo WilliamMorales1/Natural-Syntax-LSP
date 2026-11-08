@@ -9,23 +9,21 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
 
 1. Run `go test ./...` and the opt-in tests before any language counts as supported.
-2. Hidden size inferred from "minilm" in the file name: use explicit metadata.
-3. Model slug rule duplicated in Python, PowerShell, bash and JS: one source.
-4. Record license and tag inventory per model in `docs/models.md`.
-5. ja and zh dependency: full GSD test set, then hover and semantic-token check.
-6. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-7. Test `setup.ps1` and the Lua script loading on Windows.
-8. Auto-detect never switches the model (German file gets English tags).
-9. Arabic hover: strip `ال` and tashkeel.
-10. Wiktionary lemma lookup for ru and ar inflected forms.
-11. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-12. Evaluate ja int8 POS with kagome words.
-13. Katakana pieces in semantic mode show one color per piece.
-14. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-15. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-16. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-17. Benchmark on another platform, with hover on.
-18. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+2. Record license and tag inventory per model in `docs/models.md`.
+3. ja and zh dependency: full GSD test set, then hover and semantic-token check.
+4. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
+5. Test `setup.ps1` and the Lua script loading on Windows.
+6. Auto-detect never switches the model (German file gets English tags).
+7. Arabic hover: strip `ال` and tashkeel.
+8. Wiktionary lemma lookup for ru and ar inflected forms.
+9. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+10. Evaluate ja int8 POS with kagome words.
+11. Katakana pieces in semantic mode show one color per piece.
+12. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+13. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+14. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+15. Benchmark on another platform, with hover on.
+16. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -47,8 +45,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ### Export and setup
 
 - Test `setup.ps1` on Windows (no pwsh available so far).
-- Hidden size is still inferred from "minilm" in the file name. Use explicit metadata.
-- The model slug rule is duplicated in Python, PowerShell, bash and JS.
 - Record license and tag inventory per model in `docs/models.md` (XLM-R UPOS models are Apache-2.0, CKIP is GPL-3.0).
 
 ### Validation

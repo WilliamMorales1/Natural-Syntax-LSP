@@ -42,6 +42,7 @@ jobs:
             e2e:
               - 'scripts/**'
               - 'data/**'
+              - 'vscode-extension/**'
               - 'cmd/**'
               - 'internal/**'
               - 'go.mod'
@@ -54,6 +55,20 @@ jobs:
         if: steps.run.outputs.go == 'true'
         with:
           go-version-file: go.mod
+
+      - name: Slug rule agrees across scripts (Linux)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Linux'
+        run: ./scripts/check_slugs.sh
+
+      - name: Slug rule agrees in setup.ps1 (Windows)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: |
+          $fn = Select-String -Path scripts/setup.ps1 -Pattern '^function Get-Slug' | ForEach-Object { $_.Line }
+          Invoke-Expression $fn
+          foreach ($line in Get-Content data/slug_cases.tsv) {
+            $name, $want = $line -split "`t"
+            if ((Get-Slug $name) -ne $want) { Write-Host "Get-Slug($name) != $want"; exit 1 }
+          }
 
       - name: Parse setup.ps1 (Windows PowerShell 5.1 and pwsh)
         if: steps.run.outputs.go == 'true' && runner.os == 'Windows'

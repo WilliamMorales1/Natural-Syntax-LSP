@@ -1,0 +1,4 @@
+bert-base	bert_base
+en_ewt.electra-base	en_ewt_electra_base
+foo/bar-baz.qux	foo_bar_baz_qux
+xlmr_ja	xlmr_ja
