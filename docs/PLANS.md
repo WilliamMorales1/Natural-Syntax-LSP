@@ -10,12 +10,11 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 
 1. Auto-detect never switches the model (German file gets English tags).
 2. Wiktionary lemma lookup for ru and ar inflected forms.
-4. Katakana pieces in semantic mode show one color per piece.
-5. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-6. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-7. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-8. Benchmark on another platform, with hover on.
-9. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+3. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+4. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+5. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+6. Benchmark on another platform, with hover on.
+7. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -23,7 +22,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ### Quality gaps
 
-- Katakana words in semantic mode show one color per piece. Kagome gives whole words but one word was still off.
+- Semantic mode colors katakana words whole (キツネ, コンピューター); UniDic short units still split compounds such as スマートフォン into スマート and フォン, matching UD Japanese-GSD.
 - Dependency mode has no POS, so definitions pick senses from the relation alone: ja `私` (nsubj) shows the noun sense "a personal or private matter", `本` and `読み` show rare senses. Use the lemma or a coarse POS guess.
 - zh dependency int8 still loses accuracy (full GSD, UAS/LAS): fp32 86.9 / 83.3; dynamic int8 of the encoder only 82.6 / 77.7; per-channel (all or encoder only) collapses to 8 / 1, so ONNX Runtime's per-channel path is unusable here. Not shipped. Untried: static quantization with calibration, or int8 on the feed-forward layers only.
 - `KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos`: untested (LUW B-/I- tags over char-sized Unigram pieces, would need piece merging after tagging).
