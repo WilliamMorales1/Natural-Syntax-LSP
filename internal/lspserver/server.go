@@ -122,7 +122,7 @@ type lspServer struct {
 	wikt           atomic.Pointer[wiktionary.Client] // nil disables lookups
 	langs          atomic.Pointer[[]lang.Language]   // current language scripts
 	wiktionary     atomic.Bool                       // true = show Wiktionary defs (default)
-	wiktionaryLang atomic.Pointer[string]            // code, "model", or "auto"; unset = "en"
+	wiktionaryLang atomic.Pointer[string]            // comma list of codes, "detect", "model" or "auto"; unset = defaultWiktionaryLang
 
 	pendingMu sync.Mutex
 	pending   []*textItem // didOpen/didChange before model ready

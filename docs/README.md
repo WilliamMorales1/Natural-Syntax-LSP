@@ -20,4 +20,3 @@
 
 - [Adding a language](contributing/adding-a-language.md)
 - [Testing](contributing/testing.md): unit, eval and benchmark tests; retraining the language detector.
-- [Open work](contributing/plans.md)

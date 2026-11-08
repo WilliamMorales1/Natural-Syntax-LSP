@@ -15,16 +15,16 @@ Semantic mode colors each word by its contextual embedding, so similar embedding
 
 > A fox found some bread near the old computer and seemed happy. Later a deer ate an apple beside the printer, looking scared. …
 
-The groups are interleaved, so any color grouping comes from the words' meanings rather than their position in the text. With `all-mpnet-base-v2` and the default settings (measured before the default semantic model became `paraphrase-multilingual-MiniLM-L12-v2`):
+The groups are interleaved, so any color grouping comes from the words' meanings rather than their position in the text. With the default model and settings:
 
-| group      | words                                                    | color               |
-| ---------- | -------------------------------------------------------- | ------------------- |
-| animals    | fox, deer, owl, rabbit, wolf, bear                       | lavender/periwinkle |
-| food       | bread, apple, cheese, honey, butter, soup                | sky blue            |
-| technology | computer, printer, keyboard, router, server, phone       | green-teal          |
-| emotions   | happy, scared, angry, calm, proud, lonely, tired, cheerful | muted pink-gray   |
+| group      | words                                                      | color              |
+| ---------- | ---------------------------------------------------------- | ------------------ |
+| animals    | fox, deer, owl, rabbit, wolf, bear                         | teal/cyan          |
+| food       | bread, apple, cheese, honey, butter, soup                  | orange/salmon      |
+| technology | computer, printer, keyboard, router, server, phone         | amber/gold         |
+| emotions   | happy, scared, angry, calm, proud, lonely, tired, cheerful | pink/orchid        |
 
-The mean color distance between words in different groups is 3.6 times the mean distance between words in the same group. `all-MiniLM-L6-v2` also keeps each group compact, but places animals, food and technology in adjacent cyan hues; only the emotion words are clearly separated.
+The mean color distance between words in different groups is 3.9 times the mean distance between words in the same group. Food and technology sit in neighboring hues (about 40-65° and 50-95°), so they are easier to tell apart by context than by color; animals and emotions are clearly separate.
 
 Two known behaviors are excluded from the example:
 
@@ -33,13 +33,13 @@ Two known behaviors are excluded from the example:
 
 ## 1. Word embeddings
 
-The model (default `paraphrase-multilingual-MiniLM-L12-v2`; the numbers in this document were measured with `all-mpnet-base-v2` and `all-MiniLM-L6-v2`, which have been removed) processes one chunk of text at a time and returns a hidden state for each subword token. A word's vector is the mean of its subword vectors:
+The model (`paraphrase-multilingual-MiniLM-L12-v2`, the only semantic model in the catalog) processes one chunk of text at a time and returns a hidden state for each subword token. A word's vector is the mean of its subword vectors:
 
 $$v_w = \frac{1}{|S(w)|} \sum_{s \in S(w)} h_s$$
 
 Because the hidden states are contextual, the same word can receive different vectors in different sentences.
 
-Vectors are normalized to unit length, $\hat v = v / \lVert v \rVert$. Similarity is measured by cosine distance, $1 - \hat v \cdot \hat w \in [0, 2]$, or equivalently by the chord length $\lVert \hat v - \hat w \rVert = \sqrt{2 - 2\,\hat v \cdot \hat w}$. The vectors have 384 dimensions (multilingual MiniLM; 768 for mpnet). The method reduces them to two.
+Vectors are normalized to unit length, $\hat v = v / \lVert v \rVert$. Similarity is measured by cosine distance, $1 - \hat v \cdot \hat w \in [0, 2]$, or equivalently by the chord length $\lVert \hat v - \hat w \rVert = \sqrt{2 - 2\,\hat v \cdot \hat w}$. The vectors have 384 dimensions. The method reduces them to two.
 
 ## 2. Per-document principal plane
 
@@ -51,11 +51,11 @@ Each word is projected onto the plane they span:
 
 $$z_i = \big((\hat v_i - m) \cdot b_0,\ (\hat v_i - m) \cdot b_1\big)$$
 
-Of all orthogonal projections to two dimensions, this one preserves the most variance: about 22% of the total for a typical document. A fixed random plane, which earlier versions used, preserves about 0.3%.
+Of all orthogonal projections to two dimensions, this one preserves the most variance: about 12-13% of the total for 1,000-5,000 words of news and web text. A fixed random plane preserves about 0.6%.
 
 ### Computation
 
-$C$ is never materialized; at $d = 768$ it would occupy 2.4 MB. The method needs only products $Ca$, which can be computed directly from the data in a single pass:
+$C$ is never materialized; at $d = 384$ it would occupy 590 KB. The method needs only products $Ca$, which can be computed directly from the data in a single pass:
 
 $$C a = \sum_i (\hat v_i - m)\,\big((\hat v_i - m)\cdot a\big)$$
 
@@ -63,16 +63,16 @@ $$C a = \sum_i (\hat v_i - m)\,\big((\hat v_i - m)\cdot a\big)$$
 
 ## 3. Stability across edits
 
-**Warm start.** Each refit starts from the document's previous axes and runs at most 3 iterations; a document's first fit runs up to 30. Three warm iterations are within about 0.006 (in units of the maximum color difference) of the converged result.
+**Warm start.** Each refit starts from the document's previous axes and runs at most 3 iterations; a document's first fit runs up to 30. An edit changes the document only slightly, so three warm iterations land close to the converged result.
 
-The cap is required because convergence slows when the second and third eigenvalues are close. Without it, refits of a 5,000-word document ran to the iteration limit, taking about 290 ms per edit instead of about 50 ms.
+The cap matters because convergence slows when the second and third eigenvalues are close; without it, refits of long documents run to the iteration limit on every edit.
 
 **Alignment.** PCA determines the plane but not the orientation of the axes within it. A refit may return the same plane rotated or reflected relative to the previous fit, which would shift every hue even if the document were unchanged. After each refit, the new axes $b_0, b_1$ are rotated or reflected to best match the previous axes $a_0, a_1$. With $M_{ij} = a_i \cdot b_j$:
 
 - optimal rotation angle: $\theta = \mathrm{atan2}(M_{10} - M_{01},\ M_{00} + M_{11})$
 - optimal reflection angle: $\varphi = \mathrm{atan2}(M_{01} + M_{10},\ M_{00} - M_{11})$
 
-The candidate with the larger overlap $\sum_i a_i \cdot b'_i$ is applied (`alignPlane`). This is the closed-form solution of the 2D orthogonal Procrustes problem. Without alignment, 67–81% of word colors shifted by more than a quarter of the maximum color difference on each edit.
+The candidate with the larger overlap $\sum_i a_i \cdot b'_i$ is applied (`alignPlane`). This is the closed-form solution of the 2D orthogonal Procrustes problem. Without alignment, most word colors would jump on a typical edit.
 
 **Small documents.** Below 50 words the principal axes are too noisy to be useful. These documents use a fixed random plane, generated from a constant seed, which also serves as the starting point for a document's first fit.
 
@@ -88,7 +88,7 @@ Projected positions are scaled by a factor $s$ and clamped to the unit disk:
 
 $$u = \mathrm{clamp}(s \cdot z), \qquad \text{chroma} = C_{\max} \cdot |u|, \qquad \text{hue} = \mathrm{atan2}(u_y, u_x)$$
 
-Words on the boundary of the disk receive the full configured chroma. Words near the document mean receive less: 1–8% of words in typical text are close to neutral gray.
+Words on the boundary of the disk receive the full configured chroma. Words near the document mean receive less: about 1–2% of words in typical text are close to neutral gray (radius below 0.15).
 
 ### Disk mapping versus angle-only mapping
 
@@ -107,9 +107,9 @@ A small $s$ makes all colors gray; a large $s$ pushes all words to full chroma. 
 - color distance: $|u_i - u_j| / 2$ (the disk has diameter 2)
 - embedding distance: $\lVert \hat v_i - \hat v_j \rVert / 2$
 
-`fitScale` samples 500 word pairs and evaluates 79 candidate scales, each a multiple of $1/r_{95}$, where $r_{95}$ is the 95th-percentile projected radius. It selects the candidate with the lowest mean absolute difference between the two distances. In testing, 500 pairs gave the same result as 20,000 to within 0.001.
+`fitScale` samples 500 word pairs and evaluates 79 candidate scales, each a multiple of $1/r_{95}$, where $r_{95}$ is the 95th-percentile projected radius. It selects the candidate with the lowest mean absolute difference between the two distances.
 
-The previous scale is kept unless the new best improves the sampled error by more than 2%. Without this hysteresis, sampling variation between edits moved $s$ between adjacent candidates and changed the chroma of every word.
+The previous scale is kept unless the new best improves the sampled error by more than 2%. Without this hysteresis, sampling variation between edits would move $s$ between adjacent candidates and change the chroma of every word.
 
 ## 5. Conversion to sRGB
 
@@ -122,13 +122,13 @@ At lightness 0.75, a chroma of 0.14 lies outside the sRGB gamut for hues between
 
 ## 6. Accuracy and limits
 
-The table below was measured on an excerpt of _Pride and Prejudice_ (1,000 and 5,000 words), over all word pairs. "Mean error" is the mean absolute difference between normalized color distance and normalized embedding distance.
+The table below was measured on the first 1,000 and 5,000 words of the UD English-EWT test set, over all word pairs. "Mean error" is the mean absolute difference between normalized color distance and normalized embedding distance.
 
-| method                                  | Pearson correlation | mean error |
-| --------------------------------------- | ------------------- | ---------- |
-| fixed random plane, angle only (former) | 0.15–0.20           | 0.26–0.28  |
-| per-document PCA, angle only            | 0.36–0.58           | 0.25–0.28  |
-| per-document PCA, disk (current)        | 0.36–0.53           | 0.19–0.22  |
+| method                               | Pearson correlation | mean error |
+| ------------------------------------ | ------------------- | ---------- |
+| fixed random plane, angle only       | 0.19                | 0.27       |
+| per-document PCA, angle only         | 0.46                | 0.25       |
+| per-document PCA, disk (shipped)     | 0.46–0.47           | 0.23       |
 
 Three limits apply to any linear projection to two dimensions, independent of tuning:
 
@@ -155,25 +155,22 @@ Processing of one edit:
 
 | item                         | size                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------ |
-| unit vector per word         | 4 bytes × dimension + 24-byte slice header: ≈1.5 KB/word (MiniLM), ≈3.1 KB/word (mpnet)    |
-| plane state (`SemanticPlane`) | mean and two axes, 3 × 4 × dimension: 4.6 KB (MiniLM), 9.2 KB (mpnet)                     |
-| 5,000-word document, mpnet   | ≈15.5 MB of vectors                                                                        |
+| unit vector per word          | 4 bytes × 384 + 24-byte slice header: ≈1.5 KB/word |
+| plane state (`SemanticPlane`) | mean and two axes, 3 × 4 × 384: 4.6 KB             |
+| 5,000-word document           | ≈7.8 MB of vectors                                 |
 
 Vectors are retained so that an edit re-embeds only changed chunks while the whole document is recolored. They are released when the document is closed.
 
-**Per edit** (Go benchmarks on real embeddings, with allocation counts):
+**Per edit** (real embeddings of English-EWT text, ThinkPad X280):
 
-| document            | refit (`Fit`)                   | coloring (`Color`, all words)  |
-| ------------------- | ------------------------------- | ------------------------------ |
-| MiniLM, 1,000 words | 5.2 ms, 25 KB in 9 allocations  | 1.3 ms, 1 allocation per word  |
-| mpnet, 1,000 words  | 12.1 ms, 33 KB in 9 allocations | 2.2 ms, 1 allocation per word  |
-| mpnet, 5,000 words  | 51 ms, 82 KB in 9 allocations   | 11.5 ms, 1 allocation per word |
+| document    | first fit | warm refit (`Fit`) | coloring (`Color`, all words) |
+| ----------- | --------- | ------------------ | ----------------------------- |
+| 1,000 words | 32–37 ms  | 4 ms               | 1.3 ms                        |
+| 5,000 words | 92–98 ms  | 14–15 ms           | 7 ms                          |
 
-`Fit`'s 9 allocations are the mean, two axis pairs, three per-word arrays for scale selection and the pair sample. `Color` allocates only the hex string; `docTokens` adds the merged token slice and 24 bytes of vector reference per word.
+`Fit` makes 9 allocations: the mean, two axis pairs, three per-word arrays for scale selection and the pair sample. `Color` allocates only the hex string; `docTokens` adds the merged token slice and 24 bytes of vector reference per word.
 
-A document's first fit runs up to 30 iterations: 74 ms for 1,000 mpnet words and 415 ms for 5,000. Subsequent edits use the warm costs above.
-
-For comparison, embedding a single 122-word chunk takes about 19 ms (MiniLM) or 104 ms (mpnet).
+For comparison, embedding a single 122-word chunk takes about 77 ms, so the model dominates edit time.
 
 **Client side:**
 
@@ -184,5 +181,5 @@ For comparison, embedding a single 122-word chunk takes about 19 ms (MiniLM) or 
 
 - The same word can get different colors in different documents, or after reopening one.
 - Crossing 50 words in either direction changes all colors once; large insertions converge over several edits.
-- Refits run on the registry goroutine, so hover and token requests wait: a few ms typically, about 60 ms for 5,000 mpnet words.
+- Refits run on the registry goroutine, so hover and token requests wait: a few ms typically, about 20 ms for 5,000 words.
 - Low-chroma words near the mean may look uncolored.

@@ -248,11 +248,11 @@ def _export_dependency(model_name, out_dir):
         nn.LSTM (same LSTMCell gate math per layer/direction) — so we copy
         its per-cell weights into a real nn.LSTM, which *does* export to
         ONNX cleanly.
-      - We drop the optional attention-mixing bonus term (use_attentions):
-        reproducing its exact subword-attention squeeze logic isn't worth
-        the fragility for a bonus term added on top of the main biaffine
-        arc/rel scores. (Verified against the original architecture on a
-        sample sentence — see TODO.md — result was a fully correct parse.)
+      - The optional attention-mixing term (use_attentions) is dropped:
+        reproducing its subword-attention squeeze logic is fragile, and it
+        only adds to the main biaffine arc/rel scores. The exported parser
+        is therefore not numerically identical to the PyTorch one; catalog
+        accuracy is measured on the ONNX export (docs/models.md).
     """
     from diaparser.parsers import Parser
     from torch import nn

@@ -24,13 +24,13 @@ These need models or a long run, so they skip unless enabled:
 | `NSLS_ML_DIR` | `internal/inference` multilingual tests | Sample sentences per language through the exported models |
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
 | `NSLS_WIKT_EVAL=1` | `internal/wiktionary` `TestLiveAccuracy` | Live Wiktionary hits on UD treebank words (`udFiles`) |
-| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across languages (the table in benchmarks.md covers en, es, fr, zh, ja; ru is tested but not yet tabled) |
-| `NSLS_MODEL_COST=1` (or `NLS_TAG_DUMP=DIR`) | `internal/inference` `TestModelCost` | Wall and CPU time per mode for a long document and one sentence; `NLS_TAG_DUMP` also writes each mode's tokens for before/after diffs |
+| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across languages (en, es, fr, ru, zh, ja) |
+| `NSLS_MODEL_COST=1` (or `NLS_TAG_DUMP=DIR`) | `internal/inference` `TestModelCost` | Wall and CPU time per mode for a long document and one sentence; `NLS_TAG_DUMP` also writes each mode's tokens, to diff output across a change |
 | `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency (Wiktionary on; `NSLS_BENCH_WIKT=0` off) and server memory, through a real headless Neovim on Linux, macOS or Windows; `NSLS_BENCH_ONLY` filters cases |
 
 The model tests in `internal/inference` load each installed model once per run and share it across tests.
 
-Run heavy ones under `oomguard run -- env VAR=... go test ...` on a small machine. Results: [benchmarks.md](../benchmarks.md).
+The model tests load several hundred MB per model; on a small machine, cap memory (for example `systemd-run --user --scope -p MemoryMax=4G go test ...`). Results: [benchmarks.md](../benchmarks.md).
 
 ## Fuzzing
 
@@ -42,7 +42,7 @@ Other targets: `FuzzParseCPUList` (`internal/inference`), `FuzzStripHTML` (`inte
 
 ## Profiling
 
-Where edit time goes (`go test -bench PredictChunk -cpuprofile` in `internal/inference`): over 99% is inside ONNX Runtime. Tokenizing, pooling, decoding and span mapping in Go take about 0.3% (10-20 ms of 3.6 s per 20 dependency runs), so rewriting those loops as matrix products would not show. `BenchmarkRegistryOpen` (20 paragraphs, stub model) takes 6 ms, mostly garbage collection.
+Where edit time goes (`go test -bench PredictChunk -cpuprofile` in `internal/inference`): over 99% is inside ONNX Runtime. Tokenizing, pooling, decoding and span mapping in Go take about 0.3% (10-20 ms of 3.6 s per 20 dependency runs), so optimizing those loops would not be noticeable. `BenchmarkRegistryOpen` (20 paragraphs, stub model) takes 6 ms, mostly garbage collection.
 
 ## Language detector
 

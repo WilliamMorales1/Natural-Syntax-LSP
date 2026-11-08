@@ -4,37 +4,39 @@ How to rerun each table: [contributing/testing.md](contributing/testing.md). Per
 
 ## Semantic quality
 
-`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQualityAcrossLanguages -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
+`NSLS_SEMANTIC_EVAL=1 go test ./internal/inference -run TestSemanticQualityAcrossLanguages -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
 
-| Model / language | sep | colsep | grp |
-| ---------------- | --- | ------ | --- |
-| multilingual en | 1.30 | 3.89 | 1.00 |
-| multilingual es | 1.34 | 3.99 | 1.00 |
-| multilingual fr | 1.31 | 2.59 | 1.00 |
-| multilingual zh | 1.36 | 3.54 | 1.00 |
-| multilingual ja (katakana words) | 1.35 | 2.88 | 1.00 |
-| multilingual ja (kanji words) | 1.26 | 2.68 | 1.00 |
-| mpnet en (removed) | 1.29 | 3.95 | 1.00 |
-| English MiniLM en (removed) | 1.20 | 4.63 | 1.00 |
+| Language | sep | colsep | grp |
+| -------- | --- | ------ | --- |
+| en | 1.30 | 3.89 | 1.00 |
+| es | 1.34 | 3.99 | 1.00 |
+| fr | 1.31 | 2.59 | 1.00 |
+| ru | 1.30 | 2.24 | 0.92 |
+| zh | 1.36 | 3.54 | 1.00 |
+| ja (katakana words) | 1.29 | 2.56 | 0.96 |
+| ja (kanji words) | 1.27 | 2.83 | 1.00 |
 
-Across languages, the nearest word in another language has the right group 99% of the time and is the actual translation 88% of the time (chance 4%).
+Across the six languages, the nearest word in another language belongs to the right group 97% of the time and is the actual translation 83% of the time (chance 4%). Japanese is the weakest pair partner (58-75% translations).
 
-- English quality matches mpnet on this test; colors are slightly less separated than with either removed English model.
-- es, fr, zh and ja all match English on group accuracy.
-- Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Before this, every tokenizer piece got its own mark, so katakana `キツネ` reached the model as `▁キ ▁ツ ▁ネ` (ja 0.17, zh 0.88).
+Caveats:
+
+- 24 words per language is a small sample, and most rows reach 1.00 on `grp`, so this test catches regressions but cannot rank models that both pass.
+- Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Marking every tokenizer piece instead sends katakana `キツネ` to the model as `▁キ ▁ツ ▁ネ` and drops `grp` to 0.17 for ja and 0.88 for zh.
 - Japanese words come from kagome, so a katakana word gets one color (`キツネ`, `コンピューター`). UniDic short units still split compounds such as `スマートフォン` into `スマート` and `フォン`, matching UD Japanese-GSD.
 
 ## Dictionary coverage
 
 `NSLS_WIKT_EVAL=1 go test ./internal/wiktionary -run TestLiveAccuracy -v` looks up 100 unique content words per language from the UD test treebank (POS mode) and counts the words with a Wiktionary definition (hit) and, of those, how many matched the model's POS section.
 
+The lemma rules in `russian.lua` and `arabic.lua` were tuned against these same samples, so their hit rates are optimistic for unseen text. Scored on the tokenizer's own words instead of the treebank's, ru reaches 82% and ar 86%.
+
 | Language | Hit | POS section match | Misses are mostly |
 | -------- | --- | ----------------- | ----------------- |
 | it | 93% | 90% | proper nouns |
 | pt | 87% | 92% | proper nouns, rare forms |
-| ru | 87% | 98% | proper nouns, participles (was 73% before adjective lemma forms; noun and verb endings in `russian.lua` take the tokenizer's own words from 79% to 82%) |
+| ru | 87% | 98% | proper nouns, participles |
 | de | 85% | 92% | compounds, inflected verbs |
-| ar | 90% | 93% | broken plurals, names (86% of the tokenizer's own words, 62% before clitic splitting) |
+| ar | 90% | 93% | broken plurals, names |
 | zh | 84% | 91% | rare words, names |
 
 ## Language detection
@@ -50,12 +52,12 @@ Short Latin-script lines are the weak spot: Spanish and Portuguese, French and I
 
 ## Latency and memory
 
-Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-2500 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. The dependency/ru and dependency/pt rows were added later (2026-11-08); dependency/zh is the fp32 parser.
+Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-2500 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. dependency/zh is the fp32 parser.
 
 | Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median / max (ms) | Hover cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
 | ---- | ---------- | -------------- | ---------------------- | ----------------------- | ----------------- | ----------- | -------------- | ------------- |
 | pos/en/bert_base | 458 | 744 | 97 / 100 | 1 / 75 | 0.6 | 16/16 | 405 | 423 |
-| semantic/en/mpnet | 864 | 77 | 79 / 101 | 4 / 356 | 0.7 | 16/16 | 395 | 415 |
+| semantic/en | 998 | 49 | 36 / 41 | 1 / 116 | 0.6 | 16/16 | 221 | 241 |
 | dependency/en/electra | 875 | 998 | 132 / 171 | 14 / 106 | 0.7 | 16/16 | 663 | 668 |
 | pos/es | 1020 | 475 | 65 / 77 | 16 / 313 | 0.4 | 14/15 | 457 | 566 |
 | pos/fr | 1031 | 541 | 64 / 68 | 15 / 143 | 0.2 | 18/18 | 457 | 564 |

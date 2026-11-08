@@ -30,7 +30,9 @@ One setting, `naturalSyntaxLs.model` (`-model` for the server), picks the model 
 
 Accuracy is on UD test treebanks; method in [benchmarks.md](benchmarks.md). Size and accuracy trade-offs per language: [design/languages.md](design/languages.md).
 
-The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet, 2-3x faster per edit.
+### Dependency export differs from upstream diaparser
+
+`scripts/export_model.py` rebuilds each diaparser parser for ONNX. Two changes: the custom LSTM is replaced by a stock `nn.LSTM` with the same weights (identical output without padding), and the optional attention-mixing term (`use_attentions`) is left out. The second change means the exported parser is not numerically identical to the PyTorch one for models trained with that term. The UAS/LAS figures above are measured on the exported ONNX files, so they include its effect.
 
 ## Files on disk
 
