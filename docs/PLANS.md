@@ -8,19 +8,18 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
 
-1. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-2. Test `setup.ps1` and the Lua script loading on Windows.
-3. Auto-detect never switches the model (German file gets English tags).
-4. Arabic hover: strip `ال` and tashkeel.
-5. Wiktionary lemma lookup for ru and ar inflected forms.
-6. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-7. Evaluate ja int8 POS with kagome words.
-8. Katakana pieces in semantic mode show one color per piece.
-9. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-10. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-11. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-12. Benchmark on another platform, with hover on.
-13. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Test `setup.ps1` and the Lua script loading on Windows.
+2. Auto-detect never switches the model (German file gets English tags).
+3. Arabic hover: strip `ال` and tashkeel.
+4. Wiktionary lemma lookup for ru and ar inflected forms.
+5. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+6. Evaluate ja int8 POS with kagome words.
+7. Katakana pieces in semantic mode show one color per piece.
+8. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+9. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+10. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+11. Benchmark on another platform, with hover on.
+12. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -37,7 +36,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ### Definition lookup
 
 - Hover in Neovim resolves ja and zh words; kagome and the zh model already split `私は` and `学生们的`, so the ja lemma fallback and zh prefix trimming only cover pieces that still carry a particle or suffix (unit-tested, not seen in an editor). zh has no lemmatizer; `-tags nojaseg` builds have no ja lemmas.
-- Check ja/zh hover in VS Code.
 
 ### Export and setup
 
@@ -46,7 +44,8 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ### Validation
 
 - Benchmark on a platform other than the X280, and with hover on (Wiktionary on).
-- VS Code checks: semantic tokens, hover, edits, definitions.
+- VS Code (1.138, extension host) passes for ja and zh in pos and dependency modes (semantic tokens, hover with Wiktionary, edits) and for hover in semantic mode. Not observed: semantic-mode color decorations, which the extension draws from a server notification and the API cannot read.
+- The extension only attaches to `file` scheme documents, so untitled buffers get no highlighting.
 - Opt-in tests (`NSLS_ML_DIR=~/.config/natural-syntax-ls/models`) pass for es, fr, ja POS, semantic and es/fr dependency. Not run: ja, zh and ru dependency (models not exported locally), the `NSLS_EVAL` treebank evals, langid and Unigram reference tests.
 
 ### Acceptance
