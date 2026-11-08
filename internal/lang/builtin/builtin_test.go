@@ -149,3 +149,26 @@ func TestDirOverridesByCode(t *testing.T) {
 		t.Errorf("fr lost: %q", got)
 	}
 }
+
+func TestSeedKeepsExistingFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "lang")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(dir, "french.lua")
+	if err := os.WriteFile(mine, []byte(`return {code = "fr"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Seed(dir); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(mine); string(b) != `return {code = "fr"}` {
+		t.Errorf("existing file overwritten: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "russian.lua")); err != nil {
+		t.Error(err)
+	}
+	if got := byCode(t, "ru", dir); got.Wiktionary == nil {
+		t.Error("seeded russian.lua did not load")
+	}
+}

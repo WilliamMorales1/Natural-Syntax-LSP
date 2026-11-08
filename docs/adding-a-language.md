@@ -2,7 +2,7 @@
 
 A language is a Lua script. Drop `<code>.lua` into `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, or the directory named by `naturalSyntaxLs.langDir` (`--lang-dir`), and restart the server. No Go build needed. Later directories override earlier ones, and all override the built-in scripts, by `code`.
 
-Built in as embedded scripts (`internal/lang/scripts/*.lua`): English, French, Spanish, Russian, Arabic. Built in as Go packages, because they need native assets: Japanese (kagome dictionary) and Chinese (Simplified/Traditional tables). Use Go only when a hook needs a native library or big table; `-tags english` drops those two.
+On first start the server copies the embedded defaults (`internal/lang/scripts/*.lua`) into `~/.config/natural-syntax-ls/lang/` without overwriting existing files, so edit them there. Delete a file to get the current default back. Built-in scripts: English, French, Spanish, Russian, Arabic. Built in as Go packages, because they need native assets: Japanese (kagome dictionary) and Chinese (Simplified/Traditional tables). Use Go only when a hook needs a native library or big table; `-tags english` drops those two.
 
 Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
 

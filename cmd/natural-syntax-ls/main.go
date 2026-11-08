@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -90,6 +91,9 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
+	if err := builtin.Seed(filepath.Join(dataDir, "lang")); err != nil {
+		slog.Warn("seed language scripts", "err", err)
+	}
 	languages := builtin.Languages(filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

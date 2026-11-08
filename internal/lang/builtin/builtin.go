@@ -2,7 +2,10 @@
 package builtin
 
 import (
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 
 	"natural-syntax-ls/internal/lang"
@@ -32,4 +35,29 @@ func rank(code string) int {
 		return i
 	}
 	return len(order)
+}
+
+// Seed writes the embedded scripts missing from dir, so users can edit them in place; existing files are never overwritten.
+func Seed(dir string) error {
+	entries, err := fs.ReadDir(scripts.FS, ".")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		dst := filepath.Join(dir, e.Name())
+		if _, err := os.Stat(dst); err == nil {
+			continue
+		}
+		src, err := fs.ReadFile(scripts.FS, e.Name())
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, src, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
