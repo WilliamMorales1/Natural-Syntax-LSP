@@ -7,15 +7,25 @@ import (
 
 	lua "github.com/yuin/gopher-lua"
 
+	"natural-syntax-ls/internal/lang/arabic"
 	"natural-syntax-ls/internal/tokenizer"
 )
 
 // tokenizerOptions maps the closed set of named tokenizer flags a script may select; the work stays in Go.
 func tokenizerOptions(t *lua.LTable) ([]tokenizer.Option, error) {
-	if err := checkKeys(t, "tokenizer.", "elisions"); err != nil {
+	if err := checkKeys(t, "tokenizer.", "elisions", "arabic_clitics"); err != nil {
 		return nil, err
 	}
 	var opts []tokenizer.Option
+	switch v := t.RawGetString("arabic_clitics").(type) {
+	case lua.LBool:
+		if v {
+			opts = append(opts, tokenizer.WithVocabWordMerger(arabic.CliticMerger))
+		}
+	case *lua.LNilType:
+	default:
+		return nil, fmt.Errorf("field tokenizer.arabic_clitics: must be a boolean")
+	}
 	switch v := t.RawGetString("elisions").(type) {
 	case *lua.LTable:
 		if err := checkKeys(v, "tokenizer.elisions.", "clitics", "words"); err != nil {

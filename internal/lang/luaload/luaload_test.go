@@ -29,10 +29,26 @@ func TestParseErrorsNameScriptAndField(t *testing.T) {
 		`return {code =`: "t.lua",
 		`error("boom")`:  "boom",
 		`return {code="x", tokenizer = {elisions = {clitics = 1}}}`: "clitics",
+		`return {code="x", tokenizer = {arabic_clitics = "yes"}}`:   "tokenizer.arabic_clitics",
 	} {
 		_, err := Parse("t.lua", src)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Parse(%q) error = %v, want substring %q", src, err, want)
+		}
+	}
+}
+
+func TestArabicCliticsFlag(t *testing.T) {
+	for src, want := range map[string]int{
+		`return {code = "ar", tokenizer = {arabic_clitics = true}}`:  1,
+		`return {code = "ar", tokenizer = {arabic_clitics = false}}`: 0,
+	} {
+		l, err := Parse("ar.lua", src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(l.Tokenizer) != want {
+			t.Errorf("%s: %d options, want %d", src, len(l.Tokenizer), want)
 		}
 	}
 }

@@ -8,7 +8,7 @@
 | `xlmr-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
 | `xlmr-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
 | `xlmr-ja` | `xlmr-ja` | ~280 MB | POS | ja | XLM-R UPOS, int8; 96.2% on GSD with kagome words (fp32 97.1%) |
-| `xlmr-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS, int8; 93.4% on PADT (Apache-2.0) |
+| `xlmr-ar` | `xlmr-ar` | ~280 MB | POS | ar | XLM-R UPOS, int8; 90.5% of all PADT characters with clitic splitting (84.8% without) (Apache-2.0) |
 | `xlmr-de` | `xlmr-de` | ~280 MB | POS | de | XLM-R UPOS, int8; 93.3% on GSD (Apache-2.0) |
 | `xlmr-it` | `xlmr-it` | ~280 MB | POS | it | XLM-R UPOS, int8; 97.1% on ISDT (Apache-2.0) |
 | `xlmr-pt` | `xlmr-pt` | ~280 MB | POS | pt | XLM-R UPOS, int8; 95.6% on GSD (Apache-2.0) |
@@ -106,6 +106,19 @@ Japanese text that contains kana is split into UniDic short-unit words by [kagom
 
 The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `chinese-roberta-upos` (`KoichiYasuoka/chinese-roberta-base-upos`): it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. The vocab file is found next to the model. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level).
 
+### Arabic clitics
+
+UD Arabic-PADT, which the Arabic model was trained on, splits a written word such as `وبالكتاب` into syntactic words (`و`, `ب`, `الكتاب`). Without a split the model tags the whole written word once: 16% of PADT test words carry a clitic, and only 39.8% of their characters got their own word's tag. `tokenizer.arabic_clitics` in `data/lang/arabic.lua` splits off a conjunction (`و ف`), a preposition (`ب ل ك`, with `لل` read as `ل` plus `ال`), the future `س` and a pronoun suffix (`ه ها هم ...`). It needs no extra files: a split is taken when the rest is a likelier whole word in the model's own SentencePiece vocabulary than the written word, or when the written word is in the vocabulary under no common inflection, plus short lists of function words (`فيها`, `وهو`). Marks stay with their letter.
+
+Measured on the PADT sentences whose words align with the text (int8 model, per character, clitic parts scored by their own tag):
+
+| Set | Clitic boundaries P / R | All characters | Clitic-word characters | Clitic-free words |
+| --- | ----------------------- | -------------- | ---------------------- | ----------------- |
+| test, 312 sentences, rules tuned here | 89.8 / 90.3 | 84.8 to 90.5% | 39.9 to 82.2% | 93.4 to 92.2% |
+| dev, held out | 82.6 / 86.7 | 84.8 to 89.2% | 45.2 to 79.4% | |
+
+The cost is false splits of rare words and names that start with `و ف ب ل ك` (`وقائية`, `بريطانيا`), which lowers clitic-free words by about a point. Hover looks up the host word, so live Wiktionary hits on the pipeline's words rose from 62% to 72%. Set `arabic_clitics = false` in a copied script to keep written words whole.
+
 ### Japanese and Chinese dependency parsers
 
 Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
@@ -122,7 +135,7 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 | pt | 87% | 92% | proper nouns, rare forms |
 | ru | 86% | 98% | proper nouns (was 73% before adjective lemma forms) |
 | de | 85% | 92% | compounds, inflected verbs |
-| ar | 83% | 92% | words with no clitic-free page |
+| ar | 84% | 92% | inflected forms, names (72% of the tokenizer's own words, 62% before clitic splitting) |
 | zh | 84% | 91% | rare words, names |
 
 

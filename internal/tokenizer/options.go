@@ -13,6 +13,9 @@ type Segmenter interface {
 // WordMerger rewrites the whitespace and punctuation split of text, for words the generic split cuts wrongly in one language.
 type WordMerger func(text []rune, words []WordSpan) []WordSpan
 
+// VocabScore returns the model's log-probability for word as one whole-word vocabulary piece, false when the vocabulary has no such piece.
+type VocabScore func(word string) (float64, bool)
+
 // Option adds language-specific behavior to a tokenizer.
 type Option func(*options)
 
@@ -27,6 +30,7 @@ type options struct {
 type scopedMerger struct {
 	lang  string
 	merge WordMerger
+	build func(VocabScore) WordMerger // set until bindVocab supplies merge
 }
 
 func newOptions(opts []Option) options {
@@ -44,7 +48,21 @@ func WithSegmenter(s Segmenter) Option {
 
 // WithWordMerger adds a merger, run in the order given.
 func WithWordMerger(m WordMerger) Option {
-	return func(o *options) { o.mergers = append(o.mergers, scopedMerger{o.scope, m}) }
+	return func(o *options) { o.mergers = append(o.mergers, scopedMerger{lang: o.scope, merge: m}) }
+}
+
+// WithVocabWordMerger adds a merger built from the model vocabulary when the tokenizer loads. Only Unigram tokenizers bind it; others skip it.
+func WithVocabWordMerger(build func(VocabScore) WordMerger) Option {
+	return func(o *options) { o.mergers = append(o.mergers, scopedMerger{lang: o.scope, build: build}) }
+}
+
+// bindVocab builds the vocabulary mergers from score.
+func (o *options) bindVocab(score VocabScore) {
+	for i, m := range o.mergers {
+		if m.build != nil {
+			o.mergers[i] = scopedMerger{lang: m.lang, merge: m.build(score)}
+		}
+	}
 }
 
 // WithLanguage limits the mergers in opts to lines whose detected language is code; see WithDetector.
@@ -73,7 +91,9 @@ func (o *options) merge(runes []rune, words []WordSpan) []WordSpan {
 	scoped := o.detect != nil && slices.ContainsFunc(o.mergers, func(m scopedMerger) bool { return m.lang != "" })
 	if !scoped {
 		for _, m := range o.mergers {
-			words = m.merge(runes, words)
+			if m.merge != nil {
+				words = m.merge(runes, words)
+			}
 		}
 		return words
 	}
@@ -95,7 +115,7 @@ func (o *options) merge(runes []rune, words []WordSpan) []WordSpan {
 		group := slices.Clone(words[i:j])
 		for _, m := range o.mergers {
 			// With no language known at all, run everything as if no detector were set.
-			if m.lang == "" || code == "" || m.lang == code {
+			if m.merge != nil && (m.lang == "" || code == "" || m.lang == code) {
 				group = m.merge(runes, group)
 			}
 		}

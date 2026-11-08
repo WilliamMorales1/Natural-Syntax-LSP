@@ -46,6 +46,7 @@ Every field but `code` is optional.
 | ----- | -------- |
 | `model_prefixes` | Models whose file name starts with the prefix are this language's (drives `wiktionaryLanguage: "model"` and `auto`). |
 | `tokenizer.elisions` | The generic split cuts clitics wrongly (French `l'ami`). Unigram tokenizers only. |
+| `tokenizer.arabic_clitics` | `true` splits Arabic conjunction, preposition, future and pronoun clitics off written words, guided by the model's vocabulary (`docs/models.md`). Unigram tokenizers only. |
 | `wiktionary.rewrite` | A token's headword differs from its text (English `'s` to `-'s`). |
 | `wiktionary.forms` | Extra headwords to try (stripped diacritics, `ё` variants). |
 | `wiktionary.sections` | Always: the English Wiktionary L2 headings (`"Spanish"`) that map to the language code. |

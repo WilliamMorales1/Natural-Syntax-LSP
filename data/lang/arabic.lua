@@ -15,6 +15,10 @@ end
 return {
 	code = "ar",
 	model_prefixes = { "xlmr_ar" },
+	tokenizer = {
+		-- Split و ف ب ل ك س and pronoun suffixes into the syntactic words PADT-trained models tag.
+		arabic_clitics = true,
+	},
 	wiktionary = {
 		code = "ar",
 		sections = { "Arabic" },

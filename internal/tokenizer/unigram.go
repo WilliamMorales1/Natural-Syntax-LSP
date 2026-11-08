@@ -175,7 +175,21 @@ func parseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
 	if t.clsID < 0 || t.sepID < 0 {
 		return nil, fmt.Errorf("tokenizer.json has no single-sequence special tokens")
 	}
+	t.opts.bindVocab(t.wordScore)
 	return t, nil
+}
+
+// wordScore looks word up as a single piece, with the word-start mark the model puts on a word after a space.
+func (t *UnigramTokenizer) wordScore(word string) (float64, bool) {
+	norm, _ := normalizeRunes(word)
+	if t.metaspace {
+		norm = append([]rune{'▁'}, norm...)
+	}
+	id, ok := t.ids[string(norm)]
+	if !ok {
+		return 0, false
+	}
+	return t.scores[id], true
 }
 
 // CLSID returns the id that opens a sequence ([CLS] or <s>).

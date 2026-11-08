@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -246,5 +247,31 @@ func TestLanguageScopedMergerFollowsDetectedLine(t *testing.T) {
 	// An undetectable text keeps the old behavior of running every merger.
 	if got := texts(tok.Tokenize("l'ami")); !slices.Equal(got, []string{"l'", "ami"}) {
 		t.Errorf("undetected = %q", got)
+	}
+}
+
+func TestVocabWordMergerScoresWholeWordPieces(t *testing.T) {
+	type got struct {
+		score float64
+		ok    bool
+	}
+	var seen map[string]got
+	build := func(score VocabScore) WordMerger {
+		seen = map[string]got{}
+		for _, w := range []string{"キ", "キツ"} {
+			s, ok := score(w)
+			seen[w] = got{s, ok}
+		}
+		return func(_ []rune, words []WordSpan) []WordSpan { return words[:1] }
+	}
+	tok, err := parseUnigram([]byte(tinyMetaspace), WithVocabWordMerger(build))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]got{"キ": {-5, true}, "キツ": {0, false}}; !maps.Equal(seen, want) {
+		t.Errorf("scores = %v, want %v", seen, want)
+	}
+	if words := tok.Tokenize("ab cd"); len(words) != 1 {
+		t.Errorf("merger not applied: %v", words)
 	}
 }
