@@ -112,6 +112,7 @@ type documentStore struct {
 	queuedModel   predictor
 	model         predictor // model of the pass in flight or last finished; nil before the first
 	lastItem      *textItem // latest accepted text, for re-running under another model
+	dropCache     bool      // next pass must not reuse chunk results
 	processing    bool
 	doc           *document
 	run           *run // in-flight pass while processing
@@ -214,6 +215,19 @@ func (dr *documentRegistry) modelFor(item *textItem) predictor {
 		}
 	})
 	return m
+}
+
+// reset re-analyses every document from scratch, e.g. after tokenizer rules changed.
+func (dr *documentRegistry) reset() {
+	dr.do(func() {
+		for _, st := range dr.stores {
+			if st.lastItem == nil || st.model == nil {
+				continue
+			}
+			st.dropCache = true
+			dr.scheduleProcessing(st.lastItem, tokenizeWith(st.model, st.lastItem.text), st.model, st)
+		}
+	})
 }
 
 // refresh re-runs every document whose preferred model changed, e.g. after a language's model finished loading.
@@ -430,7 +444,8 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 		return
 	}
 	// Chunks and the color plane belong to one model, so a switch starts clean.
-	if store.model != m {
+	if store.model != m || store.dropCache {
+		store.dropCache = false
 		store.chunkResults = nil
 		store.plane = inference.SemanticPlane{}
 		store.model = m

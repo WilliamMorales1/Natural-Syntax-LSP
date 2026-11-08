@@ -18,10 +18,10 @@ import (
 
 // DependencyModel runs a biaffine dependency-parsing ONNX model (BERT + BiLSTM + biaffine arc/relation scorers; see scripts/export_model.py).
 type DependencyModel struct {
-	session   *ort.DynamicAdvancedSession
-	tokenizer tokenizer.Tokenizer
-	rels      []postag.Deprel // index → decoded Deprel, loaded from _dependency_rels.json; index 0 is the unused "<bos>" placeholder
-	wordPart  int             // index of the "wp" relation of character-level models, else 0
+	session  *ort.DynamicAdvancedSession
+	tok      *tokHolder
+	rels     []postag.Deprel // index → decoded Deprel, loaded from _dependency_rels.json; index 0 is the unused "<bos>" placeholder
+	wordPart int             // index of the "wp" relation of character-level models, else 0
 }
 
 // wordPartRel is the relation a character-level model uses to link a unit to the last unit of its word.
@@ -67,7 +67,7 @@ func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
 
-	return &DependencyModel{session: session, tokenizer: tok, rels: rels, wordPart: max(wordPart, 0)}, nil
+	return &DependencyModel{session: session, tok: newTokHolder(tok, vocabPath), rels: rels, wordPart: max(wordPart, 0)}, nil
 }
 
 // Close releases the ORT session and environment.
@@ -93,11 +93,11 @@ func (m *DependencyModel) buildPoolMatrix(words []tokenizer.WordSpan) poolMatrix
 	type wordPieces struct {
 		start, count int
 	}
-	pieceIDs := []int64{int64(m.tokenizer.CLSID())}
+	pieceIDs := []int64{int64(m.tok.get().CLSID())}
 	bounds := []wordPieces{{0, 1}} // root word = [CLS] alone
 
 	for _, w := range words {
-		ids := m.tokenizer.WordIDs(w.Text)
+		ids := m.tok.get().WordIDs(w.Text)
 		start := len(pieceIDs)
 		pieceIDs = append(pieceIDs, ids...)
 		bounds = append(bounds, wordPieces{start, len(ids)})
@@ -350,5 +350,10 @@ func softmaxAt(v []float32, idx int) float32 {
 
 // Tokenize splits text using the model's own tokenizer rules.
 func (m *DependencyModel) Tokenize(text string) []tokenizer.WordSpan {
-	return m.tokenizer.Tokenize(text)
+	return m.tok.get().Tokenize(text)
+}
+
+// ReloadTokenizer rebuilds the tokenizer from its vocab with new options; the session stays loaded.
+func (m *DependencyModel) ReloadTokenizer(opts ...tokenizer.Option) error {
+	return m.tok.reload(opts...)
 }

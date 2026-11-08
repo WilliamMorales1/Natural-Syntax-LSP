@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"natural-syntax-ls/internal/tokenizer"
 
@@ -18,7 +19,7 @@ const ChunkSize = 200
 // baseModel holds the ONNX session shared by BERT-style token models (POSModel, EmbeddingModel); inputs are sized to each chunk, never padded.
 type baseModel struct {
 	session    *ort.DynamicAdvancedSession
-	tokenizer  tokenizer.Tokenizer
+	tok        *tokHolder
 	outputName string
 	lastDim    int64
 	// contiguous encodes unspaced neighbors without a word-start mark (see tokenizer.EncodeWordsContiguous).
@@ -26,7 +27,7 @@ type baseModel struct {
 }
 
 // Tokenize splits text using the model's own tokenizer rules.
-func (m *baseModel) Tokenize(text string) []tokenizer.WordSpan { return m.tokenizer.Tokenize(text) }
+func (m *baseModel) Tokenize(text string) []tokenizer.WordSpan { return m.tok.get().Tokenize(text) }
 
 var (
 	envMu   sync.Mutex
@@ -132,7 +133,33 @@ func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64, opts .
 		releaseEnv()
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
-	return &baseModel{session: session, tokenizer: tok, outputName: outputName, lastDim: lastDim}, nil
+	return &baseModel{session: session, tok: newTokHolder(tok, vocabPath), outputName: outputName, lastDim: lastDim}, nil
+}
+
+// ReloadTokenizer rebuilds the tokenizer from its vocab with new options; the session stays loaded.
+func (m *baseModel) ReloadTokenizer(opts ...tokenizer.Option) error { return m.tok.reload(opts...) }
+
+// tokHolder lets a running model swap its tokenizer, e.g. after a language script changed.
+type tokHolder struct {
+	p     atomic.Pointer[tokenizer.Tokenizer]
+	vocab string
+}
+
+func newTokHolder(t tokenizer.Tokenizer, vocab string) *tokHolder {
+	h := &tokHolder{vocab: vocab}
+	h.p.Store(&t)
+	return h
+}
+
+func (h *tokHolder) get() tokenizer.Tokenizer { return *h.p.Load() }
+
+func (h *tokHolder) reload(opts ...tokenizer.Option) error {
+	t, err := tokenizer.Open(h.vocab, opts...)
+	if err != nil {
+		return fmt.Errorf("reload tokenizer: %w", err)
+	}
+	h.p.Store(&t)
+	return nil
 }
 
 // Close releases the ORT session and environment.
@@ -169,7 +196,7 @@ func (m *baseModel) runWords(words []tokenizer.WordSpan) (wordsRun, error) {
 	if m.contiguous {
 		encode = tokenizer.EncodeWordsContiguous
 	}
-	enc := encode(m.tokenizer, words)
+	enc := encode(m.tok.get(), words)
 	ids, mask, tti := enc.InputIDs, enc.AttMask, enc.TokTypeIDs
 	seqLen := min(len(ids), maxSeqLen)
 	shape := ort.NewShape(1, int64(seqLen))

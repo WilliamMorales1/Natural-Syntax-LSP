@@ -83,6 +83,9 @@ type Config struct {
 	Languages []lang.Language // language hooks for the tokenizer and Wiktionary
 	// Switch names the installed model and vocab for a detected language; nil keeps one model for every text.
 	Switch func(code string) (modelPath, vocabPath string)
+	// ScriptDirs and LoadLanguages enable live reload: when a *.lua file in ScriptDirs changes, LoadLanguages is called again.
+	ScriptDirs    []string
+	LoadLanguages func() []lang.Language
 }
 
 // Run starts the LSP server over stdin/stdout and blocks until the client disconnects or sends exit.
@@ -94,7 +97,9 @@ func Run(ctx context.Context, cfg Config) error {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-	srv := &lspServer{ctx: ctx, cfg: cfg, ready: make(chan struct{}), wikt: wiktionary.NewClient(lang.WiktionaryLangs(cfg.Languages)...)}
+	srv := &lspServer{ctx: ctx, cfg: cfg, ready: make(chan struct{})}
+	srv.langs.Store(&cfg.Languages)
+	srv.wikt.Store(wiktionary.NewClient(lang.WiktionaryLangs(cfg.Languages)...))
 	srv.wiktionary.Store(true) // on by default
 	defer srv.closeModel()
 	return srv.serve(os.Stdin, os.Stdout)
@@ -113,9 +118,10 @@ type lspServer struct {
 	shutdown    atomic.Bool
 	writeErr    atomic.Pointer[error] // first transport write failure
 
-	wikt           *wiktionary.Client     // nil disables lookups
-	wiktionary     atomic.Bool            // true = show Wiktionary defs (default)
-	wiktionaryLang atomic.Pointer[string] // code, "model", or "auto"; unset = "en"
+	wikt           atomic.Pointer[wiktionary.Client] // nil disables lookups
+	langs          atomic.Pointer[[]lang.Language]   // current language scripts
+	wiktionary     atomic.Bool                       // true = show Wiktionary defs (default)
+	wiktionaryLang atomic.Pointer[string]            // code, "model", or "auto"; unset = "en"
 
 	pendingMu sync.Mutex
 	pending   []*textItem // didOpen/didChange before model ready
@@ -315,7 +321,7 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	var pred predictor
 	var err error
-	tokOpts := lang.TokenizerOptions(s.cfg.Languages, s.cfg.Forced)
+	tokOpts := lang.TokenizerOptions(*s.langs.Load(), s.cfg.Forced)
 	switch s.cfg.Mode {
 	case ModeSemantic:
 		pred, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, tokOpts...)
@@ -338,6 +344,7 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	}
 	if s.cfg.Switch != nil && s.cfg.Forced == "" {
 		sw := newSwitcher(s.cfg)
+		sw.languages = func() []lang.Language { return *s.langs.Load() }
 		s.switcher = sw
 		reg.pick = func(text string, cur predictor) predictor { return sw.pick(text, cur, pred) }
 		sw.onReady = func() {
@@ -364,6 +371,9 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	// Tell VS Code to re-request semantic tokens for all open documents.
 	s.sendRequest("workspace/semanticTokens/refresh")
 
+	if s.cfg.LoadLanguages != nil {
+		go s.watchScripts()
+	}
 	if rawOpts == nil {
 		return
 	}
@@ -655,7 +665,7 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 	}
 	tok := res.tok
 	var wiktDef, wiktURL string
-	if s.wiktionary.Load() && s.wikt != nil {
+	if wikt := s.wikt.Load(); s.wiktionary.Load() && wikt != nil {
 		spec := defaultWiktionaryLang
 		if p := s.wiktionaryLang.Load(); p != nil {
 			spec = *p
@@ -675,7 +685,7 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 			if lang == "" {
 				lang = "en"
 			}
-			if def, url, ok := s.wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
+			if def, url, ok := wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
 				wiktDef, wiktURL = def, url
 				break
 			}

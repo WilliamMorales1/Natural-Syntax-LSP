@@ -100,18 +100,21 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
-	languages := builtin.Languages(filepath.Join(repoData, "lang"), filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
+	scriptDirs := []string{filepath.Join(repoData, "lang"), filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir}
+	languages := builtin.Languages(scriptDirs...)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := lspserver.Run(ctx, lspserver.Config{
-		ModelPath: *modelPath,
-		VocabPath: *vocabPath,
-		Mode:      mode,
-		Language:  modelLanguage(languages, *modelPath, *forced),
-		Forced:    *forced,
-		Languages: languages,
-		Switch:    switchFor(catalog, mode, *modelPath, *forced, dirs),
+		ModelPath:     *modelPath,
+		VocabPath:     *vocabPath,
+		Mode:          mode,
+		Language:      modelLanguage(languages, *modelPath, *forced),
+		Forced:        *forced,
+		Languages:     languages,
+		ScriptDirs:    scriptDirs,
+		LoadLanguages: func() []lang.Language { return builtin.Languages(scriptDirs...) },
+		Switch:        switchFor(catalog, mode, *modelPath, *forced, dirs),
 	}); err != nil {
 		return fmt.Errorf("lsp: %w", err)
 	}

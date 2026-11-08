@@ -20,6 +20,8 @@ type switcher struct {
 	pending map[string]bool // loading now
 	skip    map[string]bool // no installed model, or it failed to load
 	onReady func()          // called after a model finishes loading
+	// languages returns the current language scripts.
+	languages func() []lang.Language
 }
 
 func newSwitcher(cfg Config) *switcher {
@@ -53,7 +55,7 @@ func (sw *switcher) load(code string) {
 		sw.finish(code, nil)
 		return
 	}
-	opts := lang.TokenizerOptions(sw.cfg.Languages, "")
+	opts := lang.TokenizerOptions(sw.languages(), "")
 	var m predictor
 	var err error
 	switch sw.cfg.Mode {
@@ -84,6 +86,15 @@ func (sw *switcher) finish(code string, m predictor) {
 		return
 	}
 	sw.loaded[code] = m
+}
+
+// each calls f on every loaded model.
+func (sw *switcher) each(f func(predictor)) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	for _, m := range sw.loaded {
+		f(m)
+	}
 }
 
 func (sw *switcher) close() {

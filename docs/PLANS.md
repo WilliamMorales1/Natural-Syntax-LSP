@@ -8,9 +8,8 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-2. Benchmark on another platform, with hover on.
-3. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Benchmark on another platform, with hover on.
+2. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -49,11 +48,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Russian misses left are proper nouns; noun and verb inflections have no lemmatizer (adjectives do, `data/lang/russian.lua`). German compounds and inflected verbs miss the same way.
 - Arabic clitic segmentation: decision is to leave pieces. Revisit only if a segmenter fits the size and memory budget.
-
-## Lua-defined languages and models
-
-- Model metadata in Lua: labels, UPOS mapping, hidden size, normalization. `export_model.py` should emit `<model>.lua` next to the ONNX file.
-- `Reload` on script file change (optional).
 
 ## New-language workflow
 

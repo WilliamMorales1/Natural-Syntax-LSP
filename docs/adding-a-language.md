@@ -1,6 +1,6 @@
 # Adding a language
 
-A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; restart the server after an edit.
+A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; edits are picked up within about two seconds, with no restart: the server re-reads the scripts, rebuilds the tokenizers and Wiktionary rules and re-analyses open documents. Restart only to change which directories are read.
 
 The shipped scripts are in `data/lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags nojaseg` drops the kagome dictionary.
 

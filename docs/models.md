@@ -123,3 +123,27 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 | ar | 83% | 92% | words with no clitic-free page |
 | zh | 84% | 91% | rare words, names |
 
+
+## Startup and latency per language
+
+Through headless Neovim on the ThinkPad X280 (i7-8650U, hover on), one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench`. Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it.
+
+| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median (ms) | RSS ready (MB) | Peak RSS (MB) |
+| ---- | ---------- | -------------- | ---------------------- | ----------------- | -------------- | ------------- |
+| pos/en/bert_base | 593 | 749 | 99 / 134 | 0 | 405 | 422 |
+| semantic/en/mpnet | 879 | 88 | 80 / 93 | 0 | 400 | 415 |
+| dependency/en/electra | 953 | 987 | 127 / 142 | 0 | 679 | 685 |
+| pos/es | 1088 | 451 | 62 / 84 | 0 | 458 | 566 |
+| pos/fr | 1120 | 475 | 61 / 68 | 0 | 462 | 564 |
+| pos/ru | 1110 | 469 | 59 / 69 | 0 | 453 | 566 |
+| pos/ja | 3390 | 1006 | 136 / 168 | 0 | 1017 | 1039 |
+| pos/zh | 538 | 788 | 104 / 122 | 0 | 396 | 411 |
+| semantic/es | 999 | 29 | 27 / 36 | 0 | 213 | 224 |
+| semantic/fr | 903 | 30 | 30 / 34 | 0 | 222 | 237 |
+| semantic/ja | 3004 | 54 | 32 / 40 | 0 | 764 | 772 |
+| semantic/zh | 855 | 26 | 22 / 29 | 0 | 218 | 224 |
+| semantic/ru | 886 | 28 | 25 / 31 | 0 | 248 | 257 |
+| dependency/es | 1219 | 979 | 125 / 140 | 0 | 916 | 1123 |
+| dependency/fr | 1278 | 1720 | 227 / 241 | 0 | 510 | 521 |
+| dependency/ja | 2788 | 753 | 94 / 100 | 0 | 784 | 785 |
+| dependency/zh | 999 | 1325 | 171 / 178 | 0 | 640 | 644 |

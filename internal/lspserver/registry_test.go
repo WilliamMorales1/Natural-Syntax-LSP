@@ -613,3 +613,28 @@ func TestRegistrySwitchesModelAndRefreshes(t *testing.T) {
 		t.Error("tokens unchanged after switching model")
 	}
 }
+
+func TestRegistryResetRepredictsEverything(t *testing.T) {
+	m := &countingModel{}
+	reg := newDocumentRegistry(m)
+	syncTokens(reg, "First para here.\n\nSecond one now.", 1)
+	before := m.calls.Load()
+	reg.reset()
+	if _, err := reg.semanticTokens(t.Context(), testURI); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.calls.Load() - before; got != 2 {
+		t.Errorf("reset ran %d chunk predictions, want 2", got)
+	}
+}
+
+func TestScriptSignatureChangesWithFile(t *testing.T) {
+	dir := t.TempDir()
+	a := scriptSignature([]string{dir})
+	if err := os.WriteFile(filepath.Join(dir, "x.lua"), []byte("return {}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b := scriptSignature([]string{dir}); a == b {
+		t.Error("signature ignored a new script")
+	}
+}
