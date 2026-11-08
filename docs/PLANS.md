@@ -55,7 +55,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ## Performance
 
 - Replace nested for-loops in hot paths (inference pre/post-processing, decoding, span mapping) with matrix multiplication or batched/concurrent equivalents where the result stays identical. Measure ms and RSS before and after with the existing bench.
-- Start loading a document's own model while the English model loads. Today the Spanish model starts only after the English one is up, so a Spanish document's first tags take about 1.3 s (`switch/pos/es` bench) against 0.5 s for English. The English weights are already freed when no open document needs them (ready RSS 790 to 490 MB, peak 912 to 590 MB).
 
 ## Language identification
 

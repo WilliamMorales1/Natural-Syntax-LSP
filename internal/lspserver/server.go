@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -319,6 +320,9 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 
 // loadModel loads the configured predictor, starts the registry, replays queued documents, and applies rawOpts.
 func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
+	if s.cfg.Switch != nil && s.cfg.Forced == "" {
+		s.startSwitcher()
+	}
 	var pred predictor
 	var err error
 	tokOpts := lang.TokenizerOptions(*s.langs.Load(), s.cfg.Forced)
@@ -342,15 +346,8 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 		forced := s.cfg.Forced
 		reg.detect = func(string) string { return forced }
 	}
-	if s.cfg.Switch != nil && s.cfg.Forced == "" {
-		sw := newSwitcher(s.cfg)
-		sw.languages = func() []lang.Language { return *s.langs.Load() }
-		s.switcher = sw
+	if sw := s.switcher; sw != nil {
 		reg.pick = func(text string, cur predictor) predictor { return sw.pick(text, cur, pred) }
-		sw.onReady = func() {
-			reg.refresh()
-			s.sendRequest("workspace/semanticTokens/refresh")
-		}
 	}
 	if s.cfg.Mode == ModeSemantic {
 		// O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.
@@ -544,6 +541,26 @@ func (s *lspServer) writeMsg(msg jsonrpcMsg) {
 	s.writeBytes(body)
 }
 
+// startSwitcher sets up per-language models and prefetches for documents opened so far; later ones prefetch in update.
+func (s *lspServer) startSwitcher() {
+	sw := newSwitcher(s.cfg)
+	sw.languages = func() []lang.Language { return *s.langs.Load() }
+	// A model that finishes before the registry exists is picked up by the replay in loadModel.
+	sw.onReady = func() {
+		if reg := s.registry.Load(); reg != nil {
+			reg.refresh()
+			s.sendRequest("workspace/semanticTokens/refresh")
+		}
+	}
+	s.pendingMu.Lock()
+	s.switcher = sw
+	queued := slices.Clone(s.pending)
+	s.pendingMu.Unlock()
+	for _, item := range queued {
+		sw.prefetch(item.text)
+	}
+}
+
 // sendRequest sends a server→client request (has an id; client must reply); replies are ignored in the default handler.
 func (s *lspServer) sendRequest(method string) {
 	id := s.nextReqID.Add(1)
@@ -565,7 +582,11 @@ func (s *lspServer) update(item *textItem) {
 		return
 	}
 	s.pending = append(s.pending, item)
+	sw := s.switcher
 	s.pendingMu.Unlock()
+	if sw != nil {
+		sw.prefetch(item.text)
+	}
 }
 
 func (s *lspServer) handleDidOpen(p didOpenParams) (any, *rpcError) {

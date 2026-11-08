@@ -30,7 +30,7 @@ func newSwitcher(cfg Config) *switcher {
 
 // pick returns the model for text: the loaded one for its language, nil while that model loads, else base. A text too short to tell keeps cur.
 func (sw *switcher) pick(text string, cur, base predictor) predictor {
-	code := langid.Detect(text[:min(len(text), docSample)])
+	code := sw.detect(text)
 	if code == "" {
 		return cur
 	}
@@ -42,15 +42,37 @@ func (sw *switcher) pick(text string, cur, base predictor) predictor {
 	if m, ok := sw.loaded[code]; ok {
 		return m
 	}
-	if sw.pending[code] {
-		return nil
-	}
-	if !sw.skip[code] && len(sw.loaded)+len(sw.pending) < maxSwitched {
-		sw.pending[code] = true
-		go sw.load(code)
+	if sw.pending[code] || sw.startLocked(code) {
 		return nil
 	}
 	return base
+}
+
+// prefetch starts loading text's model before the configured one is up, so the two loads overlap.
+func (sw *switcher) prefetch(text string) {
+	code := sw.detect(text)
+	if code == "" || code == sw.cfg.Language || code == "en" && sw.cfg.Language == "" {
+		return
+	}
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	if _, ok := sw.loaded[code]; !ok && !sw.pending[code] {
+		sw.startLocked(code)
+	}
+}
+
+func (sw *switcher) detect(text string) string {
+	return langid.Detect(text[:min(len(text), docSample)])
+}
+
+// startLocked begins loading code's model unless it has none or the cap is reached.
+func (sw *switcher) startLocked(code string) bool {
+	if sw.skip[code] || len(sw.loaded)+len(sw.pending) >= maxSwitched {
+		return false
+	}
+	sw.pending[code] = true
+	go sw.load(code)
+	return true
 }
 
 // load runs onReady whether or not the model loads, so documents waiting on it get analysed either way.
