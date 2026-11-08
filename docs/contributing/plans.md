@@ -1,6 +1,6 @@
 # Open work
 
-Only unfinished items are listed. Shipped behavior and measurements live in `docs/models.md`, `docs/settings.md` and `docs/adding-a-language.md`.
+Only unfinished items are listed. Shipped behavior and measurements live in the rest of [docs](../README.md).
 
 ## Order of work
 

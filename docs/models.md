@@ -1,6 +1,10 @@
 # Models
 
-| Setup name (`--model`, from `models.json`) | `naturalSyntaxLs.model` | Size | Mode | Languages | Notes |
+One setting, `naturalSyntaxLs.model` (`-model` for the server), picks the model for the active mode. Export with `scripts/setup.sh --model <setup name>` ([install.md](install.md#export-models)). The catalog lives in `data/models.json`.
+
+## Catalog
+
+| Setup name | `naturalSyntaxLs.model` | Size | Mode | Languages | Notes |
 | ---------------------- | ----------------------- | ---- | ---- | --------- | ----- |
 | `bert-base` (default) | `bert-base` | ~430 MB | POS | en | Higher accuracy (multilingual vocab inflates size) |
 | `mobilebert` | `mobilebert` | ~105 MB | POS | en | Faster startup |
@@ -24,13 +28,22 @@
 | `pt_ud.bertimbau` | `pt_ud.bertimbau` | ~125 MB | Dependency | pt | Trained here on Bosque and GSD (CC BY-SA 4.0, [Hydragon123/pt-ud-diaparser](https://huggingface.co/Hydragon123/pt-ud-diaparser)); int8; UAS/LAS 92.1 / 87.8 on the full GSD test set (1200 sentences), fp32 92.6 / 89.0 |
 | `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.5 / 85.5 on the full GSD test set (543 sentences) with kagome words. Needs `fugashi` and `unidic-lite` at export time |
 
-The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
+Accuracy is on UD test treebanks; method in [benchmarks.md](benchmarks.md). Size and accuracy trade-offs per language: [design/languages.md](design/languages.md).
 
-One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active. Its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model files on disk (`models/{slug}/{slug}.onnx` and `{slug}_vocab.txt` or `{slug}_tokenizer.json`, or `models/{slug}_dependency/{slug}_dependency.onnx` and its tokenizer file) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported. `export_model.py --int8` quantizes in place.
+The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet, 2-3x faster per edit.
 
-Export commands: [install.md](install.md#exporting-models).
+## Files on disk
 
-## Licenses and tag inventories
+The file name comes from the model name: `-`, `.` and `/` become `_` (the slug).
+
+| Mode | Files |
+| ---- | ----- |
+| `pos`, `semantic` | `models/<slug>/<slug>.onnx` plus `<slug>_vocab.txt` or `<slug>_tokenizer.json` |
+| `dependency` | `models/<slug>_dependency/<slug>_dependency.onnx` plus its tokenizer file |
+
+The name must match what you exported. `export_model.py --int8` quantizes in place.
+
+## Licenses
 
 Checked against the Hugging Face model cards and the UD treebank READMEs. The server itself is under the repository `LICENSE`; the exported weights keep the license of their source.
 
@@ -47,126 +60,14 @@ Checked against the Hugging Face model cards and the UD treebank READMEs. The se
 
 EAGLES (`NCMS000`) and CKIP (`Na`) labels also decode; `ExampleParseLabel` in `internal/postag` shows every inventory and the `O` fallback, which is logged when a model loads. The CKIP transformers models are GPL-3.0 and are not in the catalog.
 
-## Semantic quality across languages
+## Other models
 
-`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQualityAcrossLanguages -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
+Anything outside the catalog can be exported by hand:
 
-| Model / language | sep | colsep | grp |
-| ---------------- | --- | ------ | --- |
-| multilingual en | 1.30 | 3.89 | 1.00 |
-| multilingual es | 1.34 | 3.99 | 1.00 |
-| multilingual fr | 1.31 | 2.59 | 1.00 |
-| multilingual zh | 1.36 | 3.54 | 1.00 |
-| multilingual ja (katakana words) | 1.35 | 2.88 | 1.00 |
-| multilingual ja (kanji words) | 1.26 | 2.68 | 1.00 |
-| mpnet en (removed) | 1.29 | 3.95 | 1.00 |
-| English MiniLM en (removed) | 1.20 | 4.63 | 1.00 |
+```bash
+python scripts/export_model.py DIR --mode pos|semantic|dependency --model <Hugging Face repo id or diaparser name>
+```
 
-Across languages, the nearest word in another language has the right group 99% of the time and is the actual translation 88% of the time (chance 4%).
+Run the server with `-model <path>.onnx`; the tokenizer file is found next to it. `wietsedv/xlm-roberta-base-ft-udpos28-<code>` covers most UD languages for POS.
 
-- English quality matches mpnet on this test; colors are slightly less separated than with either removed English model.
-- es, fr, zh and ja all match English on group accuracy.
-- Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Before this, every tokenizer piece got its own mark, so katakana `キツネ` reached the model as `▁キ ▁ツ ▁ネ` (ja 0.17, zh 0.88).
-- Japanese words come from kagome, so a katakana word gets one color (`キツネ`, `コンピューター`). UniDic short units still split compounds such as `スマートフォン` into `スマート` and `フォン`, matching UD Japanese-GSD.
-
-## Other languages
-
-Anything outside the catalog (other treebanks, other UD languages) can be exported by hand: `python scripts/export_model.py DIR --mode pos|semantic|dependency --model <Hugging Face repo id or diaparser name>`. The name on disk is the id with `-`, `.`, `/` → `_`; SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it. `wietsedv/xlm-roberta-base-ft-udpos28-<code>` covers most UD languages for POS. Spans always come from the model's own tokenizer (WordPiece or SentencePiece Unigram); SentencePiece BPE tokenizers (mmBERT, Llama-style) are not supported.
-
-Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
-
-`KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos` (CC BY-SA 4.0) was tested as a segmenter-free alternative and not added. It tags long-unit words with `B-`/`I-` labels over Unigram pieces, which the server already joins, and exports cleanly (ONNX matches PyTorch to 6e-6, 499 MB fp32). On the first 300 test sentences, joining `I-` pieces: 95.8% of characters and word F1 93.4 on UD Japanese-GSDLUW (int8 94.9 / 92.5), but 85.0% and F1 71.8 against GSD's short units, which the shipped kagome path (97.1%) and the `ja_gsd` parser use. Its tokenizer also emits an `[UNK]` piece at the start of the text and before `。`.
-
-The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `chinese-roberta-upos` (`KoichiYasuoka/chinese-roberta-base-upos`): it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. The vocab file is found next to the model. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level).
-
-### Arabic clitics
-
-UD Arabic-PADT, which the Arabic model was trained on, splits a written word such as `وبالكتاب` into syntactic words (`و`, `ب`, `الكتاب`). Without a split the model tags the whole written word once: 16% of PADT test words carry a clitic, and only 39.8% of their characters got their own word's tag. `tokenizer.arabic_clitics` in `data/lang/arabic.lua` splits off a conjunction (`و ف`), a preposition (`ب ل ك`, `لل` as `ل` plus `ال`), the future `س` and a pronoun suffix, taking a split only where the model's own vocabulary backs it (`ExampleParseUnigram` in `internal/tokenizer`). Marks stay with their letter.
-
-Measured on the PADT sentences whose words align with the text (int8 model, per character, clitic parts scored by their own tag):
-
-| Set | Clitic boundaries P / R | All characters | Clitic-word characters | Clitic-free words |
-| --- | ----------------------- | -------------- | ---------------------- | ----------------- |
-| test, 312 sentences, rules tuned here | 89.8 / 90.3 | 84.8 to 90.5% | 39.9 to 82.2% | 93.4 to 92.2% |
-| dev, held out | 82.6 / 86.7 | 84.8 to 89.2% | 45.2 to 79.4% | |
-
-The cost is false splits of rare words and names that start with `و ف ب ل ك` (`وقائية`, `بريطانيا`), which lowers clitic-free words by about a point. Hover looks up the host word, so live Wiktionary hits on the pipeline's words rose from 62% to 72%. Hover forms in `arabic.lua` also restore what a suffix or spelling changes: a seated hamza or `ت` back to `ء` or `ة` (`دمائ` to `دماء`), a dropped hamza on an initial alef (`ادارة` to `إدارة`), tanween alef, tatweel and the sound feminine plural (`جماعات` to `جماعة`), taking UD words from 84% to 90% and the pipeline's words from 78% (the 72% above, rerun 2026-11-08) to 86% on the same 100-word samples. Set `arabic_clitics = false` in a copied script to keep written words whole.
-
-### Japanese, Chinese and Portuguese dependency parsers
-
-Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
-
-diaparser publishes no Chinese parser, so `scripts/train_dependency.py` trains one on UD Chinese-GSD (Traditional) and GSDSimp (CC BY-SA 4.0) with `hfl/chinese-roberta-wwm-ext` as encoder (about 20 minutes on a Colab T4). The parser works on characters and finds word boundaries itself: the tokenizer's units (one Han character, one punctuation mark, one letter/digit run) are the parser tokens, and a multi-unit word links each unit but the last to the last with the relation `wp`. The server merges `wp` chains into whole-word tokens, and the last unit supplies the word's head and relation, so no separate segmenter is needed and labels are native UD (no mapping). Training drops about 5% of sentences whose units straddle two gold words. On the first 300 test sentences, counting a word only when its span matches the gold word: UAS/LAS 85.6 / 82.3 on GSD and 85.5 / 82.2 on GSDSimp. Quantizing every weight drops that to about 80 / 76. The errors compound in the middle feed-forward layers, so the catalog entry (`int8_only`, `int8_fp32` in `models.json`) quantizes the encoder's projections except the feed-forward layers of blocks 6-8 (full GSD test set, UAS/LAS):
-
-| Weights in int8 | Size | UAS / LAS |
-| --------------- | ---- | --------- |
-| none (fp32) | 459 MB | 86.9 / 83.3 |
-| encoder, FFN of blocks 6-8 fp32 (shipped) | 247 MB | 85.9 / 81.9 |
-| encoder blocks 0-5 | 332 MB | 86.0 / 82.2 |
-| feed-forward layers only | 289 MB | 82.6 / 77.6 |
-| feed-forward of one block (6, 7 or 8) | 444 MB | 86.4-86.8 / 82.5-83.2 |
-| feed-forward only, `reduce_range` | 289 MB | 63.4 / 52.1 |
-
-Server RSS falls from 666 to 347 MB. For full accuracy, export without `--int8`. Setup exports it from the Hugging Face repo, which also holds the training script.
-
-diaparser has no Portuguese parser either. `train_dependency.py --lang pt` trains one on UD Portuguese-Bosque and GSD with BERTimbau (`neuralmind/bert-base-portuguese-cased`, WordPiece), 30 epochs in about 40 minutes on a Colab T4. The server sees written words, so each contraction (`do` = `de` + `o`, `dá-lo`) is one training word that takes the head and relation of its part attached outside it; a written word the tokenizer cuts at a hyphen or other punctuation (`quarta-feira`) is joined back with `wp` as in Chinese. int8 costs 0.5 UAS and 1.2 LAS (fp32 486 MB, int8 124 MB).
-
-Dependency evals (`TestEvalDependency`) score written words the same way, so a contraction (es `del`, fr `du`, it `della`, pt `do`) counts once. The earlier per-part scoring dropped most sentences with a contraction; against it es, fr and de move by under a point (200 sentences, fp32), while it LAS falls from 94.0 to 91.7.
-
-## Definition lookup coverage
-
-Hover looks up the token's text, then the forms its language script offers (`wiktionary.forms` in `data/lang/*.lua`). Limits:
-
-- Chinese has no lemmatizer, and `-tags nojaseg` builds have no Japanese lemmas. kagome and the zh model already split `私は` and `学生们的`, so the Japanese lemma fallback and Chinese prefix trimming only matter for pieces that still carry a particle or suffix.
-- Semantic mode has no POS, so a homograph gets its page's first non-variant section (`faulen` in `faulen Hund` shows the verb "to rot"). Dependency mode picks the section from the relation.
-
-`NSLS_WIKT_EVAL=1 go test ./internal/wiktionary -run TestLiveAccuracy -v` looks up 100 unique content words per language from the UD test treebank (POS mode) and counts the words with a Wiktionary definition (hit) and, of those, how many matched the model's POS section.
-
-| Language | Hit | POS section match | Misses are mostly |
-| -------- | --- | ----------------- | ----------------- |
-| it | 93% | 90% | proper nouns |
-| pt | 87% | 92% | proper nouns, rare forms |
-| ru | 87% | 98% | proper nouns, participles (was 73% before adjective lemma forms; noun and verb endings in `russian.lua` take the tokenizer's own words from 79% to 82%) |
-| de | 85% | 92% | compounds, inflected verbs |
-| ar | 90% | 93% | broken plurals, names (86% of the tokenizer's own words, 62% before clitic splitting) |
-| zh | 84% | 91% | rare words, names |
-
-
-## Startup and latency per language
-
-Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-2500 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. The dependency/ru and dependency/pt rows were added later (2026-11-08); dependency/zh is the fp32 parser.
-
-Where edit time goes (`go test -bench PredictChunk -cpuprofile` in `internal/inference`): over 99% is inside ONNX Runtime. Tokenizing, pooling, decoding and span mapping in Go take about 0.3% (10-20 ms of 3.6 s per 20 dependency runs), so rewriting those loops as matrix products would not show. `BenchmarkRegistryOpen` (20 paragraphs, stub model) takes 6 ms, mostly garbage collection.
-
-| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median / max (ms) | Hover cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
-| ---- | ---------- | -------------- | ---------------------- | ----------------------- | ----------------- | ----------- | -------------- | ------------- |
-| pos/en/bert_base | 458 | 744 | 97 / 100 | 1 / 75 | 0.6 | 16/16 | 405 | 423 |
-| semantic/en/mpnet | 864 | 77 | 79 / 101 | 4 / 356 | 0.7 | 16/16 | 395 | 415 |
-| dependency/en/electra | 875 | 998 | 132 / 171 | 14 / 106 | 0.7 | 16/16 | 663 | 668 |
-| pos/es | 1020 | 475 | 65 / 77 | 16 / 313 | 0.4 | 14/15 | 457 | 566 |
-| pos/fr | 1031 | 541 | 64 / 68 | 15 / 143 | 0.2 | 18/18 | 457 | 564 |
-| pos/ru | 1022 | 474 | 61 / 67 | 15 / 152 | 0.6 | 16/16 | 457 | 564 |
-| pos/ja | 3425 | 1033 | 132 / 144 | 15 / 138 | 0.6 | 19/20 | 1013 | 1037 |
-| pos/zh | 464 | 853 | 110 / 144 | 15 / 428 | 0.5 | 13/15 | 399 | 418 |
-| semantic/es | 964 | 31 | 28 / 36 | 16 / 193 | 0.5 | 14/15 | 214 | 224 |
-| semantic/fr | 926 | 49 | 31 / 46 | 15 / 84 | 0.7 | 18/18 | 207 | 225 |
-| semantic/ja | 3077 | 38 | 33 / 41 | 15 / 143 | 0.6 | 19/20 | 794 | 804 |
-| semantic/zh | 875 | 27 | 22 / 29 | 205 / 1162 | 0.6 | 14/19 | 207 | 219 |
-| semantic/ru | 935 | 28 | 24 / 31 | 15 / 331 | 0.6 | 16/16 | 211 | 221 |
-| dependency/es | 1211 | 967 | 119 / 125 | 15 / 119 | 0.6 | 14/15 | 934 | 1124 |
-| dependency/fr | 1181 | 1959 | 264 / 292 | 15 / 358 | 0.7 | 18/18 | 504 | 517 |
-| dependency/ja | 2842 | 746 | 98 / 104 | 15 / 156 | 0.6 | 19/20 | 783 | 786 |
-| dependency/zh | 1005 | 1284 | 168 / 198 | 67 / 392 | 0.6 | 12/15 | 640 | 646 |
-| dependency/ru | 1098 | 1224 | 157 / 165 | 14 / 220 | 0.1 | 16/16 | 912 | 1123 |
-| dependency/pt | 499 | 814 | 109 / 115 | 143 / 2536 | 0.1 | 14/15 | 207 | 211 |
-
-### Other platforms
-
-The `e2e` CI job runs the English POS row on each GitHub Actions runner (`.github/workflows/ci.yml`, job summary). macOS keeps no peak RSS counter, so its peak is the largest sample taken between steps.
-
-| Runner | Ready (ms) | Open long (ms) | Edit median (ms) | Hover max / cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |
-| ------ | ---------- | -------------- | ---------------- | ----------------------- | ----------- | -------------- | ------------- |
-| X280, Linux | 458 | 744 | 97 | 75 / 0.6 | 16/16 | 405 | 423 |
-| ubuntu-latest | 474 | 581 | 75 | 416 / 0.11 | 16/16 | 445 | 474 |
-| macos-latest | 595 | 1192 | 163 | 376 / 0.12 | 16/16 | 404 | 424 |
-| windows-latest | 1152 | 1094 | 143 | 525 / 0.22 | 16/16 | 396 | 420 |
+Tokenizers: WordPiece and SentencePiece Unigram work. SentencePiece BPE (mmBERT, Llama-style) does not.

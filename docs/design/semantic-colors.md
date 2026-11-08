@@ -11,7 +11,7 @@ Semantic mode colors each word by its contextual embedding, so similar embedding
 
 ## Example
 
-[semantic-example.txt](examples/semantic-example.txt) is a single paragraph in which every sentence mixes words from four semantic groups:
+[semantic-example.txt](../examples/semantic-example.txt) is a single paragraph in which every sentence mixes words from four semantic groups:
 
 > A fox found some bread near the old computer and seemed happy. Later a deer ate an apple beside the printer, looking scared. …
 
@@ -28,7 +28,7 @@ The mean color distance between words in different groups is 3.6 times the mean 
 
 Two known behaviors are excluded from the example:
 
-- **Short standalone paragraphs.** Paragraphs are embedded independently. In a short paragraph, every word's embedding is dominated by the same passage-level component, so the paragraph tends to render as a single saturated color. The one-sentence final paragraph of [test.txt](examples/test.txt) shows this; merging it into the preceding paragraph restores per-word variation.
+- **Short standalone paragraphs.** Paragraphs are embedded independently. In a short paragraph, every word's embedding is dominated by the same passage-level component, so the paragraph tends to render as a single saturated color. The one-sentence final paragraph of [test.txt](../examples/test.txt) shows this; merging it into the preceding paragraph restores per-word variation.
 - **Polysemy.** Different senses of the same word (for example, "bank" as riverside and as financial institution) receive nearly identical colors, because these models' embeddings are dominated by word identity rather than sense.
 
 ## 1. Word embeddings
@@ -140,7 +140,7 @@ Shared or similar colors therefore indicate likely, not certain, similarity in u
 
 ## 7. Implementation
 
-Pooling: `embedChunk` in [`embedding_model.go`](../internal/inference/embedding_model.go). Fit, alignment, scale and color: `SemanticPlane.Fit` and `SemanticPlane.Color` in [`semantic_color.go`](../internal/inference/semantic_color.go) (`covMul`, `alignPlane`, `fitScale`, `diskColor`, `oklchToSRGB`; fallback plane `InitSemantic`). Per-document state and recoloring: `documentStore.plane` and `docTokens` in [`registry.go`](../internal/lspserver/registry.go). VS Code rendering: `handleSemanticColors` in [`extension.js`](../vscode-extension/extension.js).
+Pooling: `embedChunk` in [`embedding_model.go`](../../internal/inference/embedding_model.go). Fit, alignment, scale and color: `SemanticPlane.Fit` and `SemanticPlane.Color` in [`semantic_color.go`](../../internal/inference/semantic_color.go) (`covMul`, `alignPlane`, `fitScale`, `diskColor`, `oklchToSRGB`; fallback plane `InitSemantic`). Per-document state and recoloring: `documentStore.plane` and `docTokens` in [`registry.go`](../../internal/lspserver/registry.go). VS Code rendering: `handleSemanticColors` in [`extension.js`](../../vscode-extension/extension.js).
 
 Processing of one edit:
 
@@ -178,7 +178,7 @@ For comparison, embedding a single 122-word chunk takes about 19 ms (MiniLM) or 
 **Client side:**
 
 - **VS Code:** the extension creates one decoration type per distinct hex color. Quantization bounds the number of types, and the extension disposes types that no open document uses.
-- **Neovim:** the handler in [neovim.md](neovim.md) creates one highlight group per distinct color, which quantization also bounds.
+- **Neovim:** the handler in [neovim.md](../neovim.md) creates one highlight group per distinct color, which quantization also bounds.
 
 ## 9. Behavioral notes
 

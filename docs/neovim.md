@@ -1,14 +1,10 @@
 # Neovim
 
-The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client. POS and dependency coloring use standard semantic tokens and hover works in all three modes. Semantic-mode colors use a custom `$/nls/semanticColors` notification, handled by the config below.
+Needs Neovim 0.11+ and the server on `PATH` ([install.md](install.md)). `scripts/setup.sh` installs it to `~/.local/bin`; `scripts/setup.ps1` to `%LOCALAPPDATA%\Programs\natural-syntax-ls`.
 
-## Setup
+## Config
 
-Export the models and install the binary first (see [Installation](../README.md#installation)).
-
-`scripts/setup.sh` installs the binary to `~/.local/bin` (`$XDG_BIN_HOME` if set); `scripts/setup.ps1` installs it to `%LOCALAPPDATA%\Programs\natural-syntax-ls` and adds that to your user `PATH`. With it on `PATH`, `cmd = { "natural-syntax-ls" }` is enough.
-
-Copy this into `init.lua` (or `require` it from a file in your config). Needs Neovim 0.11+. It defines the server config, the semantic-mode color handler, `:NSMode`, and `:NSLang`.
+Copy into `init.lua`, or `require` it from your config. It sets up the server, the semantic color handler, `:NSMode` and `:NSLang`.
 
 ```lua
 local ns = vim.api.nvim_create_namespace("natural_syntax_ls_colors")
@@ -107,36 +103,42 @@ end, {
 })
 ```
 
-If you use `mason-lspconfig`, the `vim.lsp.enable` call is still needed: its `automatic_enable` only covers servers Mason installed. With LazyVim, put the snippet in `lua/config/options.lua` or any file under `lua/plugins/` inside a `config` function.
+- **mason-lspconfig**: keep the `vim.lsp.enable` call. `automatic_enable` covers only servers Mason installed.
+- **LazyVim**: put the snippet in `lua/config/options.lua`, or in a `config` function under `lua/plugins/`.
+- **Neovim 0.10**: no `vim.lsp.config`. Register through `nvim-lspconfig` (`require("lspconfig.configs")` with `default_config = { cmd, filetypes, root_dir }`, then `require("lspconfig").natural_syntax_ls.setup({ handlers = ... })`). `:NSMode` and `:NSLang` do not work; edit `cmd` and run `:LspRestart`.
 
-On Neovim 0.10, `vim.lsp.config` does not exist. Register the server through `nvim-lspconfig` (`require("lspconfig.configs")`, `default_config = { cmd, filetypes, root_dir }`, then `require("lspconfig").natural_syntax_ls.setup({})`) and attach the `$/nls/semanticColors` handler in `setup({ handlers = ... })`. `:NSMode` and `:NSLang` are not supported there; change `cmd` and run `:LspRestart`.
+## Commands
 
-## Switching modes
+| Command | Effect |
+| ------- | ------ |
+| `:NSMode pos\|semantic\|dependency` | Restart in that mode, with the model path from `models` |
+| `:NSLang es` | Force one language, keep the mode |
+| `:NSLang auto` | Back to per-line detection and default models |
 
-Mode and model are fixed at server start by `-mode` and `-model` in `cmd` (the CLI flags of `cmd/natural-syntax-ls`); `:NSMode pos|semantic|dependency` restarts with the paths in `models` above. Pass `-model` whenever `-mode` isn't `pos`, or the server picks a POS model. To use another model, put its slug in `models`: the setup name with `-`, `.`, `/` → `_`, case kept, and `_dependency` appended for parsers ([models.md](models.md)). The vocab or tokenizer file is found next to it.
+`:NSLang CODE` restarts with `-lang CODE`:
 
-## Semantic mode colors in Neovim
+- the model becomes that language's `models.json` entry for the mode (e.g. `xlmr-es` for `pos`), else a language-neutral model, else the default;
+- detection is off, so tokenizer rules and hover treat all text as that language;
+- hover definitions use `CODE,en`.
 
-Semantic mode emits no semantic tokens. The server pushes each word's hex color in a custom `$/nls/semanticColors` notification instead (`{ uri, tokens = { { line, character, length, color } } }`, columns in codepoints). Neovim drops unknown notifications, so the config above includes a handler that paints them as extmarks.
+## Other models
 
-The server re-pushes after every edit. Tune colors with `initializationOptions = { semantic_lightness = 0.6, semantic_chroma = 0.14 }` (lower lightness for light colorschemes).
+Put the model's slug in `models`: the setup name with `-`, `.`, `/` replaced by `_`, case kept, plus `_dependency` for parsers. See [models.md](models.md#files-on-disk). The tokenizer file is found next to the model.
 
-`-idle-unload 5m` (the default) frees a model's weights once it has gone that long without an edit to analyse, so an idle Neovim holds about 70 MB instead of 0.4-2 GB; the next edit reloads it in about a second. `0` keeps models loaded.
+## Colors
 
-`-threads N` sets ONNX Runtime threads per chunk; the default (0) uses the physical core count, capped at 4, and runs chunks in parallel on any cores left over.
+POS and dependency tokens use your colorscheme's `@lsp.type.*` groups. Link any that render plain:
 
-POS tags map to standard semantic token types, so colors come from your colorscheme's `@lsp.type.*` highlight groups. Link any that render plain, e.g. `vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })`.
+```lua
+vim.api.nvim_set_hl(0, "@lsp.type.function", { link = "Function" })
+```
 
-## Hover definition language
+Semantic mode sends no semantic tokens. The handler above paints `$/nls/semanticColors` as extmarks, one highlight group per color. Tune with `init_options = { semantic_lightness = 0.6, semantic_chroma = 0.14 }`; lower lightness suits light colorschemes.
 
-Default `detect,en`. Set `vim.g.natural_syntax_ls_wiktionary_language = "es,en"` before the server starts, or `init_options = { wiktionary_language = ... }`. Values as `naturalSyntaxLs.wiktionaryLanguage` in [settings.md](settings.md).
+## Hover language
 
-## Forcing a language
+Default `detect,en`. Set `vim.g.natural_syntax_ls_wiktionary_language = "es,en"` before the server starts, or pass `init_options = { wiktionary_language = ... }`. Values: [features.md](features.md#hover-definitions).
 
-`:NSLang es` (also `fr`, `de`, `ja`, ...) restarts the server for one language, keeping the current mode:
+## Memory
 
-- the model becomes that language's entry in `models.json` for the mode (for example `xlmr-es` in `pos`), else a language-neutral model, else the default;
-- detection is switched off, so the tokenizer rules in `lang/es.lua`-style scripts and the hover lookup treat all text as that language;
-- hover definitions use `es,en`.
-
-`:NSLang auto` returns to per-line detection and the default models ([settings.md](settings.md#language-detection)). `:NSMode` keeps the forced language. The server flag is `-lang CODE`.
+`-idle-unload 5m` (default) frees model weights after five idle minutes, so an idle Neovim holds about 70 MB instead of 0.4-2 GB. The next edit reloads in about a second. Flags: [settings.md](settings.md#server-flags).

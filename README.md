@@ -1,50 +1,50 @@
 # Natural Syntax LSP
 
-Parts-of-speech, semantic-embedding, or dependency-parse highlighting for English, Spanish, French, German, Italian, Portuguese, Russian, Arabic, Japanese and Chinese in VS Code or Neovim, via a local Go LSP server running ONNX inference. Hover over any word to see its tag (and, in dependency mode, its relation and dependents) plus a Wiktionary definition.
+A language server that colors prose. Each word is highlighted by its part of speech, its meaning in context, or its syntactic relation, using ONNX models that run locally. Hover a word for its tag and a Wiktionary definition.
+
+Works in VS Code and Neovim. Supports English, Spanish, French, German, Italian, Portuguese, Russian, Arabic, Japanese and Chinese, and one document can mix them.
 
 ![screenshot showing color highlighting and hover](docs/screenshotExample.png)
 
-Three modes:
+## Modes
 
-- **POS** (default): BERT/MobileBERT tags each word's part of speech (other languages via XLM-R or RoBERTa models); your theme picks the colors.
-- **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
-- **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish, French, German, Italian, Portuguese, Russian, Japanese and Chinese.
+| Mode | Colors words by | Model |
+| ---- | --------------- | ----- |
+| `pos` (default) | Part of speech, using your theme's colors | BERT, XLM-R or RoBERTa tagger |
+| `semantic` | Meaning in context; words used alike get similar colors | Multilingual MiniLM (50+ languages) |
+| `dependency` | Universal Dependencies relation (`nsubj`, `obj`, `amod`, ...) | [diaparser](https://github.com/Unipisa/diaparser) parser |
 
-Per-language models, accuracy and licenses: [models.md](docs/models.md). Semantic mode is measured on en, es, fr, ja and zh. The server detects each line's language, so one document can mix languages; hover definitions follow the detected language.
+## Quick start
 
-## Dependencies
+1. Export a model (no package ships them, they are 100-750 MB each):
 
-- Prebuilt releases: none beyond the editor; ONNX Runtime is bundled.
-- Model export: Python 3 with `torch`, `transformers`, `onnx`, `onnxscript`, `onnxruntime`, `requests` (plus `diaparser` for dependency mode). `scripts/setup.sh` installs them, into a venv, uv or conda env if the system Python is externally managed.
-- Building from source: Go 1.26+ with cgo (`github.com/yalue/onnxruntime_go`; `scripts/setup.sh` fetches the ONNX Runtime shared library), Node.js and npm for the VS Code extension (`vscode-languageclient`, packaged with `vsce`).
-- Neovim 0.11+ for the Neovim plugin.
+   ```bash
+   scripts/setup.sh                 # English POS model
+   scripts/setup.sh --list          # every available model
+   ```
 
-## Installation
+2. Install the editor client:
+   - **VS Code**: install the `.vsix` for your platform from the [latest release](../../releases/latest) with `code --install-extension natural-syntax-ls-*.vsix`.
+   - **Neovim 0.11+**: put the release binary on `PATH` and copy the config from [docs/neovim.md](docs/neovim.md).
 
-Every install path needs the ONNX model files (100-750 MB each), which no package ships. Export them first: [docs/install.md](docs/install.md#exporting-models).
+3. Open [docs/examples/test.txt](docs/examples/test.txt).
 
-**VS Code / VSCodium**: download the `.vsix` for your platform from the [latest release](../../releases/latest). It bundles the server and ONNX Runtime (Windows x64, Linux x64, macOS arm64).
+Full instructions: [docs/install.md](docs/install.md).
 
-```bash
-code --install-extension natural-syntax-ls-*.vsix
-```
+## Documentation
 
-**Standalone binary**: each release has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server (all languages), ONNX Runtime, the language scripts (`lang/`), the model catalog (`models.json`) and `LICENSE` side by side. Extract anywhere and put the binary on your `PATH`; a symlink is fine, the server finds its files beside the real binary.
+See [docs/](docs/README.md) for the full index.
 
-**Neovim 0.11+**: needs the server binary on `PATH`. The release archive above works. Config snippet (LSP setup, semantic colors, `:NSMode`, `:NSLang`) is in [docs/neovim.md](docs/neovim.md).
-
-## Docs
-
-- [Install from source, export models, troubleshooting](docs/install.md)
-- [Models, languages, accuracy, latency and memory](docs/models.md)
-- [Settings, language detection, colors, testing](docs/settings.md)
-- [POS tag and UD relation color tables](docs/tags.md)
-- [Adding a language](docs/adding-a-language.md)
-- [Neovim manual setup](docs/neovim.md)
-- [How semantic colors work](docs/semantic-colors.md)
-- [Open work](docs/PLANS.md)
-- [Example texts per language](docs/examples/)
+- [Installation](docs/install.md)
+- [Features](docs/features.md)
+- [Settings](docs/settings.md)
+- [Neovim](docs/neovim.md)
+- [Models](docs/models.md)
 
 ## Credits
 
 Chinese Traditional/Simplified lookup uses data derived from [OpenCC](https://github.com/BYVoid/OpenCC) (Apache-2.0). See [NOTICE](NOTICE).
+
+## License
+
+The server is under [LICENSE](LICENSE). Exported model weights keep their source licenses, some of which are non-commercial: see [docs/models.md](docs/models.md#licenses).
