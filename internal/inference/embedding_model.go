@@ -11,9 +11,13 @@ type EmbeddingModel struct {
 	hiddenSize int
 }
 
-// NewEmbeddingModel loads a sentence-transformer model whose last_hidden_state has hiddenSize dims.
-func NewEmbeddingModel(modelPath, vocabPath string, hiddenSize int) (*EmbeddingModel, error) {
-	base, err := newBaseModel(modelPath, vocabPath, "last_hidden_state", int64(hiddenSize))
+// NewEmbeddingModel loads a sentence-transformer model; the embedding size is read from the model's last_hidden_state output.
+func NewEmbeddingModel(modelPath, vocabPath string, opts ...tokenizer.Option) (*EmbeddingModel, error) {
+	hiddenSize, err := outputLastDim(modelPath, "last_hidden_state")
+	if err != nil {
+		return nil, err
+	}
+	base, err := newBaseModel(modelPath, vocabPath, "last_hidden_state", int64(hiddenSize), opts...)
 	if err != nil {
 		return nil, err
 	}

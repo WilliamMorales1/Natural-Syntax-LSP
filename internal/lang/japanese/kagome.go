@@ -1,16 +1,12 @@
-//go:build !nojaseg && !english
+//go:build !nojaseg
 
-// Package jaseg segments Japanese text into UniDic short-unit words with kagome, the word standard of UD Japanese-GSD.
-// Importing it registers the segmenter with the tokenizer package; build with -tags nojaseg to leave out the 37 MB embedded dictionary.
-package jaseg
+package japanese
 
 import (
 	"sync"
 
 	"github.com/ikawaha/kagome-dict/uni"
 	"github.com/ikawaha/kagome/v2/tokenizer"
-
-	nstok "natural-syntax-ls/internal/tokenizer"
 )
 
 var (
@@ -19,13 +15,10 @@ var (
 	tk   *tokenizer.Tokenizer
 )
 
-func init() {
-	nstok.SetJapaneseSegmenter(Segment)
-	nstok.SetJapaneseLemmatizer(Lemmas)
-}
+const hasDictionary = true
 
-// Lemmas returns candidate dictionary forms for an inflected Japanese word, nil if there are none.
-func Lemmas(word string) []string {
+// lemmas returns candidate dictionary forms for an inflected Japanese word, nil if there are none.
+func lemmas(word string) []string {
 	segmentInit()
 	if tk == nil {
 		return nil
@@ -54,8 +47,8 @@ func segmentInit() {
 	})
 }
 
-// Segment returns the rune ranges of the words in run, which must be a Han/kana run; nil if the dictionary cannot be loaded.
-func Segment(run string) [][2]int {
+// segment returns the rune ranges of the words in run, which must be a Han/kana run; nil if the dictionary cannot be loaded.
+func segment(run string) [][2]int {
 	segmentInit()
 	if tk == nil {
 		return nil

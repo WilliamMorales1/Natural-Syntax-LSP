@@ -10,10 +10,10 @@ import (
 	"natural-syntax-ls/internal/tokenmap"
 )
 
-// benchText is docs/test.txt repeated into ~20 paragraphs, so a document spans many chunks.
+// benchText is docs/examples/test.txt repeated into ~20 paragraphs, so a document spans many chunks.
 func benchText(b *testing.B) string {
 	b.Helper()
-	raw, err := os.ReadFile("../../docs/test.txt")
+	raw, err := os.ReadFile("../../docs/examples/test.txt")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -54,11 +54,9 @@ func BenchmarkHover(b *testing.B) {
 	lines := strings.Count(text, "\n")
 	reg := newDocumentRegistry(contextModel{})
 	syncTokens(reg, text, 1)
-	reply := make(chan *hoverQueryResult, 1)
 	i := 0
 	for b.Loop() {
-		reg.hover(testURI, uint32(i*37%lines), 3, reply)
-		<-reply
+		reg.hover(b.Context(), testURI, uint32(i*37%lines), 3)
 		i++
 	}
 }

@@ -20,9 +20,9 @@ const tinyUnigram = `{
   {"SpecialToken": {"id": "[CLS]", "type_id": 0}}, {"Sequence": {"id": "A", "type_id": 0}}, {"SpecialToken": {"id": "[SEP]", "type_id": 0}}]}
 }`
 
-func tinyTokenizer(t *testing.T) *UnigramTokenizer {
+func tinyTokenizer(t *testing.T, opts ...Option) *UnigramTokenizer {
 	t.Helper()
-	tok, err := parseUnigram([]byte(tinyUnigram))
+	tok, err := parseUnigram([]byte(tinyUnigram), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,10 +38,7 @@ func TestUnigramTokenizeSegmentsCJKByPieces(t *testing.T) {
 		{"今日は晴れです。", []string{"今日", "は", "晴れ", "です", "。"}},
 		{"コーヒー and 今日", []string{"コーヒー", "and", "今日"}},
 		{"Hello, 今日!", []string{"Hello", ",", "今日", "!"}},
-		{"l'ami", []string{"l'", "ami"}},
-		{"L’ami", []string{"L’", "ami"}},
-		{"aujourd'hui", []string{"aujourd'hui"}},
-		{"d'accord", []string{"d'", "accord"}},
+		{"l'ami", []string{"l", "'", "ami"}},
 	} {
 		if got := texts(tok.Tokenize(tc.in)); !slices.Equal(got, tc.want) {
 			t.Errorf("Tokenize(%q) = %q, want %q", tc.in, got, tc.want)
@@ -49,29 +46,55 @@ func TestUnigramTokenizeSegmentsCJKByPieces(t *testing.T) {
 	}
 }
 
-func TestJapaneseSegmenterReplacesPiecesOnlyForKanaText(t *testing.T) {
-	tok := tinyTokenizer(t)
-	t.Cleanup(func() { SetJapaneseSegmenter(nil) })
-	SetJapaneseSegmenter(func(run string) [][2]int {
+// testSegmenter applies to text containing the marker rune 'は' and segments via seg.
+type testSegmenter struct {
+	seg    func(run string) [][2]int
+	called *bool
+}
+
+func (s testSegmenter) Applies(text []rune) bool { return slices.Contains(text, 'は') }
+
+func (s testSegmenter) Segment(run string) [][2]int {
+	if s.called != nil {
+		*s.called = true
+	}
+	return s.seg(run)
+}
+
+func TestSegmenterReplacesPiecesOnlyWhereItApplies(t *testing.T) {
+	tok := tinyTokenizer(t, WithSegmenter(testSegmenter{seg: func(run string) [][2]int {
 		if run == "コーヒー" {
 			return [][2]int{{0, 4}}
 		}
 		return nil
-	})
+	}}))
 	if got := texts(tok.Tokenize("コーヒーは")); !slices.Equal(got, []string{"コーヒー", "は"}) {
-		t.Errorf("kana text = %q", got)
+		t.Errorf("applicable text = %q", got)
 	}
-	// Han-only text has no kana to mark it Japanese, so the segmenter is not consulted.
 	called := false
-	SetJapaneseSegmenter(func(string) [][2]int { called = true; return nil })
+	tok = tinyTokenizer(t, WithSegmenter(testSegmenter{seg: func(string) [][2]int { return nil }, called: &called}))
 	tok.Tokenize("今日")
 	if called {
-		t.Error("segmenter called for Han-only text")
+		t.Error("segmenter called for text it does not apply to")
 	}
 	// A segmentation that leaves a gap is ignored in favor of Unigram pieces.
-	SetJapaneseSegmenter(func(string) [][2]int { return [][2]int{{0, 1}} })
+	tok = tinyTokenizer(t, WithSegmenter(testSegmenter{seg: func(string) [][2]int { return [][2]int{{0, 1}} }}))
 	if got := texts(tok.Tokenize("今日は晴れです")); !slices.Equal(got, []string{"今日", "は", "晴れ", "です"}) {
 		t.Errorf("bad segmentation not rejected: %q", got)
+	}
+}
+
+func TestWordMergersRunInOrder(t *testing.T) {
+	join := func(runes []rune, words []WordSpan) []WordSpan {
+		if len(words) >= 3 && words[1].Text == "'" {
+			words[0].Text, words[0].End = words[0].Text+"'", words[1].End
+			return append([]WordSpan{words[0]}, words[2:]...)
+		}
+		return words
+	}
+	tok := tinyTokenizer(t, WithWordMerger(join))
+	if got := texts(tok.Tokenize("l'ami")); !slices.Equal(got, []string{"l'", "ami"}) {
+		t.Errorf("merged = %q", got)
 	}
 }
 

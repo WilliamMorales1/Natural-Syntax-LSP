@@ -52,6 +52,18 @@ var paragraphs = map[string][]string{
 		"她五年前搬到上海，现在在一家小出版社工作，同事们都很友好。",
 		"冬天来了以后，街道上到处都是灯光，大家都高兴地等待着新年。",
 	},
+	"ru": {
+		"Мальчик ел красные яблоки на кухне, пока его мать готовила ужин.",
+		"После обеда вся семья пошла гулять в парк и увидела много птиц на деревьях.",
+		"Мария живёт в Москве уже пять лет и работает в маленьком издательстве в центре города.",
+		"Когда наступила зима, улицы наполнились огнями, и все с радостью ждали Новый год.",
+	},
+	"ar": {
+		"أكل الولد التفاح الأحمر في المطبخ بينما كانت أمه تعد العشاء.",
+		"بعد الغداء خرجت العائلة للتنزه في الحديقة ورأت طيورا كثيرة على الأشجار.",
+		"تعيش مريم في القاهرة منذ خمس سنوات وتعمل في دار نشر صغيرة وسط المدينة.",
+		"عندما جاء الشتاء امتلأت الشوارع بالأضواء وانتظر الجميع رأس السنة بفرح.",
+	},
 	"en": {
 		"The North Wind and the Sun were disputing which was the stronger, when a traveler came along wrapped in a warm cloak.",
 		"They agreed that the one who first succeeded in making the traveler take his cloak off should be considered stronger than the other.",
@@ -94,7 +106,8 @@ func benchCases(t *testing.T) []benchCase {
 	var cases []benchCase
 	cfg, _ := os.UserConfigDir()
 	en := filepath.Join(cfg, "natural-syntax-ls")
-	cases = append(cases,
+	cases = append(
+		cases,
 		benchCase{"pos/en/bert_base", "pos", "en", "bert_base", en},
 		benchCase{"semantic/en/mpnet", "semantic", "en", "mpnet", en},
 		benchCase{"dependency/en/electra", "dependency", "en", "en_ewt_electra_base_dependency", en},
@@ -103,21 +116,27 @@ func benchCases(t *testing.T) []benchCase {
 	if ml == "" {
 		ml = en
 	}
-	for _, l := range []string{"es", "fr"} {
+	for _, l := range []string{"es", "fr", "ru", "ar"} {
 		cases = append(cases, benchCase{"pos/" + l, "pos", l, "xlmr_" + l, ml})
 	}
-	cases = append(cases,
+	cases = append(
+		cases,
 		benchCase{"pos/ja", "pos", "ja", "wietsedv_xlm_roberta_base_ft_udpos28_ja", ml},
 		benchCase{"pos/zh", "pos", "zh", "wietsedv_xlm_roberta_base_ft_udpos28_zh", ml},
 		benchCase{"pos/zh-char", "pos", "zh", "KoichiYasuoka_chinese_roberta_base_upos", ml},
 	)
-	for _, l := range []string{"es", "fr", "ja", "zh"} {
+	for _, l := range []string{"es", "fr", "ja", "zh", "ru", "ar"} {
 		cases = append(cases, benchCase{"semantic/" + l, "semantic", l, "multilingual_minilm", ml})
 	}
-	cases = append(cases,
+	cases = append(
+		cases,
 		benchCase{"dependency/es", "dependency", "es", "es_ancora_mbert_dependency", ml},
 		benchCase{"dependency/fr", "dependency", "fr", "fr_sequoia_camembert_large_dependency", ml},
+		benchCase{"dependency/ru", "dependency", "ru", "ru_syntagrus_DeepPavlov_dependency", ml},
 	)
+	if q := os.Getenv("NSLS_ML_QDIR"); q != "" {
+		cases = append(cases, benchCase{"dependency/ar", "dependency", "ar", "ar_padt_asafaya_dependency", q})
+	}
 	return cases
 }
 

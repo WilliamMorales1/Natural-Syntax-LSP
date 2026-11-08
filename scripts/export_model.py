@@ -7,6 +7,8 @@ Supported models:
   bert-base   QCRI/bert-base-multilingual-cased-pos-english  (~400 MB)
   xlmr-es     wietsedv/xlm-roberta-base-ft-udpos28-es  Spanish UPOS (XLM-R base)
   xlmr-fr     wietsedv/xlm-roberta-base-ft-udpos28-fr  French UPOS (XLM-R base)
+  xlmr-ru     wietsedv/xlm-roberta-base-ft-udpos28-ru  Russian UPOS (XLM-R base)
+  xlmr-ar     wietsedv/xlm-roberta-base-ft-udpos28-ar  Arabic UPOS (XLM-R base)
   multilingual-minilm
               sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
               384-dim, 12-layer, 50+ languages (semantic mode)
@@ -29,26 +31,27 @@ tokenizer_config.json copied to {slug}_tokenizer.json when one exists.
 Spanish dependency parser loses accuracy when quantized, so leave it fp32).
 
 Usage:
-    python export_model.py [output_dir] [--model mobilebert|bert-base|xlmr-es|xlmr-fr|multilingual-minilm|en_ewt.electra-base|<hf repo id>] [--mode pos|semantic|dependency] [--int8]
+    python export_model.py [output_dir] [--model <name from models.json>|<hf repo id>] [--mode pos|semantic|dependency] [--int8]
 """
-import sys
-import os
-import io
+
 import argparse
+import io
 import json
+import os
+import sys
 
 # Force UTF-8 stdout/stderr so torch's emoji output doesn't crash on Windows cp1252.
 # sys.stdout/stderr are typed as TextIO (no .reconfigure) but are actually
 # TextIOWrapper at runtime whenever they're a real console/file stream.
-if isinstance(sys.stdout, io.TextIOWrapper) and sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if isinstance(sys.stderr, io.TextIOWrapper) and sys.stderr.encoding != 'utf-8':
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+if isinstance(sys.stdout, io.TextIOWrapper) and sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if isinstance(sys.stderr, io.TextIOWrapper) and sys.stderr.encoding != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 try:
-    import torch
-    from transformers import AutoModel, AutoTokenizer, AutoModelForTokenClassification
     import requests
+    import torch
+    from transformers import AutoModel, AutoModelForTokenClassification, AutoTokenizer
 except ImportError as e:
     print(f"Missing dependency: {e}")
     print("pip install transformers torch onnx onnxscript requests")
@@ -62,6 +65,7 @@ class _DropsTokenTypeIds(torch.nn.Module):
     so it still accepts the (input_ids, attention_mask, token_type_ids) ONNX
     input contract every other model in this script uses; the third arg is
     accepted but discarded."""
+
     def __init__(self, inner):
         super().__init__()
         self.inner = inner
@@ -69,35 +73,59 @@ class _DropsTokenTypeIds(torch.nn.Module):
     def forward(self, input_ids, attention_mask, token_type_ids):
         return self.inner(input_ids=input_ids, attention_mask=attention_mask)
 
-POS_MODELS = {
-    "mobilebert": "mrm8488/mobilebert-finetuned-pos",
-    "bert-base":  "QCRI/bert-base-multilingual-cased-pos-english",
-    "xlmr-es":    "wietsedv/xlm-roberta-base-ft-udpos28-es",
-    "xlmr-fr":    "wietsedv/xlm-roberta-base-ft-udpos28-fr",
-}
-SEMANTIC_MODELS = {
-    "multilingual-minilm": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-}
+
+def _load_catalog():
+    """Read models.json: next to the repo root, else the config dir, so no model name lives in this script."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cfg = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    for d in (os.path.join(here, ".."), os.path.join(cfg, "natural-syntax-ls")):
+        path = os.path.join(d, "models.json")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)["models"]
+    raise SystemExit("models.json not found next to the repo or in the config dir")
+
+
+_CATALOG = _load_catalog()
+POS_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "pos"}
+SEMANTIC_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "semantic"}
 MODELS = {**POS_MODELS, **SEMANTIC_MODELS}
 
 # diaparser (github.com/Unipisa/diaparser) catalog name used when --model is
 # omitted or isn't a known POS/semantic name.
-DEFAULT_DEPENDENCY_MODEL = "en_ewt.electra-base"
+DEFAULT_DEPENDENCY_MODEL = next(
+    (m["source"] for m in _CATALOG if m["mode"] == "dependency" and m.get("default")),
+    "en_ewt.electra-base",
+)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("out_dir", nargs="?", default=os.path.dirname(os.path.abspath(__file__)))
-parser.add_argument("--model", default=None,
-                     help=f"One of {list(MODELS.keys())} (pos/semantic), "
-                          f"or a diaparser catalog name for dependency parsing "
-                          f"(default: {DEFAULT_DEPENDENCY_MODEL}).")
-parser.add_argument("--mode", choices=["pos", "semantic", "dependency"], default=None,
-                     help="Force the export mode; required for Hugging Face repo ids.")
-parser.add_argument("--int8", action="store_true",
-                     help="Quantize the exported weights to int8 in place.")
+parser.add_argument(
+    "out_dir", nargs="?", default=os.path.dirname(os.path.abspath(__file__))
+)
+parser.add_argument(
+    "--model",
+    default=None,
+    help=f"One of {list(MODELS.keys())} (pos/semantic), "
+    f"or a diaparser catalog name for dependency parsing "
+    f"(default: {DEFAULT_DEPENDENCY_MODEL}).",
+)
+parser.add_argument(
+    "--mode",
+    choices=["pos", "semantic", "dependency"],
+    default=None,
+    help="Force the export mode; required for Hugging Face repo ids.",
+)
+parser.add_argument(
+    "--int8",
+    action="store_true",
+    help="Quantize the exported weights to int8 in place.",
+)
 args = parser.parse_args()
 
 if args.model in ("minilm", "mpnet") and args.mode is None:
-    raise SystemExit(f"--model {args.model} was removed; use multilingual-minilm for semantic mode.")
+    raise SystemExit(
+        f"--model {args.model} was removed; use multilingual-minilm for semantic mode."
+    )
 
 out_dir = args.out_dir
 os.makedirs(out_dir, exist_ok=True)
@@ -108,9 +136,7 @@ os.makedirs(out_dir, exist_ok=True)
 # means it's a diaparser catalog name for dependency mode.
 if args.mode is not None:
     mode = args.mode
-elif args.model is None:
-    mode = "pos"
-elif args.model in POS_MODELS:
+elif args.model is None or args.model in POS_MODELS:
     mode = "pos"
 elif args.model in SEMANTIC_MODELS:
     mode = "semantic"
@@ -121,11 +147,13 @@ else:
 def _quantize_int8(onnx_path):
     """Replace onnx_path with a dynamically int8-quantized copy and drop its external data file."""
     try:
-        from onnxruntime.quantization import quantize_dynamic, QuantType
+        from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError as e:
         raise SystemExit(f"--int8 needs onnxruntime: {e}")
     tmp = onnx_path + ".int8.tmp"
-    quantize_dynamic(onnx_path, tmp, weight_type=QuantType.QInt8, use_external_data_format=False)
+    quantize_dynamic(
+        onnx_path, tmp, weight_type=QuantType.QInt8, use_external_data_format=False
+    )
     os.replace(tmp, onnx_path)
     data = onnx_path + ".data"
     if os.path.exists(data):
@@ -141,7 +169,10 @@ def _fetch(repo, name):
 def _write_tokenizer_files(repo, slug, out_dir):
     """Save the tokenizer the Go side needs next to the model: tokenizer.json for Unigram, else vocab.txt (+ tokenizer_config.json)."""
     tok_json = _fetch(repo, "tokenizer.json")
-    if tok_json is not None and json.loads(tok_json).get("model", {}).get("type") == "Unigram":
+    if (
+        tok_json is not None
+        and json.loads(tok_json).get("model", {}).get("type") == "Unigram"
+    ):
         path = os.path.join(out_dir, f"{slug}_tokenizer.json")
         with open(path, "wb") as f:
             f.write(tok_json)
@@ -150,7 +181,9 @@ def _write_tokenizer_files(repo, slug, out_dir):
     saved = []
     vocab = _fetch(repo, "vocab.txt")
     if vocab is None:
-        raise SystemExit(f"{repo} has neither a Unigram tokenizer.json nor a WordPiece vocab.txt; unsupported tokenizer.")
+        raise SystemExit(
+            f"{repo} has neither a Unigram tokenizer.json nor a WordPiece vocab.txt; unsupported tokenizer."
+        )
     path = os.path.join(out_dir, f"{slug}_vocab.txt")
     with open(path, "wb") as f:
         f.write(vocab)
@@ -195,8 +228,8 @@ def _export_dependency(model_name, out_dir):
         arc/rel scores. (Verified against the original architecture on a
         sample sentence — see TODO.md — result was a fully correct parse.)
     """
-    import torch.nn as nn
     from diaparser.parsers import Parser
+    from torch import nn
 
     print(f"Loading diaparser model {model_name}...")
     p = Parser.load(model_name)
@@ -223,8 +256,12 @@ def _export_dependency(model_name, out_dir):
                 sd[f"weight_hh_l{i}"] = old.f_cells[i].weight_hh.detach().clone()
                 sd[f"bias_ih_l{i}"] = old.f_cells[i].bias_ih.detach().clone()
                 sd[f"bias_hh_l{i}"] = old.f_cells[i].bias_hh.detach().clone()
-                sd[f"weight_ih_l{i}_reverse"] = old.b_cells[i].weight_ih.detach().clone()
-                sd[f"weight_hh_l{i}_reverse"] = old.b_cells[i].weight_hh.detach().clone()
+                sd[f"weight_ih_l{i}_reverse"] = (
+                    old.b_cells[i].weight_ih.detach().clone()
+                )
+                sd[f"weight_hh_l{i}_reverse"] = (
+                    old.b_cells[i].weight_hh.detach().clone()
+                )
                 sd[f"bias_ih_l{i}_reverse"] = old.b_cells[i].bias_ih.detach().clone()
                 sd[f"bias_hh_l{i}_reverse"] = old.b_cells[i].bias_hh.detach().clone()
             self.lstm.load_state_dict(sd)
@@ -256,18 +293,24 @@ def _export_dependency(model_name, out_dir):
             return s
 
         def forward(self, input_ids, attention_mask, pool_matrix):
-            out = self.bert(input_ids, attention_mask=attention_mask, output_hidden_states=True)
-            hs = torch.stack(out.hidden_states[-self.n_layers:], 0)
-            mixed = self.scalar_mix(hs)                    # [1, n_sub, hidden]
+            out = self.bert(
+                input_ids, attention_mask=attention_mask, output_hidden_states=True
+            )
+            hs = torch.stack(out.hidden_states[-self.n_layers :], 0)
+            mixed = self.scalar_mix(hs)  # [1, n_sub, hidden]
             word_embed = torch.matmul(pool_matrix, mixed)  # [1, seq, hidden]
-            x, _ = self.lstm(word_embed)                   # [1, seq, 2*hidden]
+            x, _ = self.lstm(word_embed)  # [1, seq, 2*hidden]
             arc_d = self.mlp_arc_d(x)
             arc_h = self.mlp_arc_h(x)
             rel_d = self.mlp_rel_d(x)
             rel_h = self.mlp_rel_h(x)
-            s_arc = self._biaffine(arc_d, arc_h, self.arc_weight, self.arc_bias_x, self.arc_bias_y)  # [1, seq, seq]
-            s_rel = self._biaffine(rel_d, rel_h, self.rel_weight, self.rel_bias_x, self.rel_bias_y)  # [1, n_rels, seq, seq]
-            s_rel = s_rel.permute(0, 2, 3, 1)                                                         # [1, seq, seq, n_rels]
+            s_arc = self._biaffine(
+                arc_d, arc_h, self.arc_weight, self.arc_bias_x, self.arc_bias_y
+            )  # [1, seq, seq]
+            s_rel = self._biaffine(
+                rel_d, rel_h, self.rel_weight, self.rel_bias_x, self.rel_bias_y
+            )  # [1, n_rels, seq, seq]
+            s_rel = s_rel.permute(0, 2, 3, 1)  # [1, seq, seq, n_rels]
             # Self-loop masking (a word can't be its own head) is done on the
             # Go side instead of via torch.eye here: torch.eye traces to an
             # ONNX EyeLike node that this project's onnxruntime build doesn't
@@ -282,11 +325,16 @@ def _export_dependency(model_name, out_dir):
     # which torch.export needs to correctly infer them as independent dims.
     dummy_ids = torch.tensor([[101, 1996, 4419, 2050]], dtype=torch.long)
     dummy_mask = torch.ones_like(dummy_ids)
-    dummy_pool = torch.tensor([[
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.5, 0.5],
-    ]], dtype=torch.float32)
+    dummy_pool = torch.tensor(
+        [
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.5, 0.5],
+            ]
+        ],
+        dtype=torch.float32,
+    )
 
     slug = model_name.replace("-", "_").replace("/", "_").replace(".", "_")
     onnx_path = os.path.join(out_dir, f"{slug}_dependency.onnx")
@@ -319,17 +367,23 @@ def _export_dependency(model_name, out_dir):
 
     bert_model_id = m.feat_embed.model
     print(f"Fetching tokenizer from {bert_model_id}...")
-    vocab_path = ", ".join(_write_tokenizer_files(bert_model_id, f"{slug}_dependency", out_dir))
+    vocab_path = ", ".join(
+        _write_tokenizer_files(bert_model_id, f"{slug}_dependency", out_dir)
+    )
 
     rel_vocab = p.transform.DEPREL.vocab
     rels = [rel_vocab.itos[i] for i in range(len(rel_vocab))]
     rels_path = os.path.join(out_dir, f"{slug}_dependency_rels.json")
     with open(rels_path, "w") as f:
         json.dump(rels, f)
-    print(f"rel labels saved to {rels_path} (index 0, {rels[0]!r}, is an unused placeholder)")
+    print(
+        f"rel labels saved to {rels_path} (index 0, {rels[0]!r}, is an unused placeholder)"
+    )
 
     print(f"\nDone. Files: {onnx_path}, {vocab_path}, {rels_path}")
-    print(f"Set naturalSyntaxLs.model to {model_name!r} (with naturalSyntaxLs.mode = \"dependency\").")
+    print(
+        f'Set naturalSyntaxLs.model to {model_name!r} (with naturalSyntaxLs.mode = "dependency").'
+    )
 
 
 if mode == "dependency":
@@ -351,7 +405,9 @@ model.eval()
 
 export_model = model
 if "token_type_ids" not in inspect.signature(model.forward).parameters:
-    print(f"{model_id}'s forward() has no token_type_ids param (e.g. MPNet) — wrapping to drop it.")
+    print(
+        f"{model_id}'s forward() has no token_type_ids param (e.g. MPNet) — wrapping to drop it."
+    )
     export_model = _DropsTokenTypeIds(model)
     export_model.eval()
 
@@ -360,9 +416,9 @@ dummy_mask = torch.ones(1, 16, dtype=torch.long)
 dummy_tti = torch.zeros(1, 16, dtype=torch.long)
 
 batch = torch.export.Dim("batch")
-seq   = torch.export.Dim("seq", min=1, max=512)
+seq = torch.export.Dim("seq", min=1, max=512)
 dynamic_shapes = {
-    "input_ids":      {0: batch, 1: seq},
+    "input_ids": {0: batch, 1: seq},
     "attention_mask": {0: batch, 1: seq},
     "token_type_ids": {0: batch, 1: seq},
 }
@@ -382,19 +438,19 @@ if mode == "semantic":
     )
 else:
     torch.onnx.export(
-    export_model,
-    (dummy_ids, dummy_mask, dummy_tti),
-    onnx_path,
-    input_names=["input_ids", "attention_mask", "token_type_ids"],
-    output_names=["logits"],
-    dynamic_axes={
-        "input_ids":      {0: "batch", 1: "seq"},
-        "attention_mask": {0: "batch", 1: "seq"},
-        "token_type_ids": {0: "batch", 1: "seq"},
-        "logits":         {0: "batch", 1: "seq"},
-    },
-    opset_version=14,
-)
+        export_model,
+        (dummy_ids, dummy_mask, dummy_tti),
+        onnx_path,
+        input_names=["input_ids", "attention_mask", "token_type_ids"],
+        output_names=["logits"],
+        dynamic_axes={
+            "input_ids": {0: "batch", 1: "seq"},
+            "attention_mask": {0: "batch", 1: "seq"},
+            "token_type_ids": {0: "batch", 1: "seq"},
+            "logits": {0: "batch", 1: "seq"},
+        },
+        opset_version=14,
+    )
 
 print("ONNX export done.")
 if args.int8:

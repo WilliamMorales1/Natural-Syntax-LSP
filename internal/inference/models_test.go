@@ -20,7 +20,7 @@ func forEachModel(t *testing.T, f func(t *testing.T, m Predictor)) {
 			if err != nil {
 				t.Skip(err)
 			}
-			defer m.Close()
+			t.Cleanup(func() { m.Close() })
 			f(t, m)
 		})
 	}

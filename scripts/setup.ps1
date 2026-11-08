@@ -3,11 +3,13 @@
 .SYNOPSIS
     Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 .PARAMETER Model
-    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, multilingual, dependency, dependency-es, dependency-fr, or all.
+    A model name from models.json (default bert-base), or all.
+.PARAMETER List
+    Print the models in models.json and exit.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","multilingual","dependency","dependency-es","dependency-fr","all")]
-    [string]$Model = "bert-base"
+    [string]$Model = "bert-base",
+    [switch]$List
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +18,15 @@ $ROOT = Split-Path $PSScriptRoot -Parent
 function Step($msg) { Write-Host; Write-Host "==> $msg" }
 function Ok($msg)   { Write-Host "    $msg" }
 function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
+
+$catalogPath = Join-Path $ROOT "models.json"
+if (-not (Test-Path $catalogPath)) { Fail "models.json not found at $catalogPath" }
+$CATALOG = (Get-Content $catalogPath -Raw -Encoding UTF8 | ConvertFrom-Json).models
+if ($List) { $CATALOG | ForEach-Object { "{0,-30} {1,-10} {2}" -f $_.name, $_.mode, $_.description }; exit 0 }
+if ($Model -ne "all" -and -not ($CATALOG | Where-Object { $_.name -eq $Model })) {
+    Fail "Unknown model '$Model'. Use one of: $(($CATALOG | ForEach-Object { $_.name }) -join ' ') or all."
+}
+$SELECTED = @($CATALOG | Where-Object { $Model -eq "all" -or $_.name -eq $Model })
 
 # ── 1. Check prerequisites ────────────────────────────────────────────────────
 
@@ -49,7 +60,7 @@ Ok "Data directory: $DATA_DIR"
 Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, requests)"
 
 $PKGS = @("transformers","torch","onnx","onnxscript","onnxruntime","requests")
-if ($Model -like "dependency*" -or $Model -eq "all") { $PKGS += "diaparser" }
+if ($SELECTED | Where-Object { $_.mode -eq "dependency" }) { $PKGS += "diaparser" }
 
 # Native stderr can throw under ErrorActionPreference=Stop in Windows PowerShell 5, so probes go through try/catch.
 function Test-Native([scriptblock]$cmd) {
@@ -119,61 +130,21 @@ function Invoke-Export($modelName, $label, $extra) {
     Ok "$label exported."
 }
 
-function Export-POSModel($modelName, $label, $extra = @()) {
-    $slug = Get-Slug $modelName
-    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_labels.json")) -and (Test-Tokenizer $slug)) {
-        Ok "$slug.onnx already exists, skipping export."
-    } else {
-        Invoke-Export $modelName $label $extra
+# Export-Model skips the export when the files for the model already exist.
+function Export-Model($m) {
+    $slug = Get-Slug $m.name
+    $hasFiles = switch ($m.mode) {
+        "pos"        { (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_labels.json")) -and (Test-Tokenizer $slug) }
+        "semantic"   { (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Tokenizer $slug) }
+        "dependency" { $slug = "${slug}_dependency"; (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_rels.json")) -and (Test-Tokenizer $slug) }
+        default      { Fail "Unknown mode '$($m.mode)' for $($m.name) in models.json" }
     }
+    if ($hasFiles) { Ok "$slug.onnx already exists, skipping export."; return }
+    $extra = if ($m.int8) { @("--int8") } else { @() }
+    Invoke-Export $m.name "$($m.name) ($($m.mode): $($m.description))" $extra
 }
 
-function Export-SemanticModel($modelName, $label, $extra = @()) {
-    $slug = Get-Slug $modelName
-    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Tokenizer $slug)) {
-        Ok "$slug.onnx already exists, skipping export."
-    } else {
-        Invoke-Export $modelName $label $extra
-    }
-}
-
-function Export-DependencyModel($modelName, $label, $extra = @()) {
-    $slug = (Get-Slug $modelName) + "_dependency"
-    if ((Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_rels.json")) -and (Test-Tokenizer $slug)) {
-        Ok "$slug.onnx already exists, skipping export."
-    } else {
-        Invoke-Export $modelName "$label dependency parser" $extra
-    }
-}
-
-# The Spanish parser stays fp32: int8 drops its UAS from 91 to 42. Everything else is int8.
-function Export-POSEs  { Export-POSModel "xlmr-es" "Spanish POS (XLM-R, int8, ~280 MB)" @("--int8") }
-function Export-POSFr  { Export-POSModel "xlmr-fr" "French POS (XLM-R, int8, ~280 MB)" @("--int8") }
-function Export-Multilingual { Export-SemanticModel "multilingual-minilm" "multilingual MiniLM semantic (~470 MB)" }
-function Export-DepEn  { Export-DependencyModel "en_ewt.electra-base" "English (~470 MB)" }
-function Export-DepEs  { Export-DependencyModel "es_ancora.mbert" "Spanish (fp32, ~750 MB)" }
-function Export-DepFr  { Export-DependencyModel "fr_sequoia.camembert-large" "French (int8, ~350 MB)" @("--int8") }
-
-switch ($Model) {
-    "bert-base"     { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)" }
-    "mobilebert"    { Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)" }
-    "pos-es"        { Export-POSEs }
-    "pos-fr"        { Export-POSFr }
-    "multilingual"  { Export-Multilingual }
-    "dependency"    { Export-DepEn }
-    "dependency-es" { Export-DepEs }
-    "dependency-fr" { Export-DepFr }
-    "all"           {
-        Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"
-        Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)"
-        Export-POSEs
-        Export-POSFr
-        Export-Multilingual
-        Export-DepEn
-        Export-DepEs
-        Export-DepFr
-    }
-}
+foreach ($m in $SELECTED) { Export-Model $m }
 
 # ── 5. Copy onnxruntime.dll ───────────────────────────────────────────────────
 
@@ -207,6 +178,18 @@ go build -o $exePath ./cmd/natural-syntax-ls/
 if ($LASTEXITCODE -ne 0) { Fail "go build failed." }
 Pop-Location
 Ok "Built: $exePath"
+
+# Language scripts: copied per file, never overwriting a user-edited one.
+Step "Installing language scripts"
+$langDest = Join-Path $DATA_DIR "lang"
+New-Item -ItemType Directory -Force $langDest | Out-Null
+Get-ChildItem (Join-Path $ROOT "lang") -Filter *.lua | ForEach-Object {
+    $dest = Join-Path $langDest $_.Name
+    if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
+}
+$catDest = Join-Path $DATA_DIR "models.json"
+if (-not (Test-Path $catDest)) { Copy-Item (Join-Path $ROOT "models.json") $catDest }
+Ok "Language scripts: $langDest; model catalog: $catDest"
 
 # ── 7. Install binary to user bin directory ───────────────────────────────────
 

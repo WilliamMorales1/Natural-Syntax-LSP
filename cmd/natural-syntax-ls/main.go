@@ -14,8 +14,10 @@ import (
 	"syscall"
 
 	"natural-syntax-ls/internal/inference"
-	_ "natural-syntax-ls/internal/jaseg"
+	"natural-syntax-ls/internal/lang"
+	"natural-syntax-ls/internal/lang/builtin"
 	"natural-syntax-ls/internal/lspserver"
+	"natural-syntax-ls/internal/models"
 )
 
 func main() {
@@ -26,11 +28,11 @@ func main() {
 }
 
 func run() error {
-	// supported models: multilingual_minilm, mpnet, minilm, mobilebert, bert_base, xlmr_es, xlmr_fr, en_ewt.electra-base
 	modelPath := flag.String("model", "", "Path to a .onnx model file")
 	vocabPath := flag.String("vocab", "", "Path to a _vocab.txt (or Unigram _tokenizer.json) file (the model's own tokenizer, whatever mode)")
 	modeFlag := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
 	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
+	langDir := flag.String("lang-dir", "", "Extra directory of language *.lua scripts, loaded last, after <exe dir>/lang, <model dir>/lang and <config dir>/natural-syntax-ls/lang")
 	_ = flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
 
@@ -53,21 +55,17 @@ func run() error {
 	dirs := []string{dataDir, exeDir}
 
 	if *modelPath == "" {
-		// English POS models first, then the embedding models.
+		catalog, err := models.Load(exeDir, dataDir)
+		if err != nil {
+			return fmt.Errorf("read model catalog: %w", err)
+		}
 		var candidates []string
-		for _, names := range [][]string{{"bert_base", "mobilebert"}, {"multilingual_minilm", "mpnet", "minilm"}} {
+		for _, stem := range catalog.DefaultStems(string(mode)) {
 			for _, dir := range dirs {
-				for _, name := range names {
-					candidates = append(candidates, filepath.Join(dir, name+".onnx"))
-				}
+				candidates = append(candidates, filepath.Join(dir, stem+".onnx"))
 			}
 		}
 		*modelPath = findFile(candidates...)
-	}
-
-	embedHiddenSize := 768
-	if strings.Contains(strings.ToLower(filepath.Base(*modelPath)), "minilm") {
-		embedHiddenSize = 384
 	}
 
 	// The vocab must belong to the chosen model; any other vocab maps subwords to the wrong ids.
@@ -93,35 +91,20 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
+	languages := builtin.Languages(filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := lspserver.Run(ctx, lspserver.Config{
-		ModelPath:       *modelPath,
-		VocabPath:       *vocabPath,
-		Mode:            mode,
-		EmbedHiddenSize: embedHiddenSize,
-		Language:        modelLanguage(*modelPath),
+		ModelPath: *modelPath,
+		VocabPath: *vocabPath,
+		Mode:      mode,
+		Language:  lang.ForModel(languages, *modelPath),
+		Languages: languages,
 	}); err != nil {
 		return fmt.Errorf("lsp: %w", err)
 	}
 	return nil
-}
-
-// modelLangPrefixes maps model file-name prefixes to Wiktionary language codes.
-var modelLangPrefixes = []struct{ prefix, lang string }{
-	{"xlmr_es", "es"}, {"xlmr_fr", "fr"}, {"es_ancora", "es"}, {"fr_sequoia", "fr"},
-}
-
-// modelLanguage guesses a model's Wiktionary language code from its file name; "" when unknown or multilingual.
-func modelLanguage(modelPath string) string {
-	base := strings.ToLower(filepath.Base(modelPath))
-	for _, m := range modelLangPrefixes {
-		if strings.HasPrefix(base, m.prefix) {
-			return m.lang
-		}
-	}
-	return ""
 }
 
 // configDir returns where setup.sh and the VS Code extension put models: XDG on macOS too, not ~/Library.

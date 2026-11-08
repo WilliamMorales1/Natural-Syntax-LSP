@@ -22,7 +22,7 @@ Goal: add useful Spanish, French, Japanese, and Chinese support without changing
 - Unigram word splitting: whitespace and punctuation as in HF, French elision (`l'`, `qu'`, `aujourd'hui` kept whole), and every Han/kana run segmented into the pieces Viterbi picks.
 - `postag.ParseLabel` maps Penn and Universal POS (with B-/I- and `+` compounds) onto existing token types. `NewPOSModel` no longer falls back to the English label order when a sidecar-tokenizer model lacks `_labels.json`; it errors.
 - `scripts/export_model.py`: `--mode pos|semantic|dependency` with any HF repo id; writes `_tokenizer.json` (Unigram tokenizer.json, or WordPiece tokenizer_config.json beside `_vocab.txt`), also for dependency exports.
-- `cmd`: vocab lookup falls back to `<model>_tokenizer.json`; any model name containing `minilm` gets 384 dims.
+- `cmd`: vocab lookup falls back to `<model>_tokenizer.json`; embedding size is read from the model's `last_hidden_state` output (no file-name rule).
 - Tests in `internal/inference/multilingual_test.go` (run with `NSLS_ML_DIR`).
 
 ## Tested models (exported, run through Go)
@@ -117,7 +117,7 @@ Original options: (a) fine-tune `bert-base-multilingual-cased` on UD (es_ancora,
 ### 1. Known quality gaps
 
 - Semantic mode fixed: unspaced neighbors are encoded without a word-start mark (`tokenizer.EncodeWordsContiguous`), ja 0.17 to 1.00, zh 0.88 to 1.00, colsep zh 1.37 to 3.54. Katakana words still show one color per piece; needs a dictionary segmenter (kagome) for whole-word colors.
-- ja POS now tags kagome UniDic words (`internal/jaseg`, kana-bearing text only): 74.4% to 97.1% per character on GSD. Semantic ja group accuracy 0.96, colsep 2.56 (whole words, one word off). Costs +37 MB binary, ~370 MB heap on first Japanese text; `-tags nojaseg` removes it.
+- ja POS now tags kagome UniDic words (`internal/lang/japanese`, kana-bearing text only): 74.4% to 97.1% per character on GSD. Semantic ja group accuracy 0.96, colsep 2.56 (whole words, one word off). Costs +37 MB binary, ~370 MB heap on first Japanese text; `-tags nojaseg` removes it.
 - Release variants: `-tags english` drops kagome, Japanese lemmas and Chinese Simplified/Traditional tables (7.3 MB vs 52 MB). Unigram tokenizer stays because the multilingual semantic model needs it. `scripts/build-release.sh` builds both; CI adds `*_english.*` archives.
 - zh POS: `KoichiYasuoka/chinese-roberta-base-upos` exported and wired. Character-level B-/I- labels are merged into words in `POSModel` (`mergeContinuations`); 79.2% to 91.6% per character on GSDSimp. Hand export only (no setup name yet); int8, latency and memory not measured. See `docs/cjk-options.md`.
 - Open: ja int8 POS with kagome words, ja dependency parser (diaparser `ja_gsd.mbert` on kagome words), Wiktionary lookup now gets real words (lemma lookup not done), Neovim latency with kagome loaded.
@@ -150,7 +150,7 @@ Original options: (a) fine-tune `bert-base-multilingual-cased` on UD (es_ancora,
 
 ### 6. Definition lookup
 
-- Done: `wiktionary_language` init option (`en` default, code, `model`, `auto`), cache keyed by language, language label and `#Section` anchor for non-English hits, tests for escaping, missing buckets, auto order. Plan: `docs/wiktionary-language-plan.md`. Model language comes from the model file name (`modelLanguage` in `cmd`), not real metadata.
+- Done: `wiktionary_language` init option (`en` default, code, `model`, `auto`), cache keyed by language, language label and `#Section` anchor for non-English hits, tests for escaping, missing buckets, auto order. Plan: `docs/wiktionary-language-plan.md`. Model language comes from the model file name via `Language.ModelPrefixes` (`lang.ForModel`), not real metadata.
 - Open: ja/zh pieces such as `私は` still find no headword.
 
 ### 7. Validation
@@ -167,3 +167,198 @@ Original options: (a) fine-tune `bert-base-multilingual-cased` on UD (es_ancora,
 - POS labels are mapped deliberately, with no accidental English fallback.
 - Token spans point to correct source characters after multilingual edits.
 - Existing English behavior and configuration stay backward compatible.
+
+# Russian and Arabic support plan
+
+Goal: add POS, semantic and, if a parser exists, dependency support for Russian and Arabic by following `docs/adding-a-language.md`, and use the work to test whether that guide is enough. Any edit outside `internal/lang/<name>`, `internal/lang/builtin`, scripts, extension and docs counts as a gap in the extension design and is recorded here.
+
+## Starting point
+
+- Semantic: `paraphrase-multilingual-MiniLM-L12-v2` already covers both languages; only quality needs measuring (`NSLS_SEMANTIC_EVAL`).
+- POS: `wietsedv/xlm-roberta-base-ft-udpos28-ru` and `-ar` (same family as es/fr, UPOS, Apache-2.0 to be confirmed per model card). Same XLM-R Unigram tokenizer, so no new tokenizer code is expected.
+- Dependency: check the diaparser catalog for Russian and Arabic models (for example `ru_syntagrus.*`, `ar_padt.*`; names unverified). If none exports cleanly, ship POS and semantic only and say so.
+
+## Language-specific risks
+
+Russian:
+- Stress marks (U+0301 combining acute) in textbooks and Wiktionary-style text; Wiktionary headwords have none. Needs a `Forms` hook that strips them; check the tokenizer keeps the mark inside its word and the model's NFKC handling does not split it.
+- `ё` / `е` spelling variants: try the `ё` form of a headword when the `е` page misses.
+- Wiktionary section names live in `lang.Wiktionary.Sections` (no `langCodes` table).
+
+Arabic:
+- Right-to-left text: offsets stay in logical order, so LSP positions should be fine, but test mixed Arabic/Latin lines and numbers, and bidi control characters (U+200E/F, U+202A-E) which are `Cf`, not punctuation, and may glue to words.
+- Optional diacritics (tashkeel) and tatweel (U+0640) are not in headwords and NFKC does not remove them. `Forms` strips both.
+- Clitics are written attached (`وَالْكِتَاب`: conjunction, article, noun). UD Arabic-PADT splits them into syntactic words, so scoring against PADT will undercount the way ja pieces did. Decide whether to leave pieces (documented, cheap) or add a clitic `WordMerger`/`Segmenter` (costly; needs a segmenter dependency and a size and memory check like kagome).
+- Wiktionary: `{{head|ar|...}}` pages may fail the REST parser like Chinese; if so set `Wikitext` and `Script: unicode.Arabic`.
+- Arabic punctuation (`، ؛ ؟`) must end sentences in `SplitChunks`; Russian needs no change. The sentence-end and closing-bracket sets (`sentenceEnders`, `cjkClosers` in `internal/inference/dependency_model.go`) are CJK-specific and live in a generic file, a leak the language refactor did not move. Resolved without a hook: `inference` now uses Unicode `Sentence_Terminal` plus non-ASCII `Pe`/`Pf` closers (`isSentenceEnd`, `isCloser`), covering `؟ ۔` and `»`.
+- Hover text for POS uses Penn wording; unchanged by this plan (see "Normalize POS labels").
+
+## Steps
+
+1. Branch from `multilingual`. Write the failing tests first: a `ForModel` case per language, `Forms` tests (Russian stress and `ё`, Arabic diacritics and tatweel), a sentence-boundary test for `؟`.
+2. Add `internal/lang/russian` and `internal/lang/arabic` (`Language()` with `ModelPrefixes` `xlmr_ru`/`xlmr_ar`, plus hooks from the risks above); list both in `builtin` and `builtin_english`; set `Wiktionary.Sections`.
+3. Export models: `xlmr-ru`, `xlmr-ar` in `export_model.py` (`--int8`), `pos-ru`/`pos-ar` in `setup.sh` and `setup.ps1`, extension enum and descriptions. Do the same for any parser found.
+4. Accuracy: add UD_Russian-GSD (or SynTagRus) and UD_Arabic-PADT to `eval_test.go` and `live_eval_test.go`; record fp32 and int8 POS, and UAS/LAS if a parser exists. Check that int8 does not collapse as the es parser and zh character model did.
+5. Semantic: add ru and ar sentence groups to the cross-language quality test; compare to the es/fr numbers.
+6. Latency and memory: add `pos/ru`, `pos/ar` cases to `internal/e2e`; expect es/fr-like figures (about 450 MB RSS ready, edit near 62 ms int8).
+7. Wiktionary: measure hit rate on both treebanks before and after the `Forms` hooks; keep a hook only if it helps.
+8. Docs: `docs/models.md` rows (license, size, accuracy), `docs/settings.md` language list, README line; tell `adding-a-language.md` what was missing.
+
+## Acceptance
+
+- Both languages work end to end in POS and semantic modes with documented models, licenses and accuracy; dependency only if a parser passes the same checks.
+- No Russian or Arabic string in `tokenizer`, `inference`, `lspserver` or `wiktionary` ; any exception is listed under "Design gaps" below.
+- `go build -tags english ./...` and `go test -short -race ./...` pass; English output unchanged.
+
+## Design gaps found
+
+- Sentence enders and closers were CJK-only constants in `inference`. Fixed generically with Unicode properties (`internal/inference/sentences_test.go`). Side effect: English curly closing quotes (`”`) after a period now stay with their sentence.
+- `langCodes` in `wiktionary/wikitext.go` was a language table in a generic package. Replaced by `lang.Wiktionary.Sections`.
+- Tokenizer options reach Unigram tokenizers only; fine for XLM-R ru/ar.
+- `basicTokenize` in the generic tokenizer needed an Arabic-driven fix (bidi controls); script-neutral, so no language hook.
+
+## Progress
+
+- Done: step 1 tests, step 2 (`internal/lang/russian`, `internal/lang/arabic`, builtin lists, `langCodes`), sentence ends. Branch `russian-arabic`.
+- Step 3 export done on Colab (int8, 279 MB each, labels are UPOS); scripts, setup and extension enum updated. `EmbedHiddenSize` removed; `userAgent` points at the real repo.
+- Step 4 POS accuracy (UD test, first 200 sentences, per source character): ru GSD fp32 93.5 / int8 93.0; ar PADT fp32 93.7 / int8 93.6. int8 is safe for both. Arabic PADT scoring skips words inside multiword tokens (clitic-attached), so the figure covers unattached words only. No ru/ar parser tried yet.
+- Step 5 semantic (MiniLM, `NSLS_SEMANTIC_EVAL`): cat/car same-concept 0.98-0.99 vs different 0.15-0.25 across all seven languages. Group accuracy ru 0.92, ar 0.88 (es/fr/en 1.00); colsep ru 2.24, ar 1.68 (es 3.99). Arabic clitic-attached words (`والكتاب`) are single pieces, which blurs colors. The test texts needed 50+ tokens or the plane stays unfitted (ru/ar texts got a filler sentence).
+- Step 6 Neovim (X280, int8, `internal/e2e`): pos/ru ready 998 ms, edit 60 ms, RSS 457 MB; pos/ar ready 974 ms, edit 51 ms, RSS 451 MB; semantic/ru and /ar ready ~900 ms, edit 23-25 ms, RSS ~205 MB. Matches es/fr.
+- Step 7 Wiktionary (60 words, live, `NSLS_WIKT_NOFORMS=1` gives the baseline): ru pos hit 63.3 to 65.0, pipeline 60.0 to 61.7; ar pos 51.7 to 51.7, pipeline 38.3 to 40.0. Small gain, hooks kept. Most misses are inflected forms (ru `спортивной`, ar `الأكبر`, `للعدل`) and proper nouns; fixing that needs lemmatization, not done.
+- Step 8 done (README, `docs/models.md`, `docs/settings.md`). Bidi controls (U+200E/F, 061C, 202A-E, 2066-69) glued to words in `basicTokenize`; now word breaks (`isWordBreak`, test `internal/tokenizer/bidi_test.go`). Mixed Arabic/Latin/number lines tokenize correctly.
+- Open: Wiktionary lemma lookup for inflected ru/ar forms; Arabic clitic segmentation (decision: leave pieces).
+
+# Lua-defined languages and models plan
+
+Goal: define language and model specific behavior in Lua scripts loaded at startup, so adding or tuning a language needs no Go rebuild of the main binary.
+
+## Motivation
+
+- Today each language is a Go package under `internal/lang/<name>` listed in `internal/lang/builtin`. Every new language or rule tweak means a full rebuild and a new release binary per platform.
+- Model metadata (file prefix, labels, tokenizer options) is likewise compiled in or hardcoded in `internal/inference`.
+
+## Decisions
+
+- Embedded interpreter in pure Go (`github.com/yuin/gopher-lua`, MIT). No cgo, so cross compiles and release builds stay as they are.
+- `lang.Language` stays the only interface the generic packages see. A Lua loader produces `lang.Language` values; Go code never learns whether a language is native or scripted.
+- Built-in Go languages remain for the default set (English, Chinese, Japanese need Go: kagome, simplify tables). Lua covers the rest and user overrides.
+- Scripts are data, not plugins: no `os`, `io`, `package`, `debug` or `load*` in the sandbox. Only pure string and table functions plus a small host API.
+- Per-call instruction limit and a recover wrapper so a bad script cannot hang or crash the server.
+
+## Design
+
+- Search path: `<model dir>/lang/*.lua`, then `~/.config/natural-syntax-ls/lang/*.lua`, then a `naturalSyntaxLs.langDir` setting. Later entries override earlier ones by `code`.
+- One file returns one table:
+
+```lua
+return {
+  code = "ru",
+  model_prefixes = { "xlmr_ru" },
+  tokenizer = { strip_bidi = false },          -- named options, mapped to tokenizer.Option in Go
+  wiktionary = {
+    code = "ru",
+    sections = { "Russian" },
+    rewrite = function(word, pos, deprel) return nil end,
+    forms = function(word, pos) return {} end,
+  },
+}
+```
+
+- Model specific data (labels, UPOS mapping, hidden size, sentence rules) goes in a sibling `<model>.lua` or a `model` table: `labels`, `label_map`, `pos_normalize(label)`.
+- Tokenizer options are a closed set of named flags implemented in Go. Lua selects them; it does not run per token (hot path stays native).
+- Hooks that run per lookup (`rewrite`, `forms`) are fine in Lua: low call rate, small inputs.
+- One Lua state per language, guarded by a mutex; hooks are pure so states are reusable.
+
+## Steps
+
+1. Inventory every field of `lang.Language` and `lang.Wiktionary`; mark each as data (declarative) or hook (callable). Check `internal/inference` for model facts that belong in a model table.
+2. Add `internal/lang/luaload`: sandboxed state, host API (`postag` constants, string helpers), table-to-`Language` conversion with validation and clear errors naming file and field.
+3. Port Russian, Arabic and French to Lua files under `internal/lang/scripts/` as the first consumers; keep Go versions behind a test that asserts identical output on both.
+4. Wire loading into `cmd/natural-syntax-ls/main.go` and `lspserver/registry.go`; log which languages came from where; override by `code`.
+5. Move model metadata (labels, prefix to language mapping, normalization) behind the same loader; `export_model.py` emits a `<model>.lua` next to the ONNX file.
+6. Sandbox and limits: instruction budget, memory cap, forbidden globals test, panic recovery test.
+7. Extension: setting for extra script directory; `Reload` on file change optional.
+8. Docs: rewrite `docs/adding-a-language.md` around Lua first, Go only when a hook needs a native library. Document the schema and sandbox.
+
+## Risks
+
+- Behavior drift between Go and Lua ports. Mitigation: dual-run equality test from step 3.
+- Startup cost of parsing scripts. Mitigation: measure; target under 5 ms per language.
+- Untrusted scripts shipped next to downloaded models. Mitigation: sandbox, no filesystem or network, document trust model.
+- Hot-path temptation: keep anything per token or per sentence in Go.
+
+## Acceptance
+
+- New language with only Lua hooks works with an unmodified release binary.
+- Ported Russian, Arabic, French output identical to Go versions on the test treebanks.
+- `go build` for all release targets still cgo-free; `go test -short -race ./...` passes.
+- Malicious or looping script fails that language only, with a logged error; server keeps running.
+
+# Russian and Arabic dependency parser plan
+
+Goal: find, export and evaluate a UD dependency parser for each of Russian and Arabic, or record why none ships. Follows the same checks the es and fr parsers passed.
+
+## Search
+
+1. List the diaparser catalog (`diaparser.parsers.Parser.get_available_models()` or its README table) for Russian (`ru_*`) and Arabic (`ar_*`) entries. Names are unverified; expect something like `ru_syntagrus.*` and `ar_padt.*`.
+2. If the catalog has none, search the Hugging Face Hub with `hub_repo_search` for UD biaffine or token-classification-style parsers (`ru`, `ar`; tags `dependency-parsing`, `udpipe`, `trankit`). Parsers that are not biaffine or need a non-BERT encoder are out of scope unless they export to the same 3-input/2-output graph (`input_ids`, `attention_mask`, `pool_matrix` to `arc_logits`, `rel_logits`).
+3. Record for each candidate: encoder and tokenizer type (WordPiece or Unigram, both supported; SentencePiece BPE is not), model size, license, label set (UD or not), training treebank.
+
+## Acceptance for a candidate
+
+- Exports with `export_model.py --model <catalog name>` and runs through Go on test sentences with correct heads and relations.
+- Tokenizer is supported in Go. A parser whose encoder needs a morphological segmenter (as ja did with MeCab) is rejected.
+- Labels are UD, or a mapping exists. Unknown relations decode as no color, so check the label list against `postag.ParseDeprel` before anything else.
+- License allows redistribution of the export steps (users download weights themselves).
+- UAS/LAS on UD test (first 200 sentences, `TestEvalDependency` in `eval_test.go`) for fp32 and int8. Reject int8 if UAS drops more than a few points (the Spanish parser fell from 91 to 42).
+- Latency and memory in `internal/e2e` (`dependency/ru`, `dependency/ar`), expect fr-like figures if the encoder is large; must fit under 1.2 GB.
+
+## Language risks
+
+Russian:
+- SynTagRus is the large treebank, but check its license for derived models; GSD is the safer eval set (already used for POS).
+- Rich morphology means a large subword count per word; check the `maxSeqLen` truncation drops no words on test sentences.
+
+Arabic:
+- PADT splits clitics into syntactic words and diaparser models trained on it expect those words. Whole written words fed to the parser will score lower and attach wrongly. Options: leave as is and document, or add a clitic segmenter (costly, see the POS plan). Measure UAS/LAS with gold-segmented and raw input to size the gap before deciding.
+- Dependency relations may carry subtypes (`obl:arg`, `nmod:poss`); confirm `ParseDeprel` handles the `:` forms.
+
+## Steps
+
+1. Search and record candidates in the table below.
+2. Export the best candidate per language on Colab (per the compute rule), `--int8` and fp32.
+3. Write failing tests first: anchor (head, relation) pairs in `TestMultilingualDependency`, `ParseDeprel` cases for any new labels.
+4. Evaluate UAS/LAS, then latency and memory.
+5. Wire in: `export_model.py`, `setup.sh`, `setup.ps1` (`dependency-ru`, `dependency-ar`), extension enum, `ModelPrefixes` on the language packages (`ru_*`, `ar_*` file stems), `docs/models.md`, README.
+6. If nothing passes, write the reason here and stop; POS and semantic stay the shipped modes.
+
+## Candidates
+
+Search 2026-11-07, diaparser README (IWPT 2020 table). Encoder inferred from the name suffix; size, license and tokenizer type still to confirm from the checkpoint config.
+
+| Lang | Catalog name | Treebank | UAS / LAS (README) | Encoder | Verdict |
+| ---- | ------------ | -------- | ------------------ | ------- | ------- |
+| ru | `ru_syntagrus.DeepPavlov` | SynTagRus | 94.97 / 93.72 | DeepPavlov RuBERT (WordPiece, supported) | candidate; export next |
+| ar | `ar_padt.bert` | PADT | 87.75 / 83.25 | loads as English bert-base-uncased (30522 vocab, EWT) | rejected: README name is wrong |
+| ar | `ar_padt.asafaya` (real release asset, 1.4 GB) | PADT | - | asafaya Arabic BERT, 32k WordPiece | shipped, int8 |
+
+Results (first 200 UD test sentences, `TestEvalDependency`):
+
+| Lang | Treebank | fp32 UAS / LAS | int8 UAS / LAS | Ships |
+| ---- | -------- | -------------- | -------------- | ----- |
+| ru | GSD | 90.8 / 80.4 | 81.8 / 67.8 | fp32 (int8 loses 9 UAS) |
+| ar | PADT | 77.7 / 72.0 | 77.5 / 71.9 | int8 |
+
+Arabic scores whole written words against PADT heads at matching word starts, so clitic-attached words are not scored; the gap versus the README figure (87.75) is raw input, as predicted. Anchor tests in `TestMultilingualDependency` pass. Neovim (X280): dependency/ru fp32 ready 1213 ms, edit 125 ms, RSS 955 MB (peak 1118); dependency/ar int8 ready 1121 ms, edit 182 ms, RSS 494 MB. Wired: `setup.sh`/`setup.ps1` (`dependency-ru`, `dependency-ar`), extension enum, `ModelPrefixes` (`ru_syntagrus`, `ar_padt`), `docs/models.md`, `docs/install.md`. Lesson: verify a catalog name against the release assets (`gh api repos/Unipisa/diaparser/releases`) and check the exported vocab size before trusting it.
+
+## Progress
+
+- Steps 1-4, 6-8 done. `internal/lang/luaload` (gopher-lua v1.1.1, pure Go) builds `lang.Language` from scripts; `lang/*.lua` holds English, French, Spanish, Russian, Arabic. Only Japanese (kagome) and Chinese (tables) stay Go packages, in `internal/lang/builtin/native.go`; `-tags english` drops both. Go versions of the five ported languages deleted after a 5000-input differential run (ru/ar forms, en rewrite) matched; tests moved to `internal/lang/builtin/builtin_test.go`.
+- Search path: embedded, `<model dir>/lang`, `~/.config/natural-syntax-ls/lang`, `--lang-dir` / `naturalSyntaxLs.langDir`; later overrides by `code`. A broken script is logged and skipped.
+- French elision stays native as the named tokenizer flag `elisions` (clitic and word lists come from Lua), so no French string remains in Go.
+- Sandbox: no `os io package debug coroutine load* dofile require print`; `string.rep` capped; load 2 s, hook 200 ms via context; tests in `luaload_test.go`. Heap cannot be capped from outside, documented.
+- gopher-lua quirk: `x = (string.gsub(...))` on a parameter miscompiles; assign through a new local.
+- Open: step 5 (model metadata: labels, UPOS mapping, hidden size, `export_model.py` emitting `<model>.lua`), per-language startup timing, `Reload` on file change, Windows check.
+- Scripts moved out of the binary: `lang/*.lua` in the repo, installed by `setup.sh`/`setup.ps1` into the config dir (no overwrite), bundled by release archives and the extension as `<exe dir>/lang`. Embed and `Seed` removed. Search path now `<exe dir>/lang`, `<model dir>/lang`, config `lang`, `--lang-dir`. A binary with no scripts has only ja and zh.
+- Model catalog moved to `models.json` (repo root, copied to config dir, bundled next to the binary): name, mode, source, language, default, int8. `internal/models` loads it (later dir overrides by name) and the server's default model search uses `default` entries for the current mode; `export_model.py` reads it. `setup.sh --model NAME|all` and `setup.ps1 -Model NAME|all` read it too (`--list` / `-List` prints it; old aliases like `pos-es` are gone; fixed `tr '-./'` slug bug that broke the skip-if-present check). `setup.ps1` untested (no pwsh here). Still hardcoded: the extension `naturalSyntaxLs.model` enum (static package.json); `ModelPrefixes` live in language scripts.
+- Release archives are one full build per platform (all languages); the `*_english.*` archives and the english variant in `build-release.sh` are gone. The `english` build tag and its stubs are removed; `nojaseg` stays.

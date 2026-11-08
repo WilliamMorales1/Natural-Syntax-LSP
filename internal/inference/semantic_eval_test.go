@@ -9,15 +9,13 @@ import (
 	"strings"
 	"testing"
 	"unicode"
-
-	_ "natural-syntax-ls/internal/jaseg"
 )
 
 // Semantic quality across languages. Off by default: set NSLS_SEMANTIC_EVAL=1.
 //
 //	NSLS_ML_DIR   dir with multilingual_minilm.* (default: the config dir)
 //
-// Each language gets one paragraph of six sentences, every sentence holding one word from each of four groups (animals, food, technology, emotions), as in docs/semantic-example.txt.
+// Each language gets one paragraph of six sentences, every sentence holding one word from each of four groups (animals, food, technology, emotions), as in docs/examples/semantic-example.txt.
 // Quality is measured on the 24 target words only, with embeddings taken as the server takes them (contextual, mean of overlapping pieces):
 //
 //	sep    mean between-group distance / mean within-group distance of embeddings (higher is better)
@@ -41,6 +39,10 @@ var semEvalDocs = map[string]struct {
 		[]string{"renard", "pain", "ordinateur", "heureux", "cerf", "pomme", "imprimante", "effrayé", "hibou", "fromage", "clavier", "fâché", "lapin", "miel", "routeur", "calme", "loup", "beurre", "serveur", "fier", "ours", "soupe", "téléphone", "fatigué"}},
 	"ja": {"キツネは古いコンピューターの近くでパンを見つけて、嬉しそうだった。その後、シカはプリンターの横でリンゴを食べて、怖がっていた。フクロウはキーボードの上のチーズを見て、怒っていた。ウサギはルーターのそばでハチミツをかじり、穏やかだった。オオカミはサーバーからバターを盗んで、誇らしげだった。クマは電話の隣でスープを味わい、疲れていた。",
 		[]string{"キツネ", "パン", "コンピューター", "嬉し", "シカ", "リンゴ", "プリンター", "怖", "フクロウ", "チーズ", "キーボード", "怒", "ウサギ", "ハチミツ", "ルーター", "穏やか", "オオカミ", "バター", "サーバー", "誇", "クマ", "スープ", "電話", "疲れ"}},
+	"ru": {"Лиса нашла хлеб рядом со старым компьютером и казалась счастливой. Потом олень съел яблоко возле принтера, испуганный. Сова смотрела на сыр на клавиатуре и злилась. Кролик грыз мёд рядом с роутером, спокойный. Волк украл масло с сервера, гордый. Медведь попробовал суп рядом с телефоном и устал. Так закончился этот долгий и странный день в лесу у старого дома.",
+		[]string{"Лиса", "хлеб", "компьютером", "счастливой", "олень", "яблоко", "принтера", "испуганный", "Сова", "сыр", "клавиатуре", "злилась", "Кролик", "мёд", "роутером", "спокойный", "Волк", "масло", "сервера", "гордый", "Медведь", "суп", "телефоном", "устал"}},
+	"ar": {"وجد الثعلب الخبز قرب الحاسوب القديم وبدا سعيدا. ثم أكل الغزال التفاحة بجانب الطابعة وهو خائف. نظرت البومة إلى الجبن على لوحة المفاتيح وغضبت. قضم الأرنب العسل بجانب الموجه وهو هادئ. سرق الذئب الزبدة من الخادم وهو فخور. تذوق الدب الحساء بجانب الهاتف وتعب. وهكذا انتهى ذلك اليوم الطويل والغريب في الغابة قرب البيت القديم.",
+		[]string{"الثعلب", "الخبز", "الحاسوب", "سعيدا", "الغزال", "التفاحة", "الطابعة", "خائف", "البومة", "الجبن", "المفاتيح", "وغضبت", "الأرنب", "العسل", "الموجه", "هادئ", "الذئب", "الزبدة", "الخادم", "فخور", "الدب", "الحساء", "الهاتف", "وتعب"}},
 	// ja2 avoids katakana, which the XLM-R vocabulary splits into one-character pieces.
 	"ja2": {"狐は古い電話の近くで米を見つけて、嬉しそうだった。その後、鹿は機械の横で肉を食べて、怖がっていた。梟は画面の上の魚を見て、怒っていた。兎は電池のそばで茶を飲み、穏やかだった。狼は時計の下で塩を盗んで、誇らしげだった。熊は電線の隣で卵を味わい、疲れていた。",
 		[]string{"狐", "米", "電話", "嬉し", "鹿", "肉", "機械", "怖", "梟", "魚", "画面", "怒", "兎", "茶", "電池", "穏やか", "狼", "塩", "時計", "誇", "熊", "卵", "電線", "疲れ"}},
@@ -176,7 +178,7 @@ func openSemModel(t *testing.T, base string, dim int) *EmbeddingModel {
 	if _, err := os.Stat(vocab); err != nil {
 		vocab = base + "_vocab.txt"
 	}
-	m, err := NewEmbeddingModel(base+".onnx", vocab, dim)
+	m, err := NewEmbeddingModel(base+".onnx", vocab, testTokOpts()...)
 	if err != nil {
 		t.Skip(err)
 	}
@@ -193,7 +195,7 @@ func TestSemanticQualityAcrossLanguages(t *testing.T) {
 	} else {
 		testDataDir(t)
 	}
-	langs := []string{"en", "es", "fr", "ja", "zh"}
+	langs := []string{"en", "es", "fr", "ja", "zh", "ru", "ar"}
 	m := openSemModel(t, filepath.Join(dir, "multilingual_minilm"), 384)
 
 	emb := map[string]semEmbeds{}
@@ -232,7 +234,7 @@ func TestSemanticQualityAcrossLanguages(t *testing.T) {
 		bm.Close()
 	}
 	t.Log("\n" + strings.Join(rows, "\n"))
-	for _, l := range []string{"en", "es", "fr", "zh", "ja", "ja2"} {
+	for _, l := range []string{"en", "es", "fr", "zh", "ja", "ja2", "ru", "ar"} {
 		if accs[l] < 0.7 {
 			t.Errorf("%s: within-language group accuracy %.2f below 0.70", l, accs[l])
 		}

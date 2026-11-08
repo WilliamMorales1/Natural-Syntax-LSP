@@ -56,16 +56,36 @@ func releaseEnv() {
 }
 
 // initEnvAndTokenizer takes an ORT env reference and loads the tokenizer; on success the caller owns the reference and must releaseEnv() on later errors and on Close().
-func initEnvAndTokenizer(vocabPath string) (tokenizer.Tokenizer, error) {
+func initEnvAndTokenizer(vocabPath string, opts ...tokenizer.Option) (tokenizer.Tokenizer, error) {
 	if err := acquireEnv(); err != nil {
 		return nil, err
 	}
-	tok, err := tokenizer.Open(vocabPath)
+	tok, err := tokenizer.Open(vocabPath, opts...)
 	if err != nil {
 		releaseEnv()
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 	return tok, nil
+}
+
+// outputLastDim reads the static last dimension of the named output from the ONNX file.
+func outputLastDim(modelPath, name string) (int, error) {
+	if err := acquireEnv(); err != nil {
+		return 0, err
+	}
+	defer releaseEnv()
+	_, outputs, err := ort.GetInputOutputInfo(modelPath)
+	if err != nil {
+		return 0, fmt.Errorf("read model info: %w", err)
+	}
+	for _, o := range outputs {
+		if o.Name == name && len(o.Dimensions) > 0 {
+			if d := o.Dimensions[len(o.Dimensions)-1]; d > 0 {
+				return int(d), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("model %s: output %q has no fixed last dimension", modelPath, name)
 }
 
 // newSessionOptions returns ORT options tuned for a background editor process: few threads, no busy-wait spinning.
@@ -99,8 +119,8 @@ func newDynamicSession(modelPath string, inputs, outputs []string) (*ort.Dynamic
 }
 
 // newBaseModel loads the tokenizer and creates the ORT session.
-func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64) (*baseModel, error) {
-	tok, err := initEnvAndTokenizer(vocabPath)
+func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64, opts ...tokenizer.Option) (*baseModel, error) {
+	tok, err := initEnvAndTokenizer(vocabPath, opts...)
 	if err != nil {
 		return nil, err
 	}

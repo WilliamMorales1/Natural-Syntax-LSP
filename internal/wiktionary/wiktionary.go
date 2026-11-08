@@ -4,6 +4,7 @@ package wiktionary
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"maps"
@@ -15,26 +16,67 @@ import (
 	"sync"
 	"time"
 
+	nlang "natural-syntax-ls/internal/lang"
 	"natural-syntax-ls/internal/postag"
-	"natural-syntax-ls/internal/tokenizer"
 )
 
-var client = &http.Client{Timeout: 8 * time.Second}
-
 // userAgent identifies this client to Wikimedia; override at build time with -ldflags "-X natural-syntax-ls/internal/wiktionary.userAgent=...".
-var userAgent = "natural-syntax-ls/1.0 (https://github.com/wsm5224/NLSyntaxHighlighting-Go)"
+var userAgent = "natural-syntax-ls/1.0 (https://github.com/WilliamMorales1/Natural-Syntax-LSP)"
 
 type cacheEntry struct {
 	def, url string
 }
 
-// maxCacheEntries bounds the definition cache so a long editor session cannot grow it without limit.
-const maxCacheEntries = 4096
-
-var (
-	cacheMu sync.RWMutex
-	cache   = map[string]cacheEntry{} // key: lang:modelLang:lowercase word:pos:deprel
+const (
+	// maxCacheEntries bounds each definition cache so a long editor session cannot grow it without limit.
+	maxCacheEntries = 4096
+	// missTTL is how long a definitive "no entry" answer is remembered.
+	missTTL = 10 * time.Minute
 )
+
+// ErrNotFound reports that Wiktionary has no usable entry for a word.
+var ErrNotFound = errors.New("wiktionary: no entry")
+
+// StatusError is an unexpected HTTP status from the Wiktionary API.
+type StatusError struct {
+	Word       string
+	StatusCode int
+	Status     string
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("wiktionary %q: %s", e.Word, e.Status) }
+
+// Client looks up Wiktionary definitions and caches the results; it is safe for concurrent use.
+type Client struct {
+	HTTP *http.Client
+
+	// fetch replaces the network lookup in tests.
+	fetch func(ctx context.Context, word string) (map[string][]entry, error)
+	now   func() time.Time
+	langs []nlang.Wiktionary
+
+	mu     sync.Mutex
+	hits   map[string]cacheEntry // key: lang:modelLang:lowercase word:pos:deprel
+	misses map[string]time.Time  // key -> expiry; only definitive misses
+}
+
+// NewClient returns a Client with an 8 second HTTP timeout and the given per-language behavior.
+func NewClient(langs ...nlang.Wiktionary) *Client {
+	return &Client{
+		langs:  langs,
+		HTTP:   &http.Client{Timeout: 8 * time.Second},
+		now:    time.Now,
+		hits:   map[string]cacheEntry{},
+		misses: map[string]time.Time{},
+	}
+}
+
+func (c *Client) fetchPayload(ctx context.Context, word string) (map[string][]entry, error) {
+	if c.fetch != nil {
+		return c.fetch(ctx, word)
+	}
+	return c.fetchRemote(ctx, word)
+}
 
 var (
 	htmlTagRe    = regexp.MustCompile(`<[^>]+>`)
@@ -52,29 +94,29 @@ type sense struct {
 	Definition string `json:"definition"`
 }
 
-// fetch returns the definition API payload for word, keyed by language code.
-func fetch(ctx context.Context, word string) (map[string][]entry, error) {
+// fetchRemote returns the definition API payload for word, keyed by language code.
+func (c *Client) fetchRemote(ctx context.Context, word string) (map[string][]entry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://en.wiktionary.org/api/rest_v1/page/definition/"+url.PathEscape(word), nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	resp, err := client.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return fetchViaWikitext(ctx, word, 0)
+		return c.fetchViaWikitext(ctx, word, 0)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("wiktionary %q: %s", word, resp.Status)
+		return nil, &StatusError{Word: word, StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	var payload map[string][]entry
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
-	supplementHan(ctx, word, payload)
+	c.supplementWikitext(ctx, word, payload)
 	return payload, nil
 }
 
@@ -84,7 +126,7 @@ const Auto = "auto"
 // FetchDef returns a definition for word and its Wiktionary page, matching the word's POS if possible, trying exact case then lowercase.
 // lang is a Wiktionary language code ("en" when empty) or Auto; modelLang is tried first under Auto.
 // In dependency mode there is no POS tag (pos == postag.O); deprel is used instead to guess the Wiktionary category.
-func FetchDef(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok bool) {
+func (c *Client) FetchDef(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok bool) {
 	lang = strings.ToLower(strings.TrimSpace(lang))
 	if lang == "" {
 		lang = "en"
@@ -94,30 +136,47 @@ func FetchDef(ctx context.Context, word, lang, modelLang string, pos postag.Part
 		modelLang = ""
 	}
 	key := lang + ":" + modelLang + ":" + strings.ToLower(word) + ":" + pos.String() + ":" + deprel.String()
-	cacheMu.RLock()
-	e, hit := cache[key]
-	cacheMu.RUnlock()
+	c.mu.Lock()
+	e, hit := c.hits[key]
+	if exp, miss := c.misses[key]; miss && !hit {
+		if c.now().Before(exp) {
+			c.mu.Unlock()
+			return "", "", false
+		}
+		delete(c.misses, key)
+	}
+	c.mu.Unlock()
 	if hit {
 		return e.def, e.url, true
 	}
-	def, pageURL, ok = fetchDefUncached(ctx, word, lang, modelLang, pos, deprel)
-	if ok {
-		cacheMu.Lock()
-		if len(cache) >= maxCacheEntries {
-			clear(cache)
+	def, pageURL, ok, definitive := c.lookup(ctx, word, lang, modelLang, pos, deprel)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case ok:
+		if len(c.hits) >= maxCacheEntries {
+			clear(c.hits)
 		}
-		cache[key] = cacheEntry{def, pageURL}
-		cacheMu.Unlock()
+		c.hits[key] = cacheEntry{def, pageURL}
+	case definitive:
+		if len(c.misses) >= maxCacheEntries {
+			clear(c.misses)
+		}
+		c.misses[key] = c.now().Add(missTTL)
 	}
 	return def, pageURL, ok
 }
 
-func fetchDefUncached(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (string, string, bool) {
+// lookup queries Wiktionary uncached; definitive is false when a transient error (timeout, 429, 5xx) may have hidden an entry.
+func (c *Client) lookup(ctx context.Context, word, lang, modelLang string, pos postag.PartOfSpeech, deprel postag.Deprel) (def, pageURL string, ok, definitive bool) {
 	lower := strings.ToLower(word)
 
-	if lang == "en" && (pos == postag.POS || (deprel == postag.DepCase && lower == "'s")) {
-		word = "-'s"
-		lower = "-'s"
+	for _, l := range c.langs {
+		if l.Code == lang && l.Rewrite != nil {
+			if w := l.Rewrite(word, pos, deprel); w != "" {
+				word, lower = w, strings.ToLower(w)
+			}
+		}
 	}
 
 	target := posCategory(pos)
@@ -133,28 +192,26 @@ func fetchDefUncached(ctx context.Context, word, lang, modelLang string, pos pos
 	if word != lower {
 		forms = append(forms, lower)
 	}
-	// Inflected forms (ja) are not headwords, so base forms from the registered lemmatizer are tried last.
-	if lang == "ja" || lang == Auto {
-		for _, base := range tokenizer.JapaneseLemmas(word) {
-			if base != word && base != lower {
-				forms = append(forms, base)
+	// Language hooks add headwords the word's own page may live under, tried last.
+	for _, l := range c.langs {
+		if l.Forms == nil || (l.Code != lang && lang != Auto) {
+			continue
+		}
+		for _, f := range l.Forms(word) {
+			if !slices.Contains(forms, f) && f != lower {
+				forms = append(forms, f)
 			}
-		}
-	}
-	// Wiktionary keeps full Chinese entries under the Traditional spelling; the other script's page may be missing or a stub.
-	if lang == "zh" || lang == Auto {
-		if trad := traditional(word); trad != word {
-			forms = append(forms, trad)
-		}
-		if simp := simplified(word); simp != word {
-			forms = append(forms, simp)
 		}
 	}
 	// Capitalized pages can lack the tagged POS (sentence-initial "Said" is only a proper noun), so try lowercase before settling.
 	var fallbackDef, fallbackURL string
+	definitive = true
 	for _, form := range forms {
-		payload, err := fetchPayload(ctx, form)
+		payload, err := c.fetchPayload(ctx, form)
 		if err != nil {
+			if !errors.Is(err, ErrNotFound) {
+				definitive = false
+			}
 			continue
 		}
 		def, language, matched := pickLang(payload, lang, modelLang, target, numeralGlyph)
@@ -163,13 +220,13 @@ func fetchDefUncached(ctx context.Context, word, lang, modelLang string, pos pos
 		}
 		def, pageURL := labelled(def, language, form)
 		if matched || target == "" {
-			return def, pageURL, true
+			return def, pageURL, true, true
 		}
 		if fallbackDef == "" {
 			fallbackDef, fallbackURL = def, pageURL
 		}
 	}
-	return fallbackDef, fallbackURL, fallbackDef != ""
+	return fallbackDef, fallbackURL, fallbackDef != "", definitive
 }
 
 // pickLang chooses the definition for lang (or the best across buckets under Auto) and reports its entry language.
@@ -223,9 +280,6 @@ func labelled(def, language, form string) (string, string) {
 	}
 	return "*(" + language + ")* " + def, pageURL + "#" + url.PathEscape(strings.ReplaceAll(language, " ", "_"))
 }
-
-// fetchPayload is fetch, swappable in tests.
-var fetchPayload = fetch
 
 // pickDef returns the best definition from entries, its entry language, and whether the entry matched target.
 func pickDef(entries []entry, target string, numeralGlyph bool) (string, string, bool) {

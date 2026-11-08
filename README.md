@@ -6,7 +6,7 @@ Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Cod
 
 Three modes:
 
-- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish and French via XLM-R); your theme picks the colors.
+- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish, French, Russian and Arabic via XLM-R); your theme picks the colors.
 - **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
 - **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish and French.
 
@@ -29,7 +29,7 @@ Every install path needs the ONNX model files (100-470 MB each), which no packag
 code --install-extension natural-syntax-ls-*.vsix
 ```
 
-**Standalone binary**: each release has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server and ONNX Runtime side by side. `natural-syntax-ls_<platform>_english.*` is an English-only build (about 7 MB binary instead of 50 MB) without Japanese and Chinese support code. Extract anywhere and put the binary on your `PATH`.
+**Standalone binary**: each release has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server (all languages), ONNX Runtime, the language scripts (`lang/`) and the model catalog (`models.json`) side by side. Extract anywhere and put the binary on your `PATH`.
 
 **Neovim 0.11+**: the repo is a plugin (LSP config, semantic colors, `:NlsMode`). Needs the server binary on `PATH`. With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
@@ -42,6 +42,7 @@ code --install-extension natural-syntax-ls-*.vsix
 - [Install from source, export models, troubleshooting](docs/install.md)
 - [Models, languages, accuracy, latency and memory](docs/models.md)
 - [Settings, colors, testing](docs/settings.md)
+- [Adding a language](docs/adding-a-language.md)
 - [Neovim manual setup](docs/neovim.md)
 
 ## Credits

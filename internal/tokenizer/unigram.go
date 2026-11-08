@@ -7,7 +7,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -88,6 +87,7 @@ type UnigramTokenizer struct {
 	clsID     int
 	sepID     int
 	metaspace bool
+	opts      options
 }
 
 // unigramFile is the subset of a HF tokenizer.json this package reads.
@@ -118,15 +118,15 @@ func isUnigramFile(data []byte) bool {
 }
 
 // LoadUnigram reads a HF tokenizer.json holding a Unigram model.
-func LoadUnigram(path string) (*UnigramTokenizer, error) {
+func LoadUnigram(path string, opts ...Option) (*UnigramTokenizer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("load unigram tokenizer: %w", err)
 	}
-	return parseUnigram(data)
+	return parseUnigram(data, opts...)
 }
 
-func parseUnigram(data []byte) (*UnigramTokenizer, error) {
+func parseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
 	var f unigramFile
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, err
@@ -140,6 +140,7 @@ func parseUnigram(data []byte) (*UnigramTokenizer, error) {
 		pieces:    make([]string, len(f.Model.Vocab)),
 		unkID:     f.Model.UnkID,
 		metaspace: strings.Contains(string(f.PreTokenizer), `"Metaspace"`),
+		opts:      newOptions(opts),
 	}
 	minScore := 0.0
 	for i, raw := range f.Model.Vocab {
@@ -260,78 +261,29 @@ func (t *UnigramTokenizer) viterbi(runes []rune) []segment {
 	return fused
 }
 
-var japaneseSegmenter atomic.Pointer[func(run string) [][2]int]
-
-var japaneseLemmatizer atomic.Pointer[func(word string) []string]
-
-// SetJapaneseLemmatizer registers the function returning dictionary forms of an inflected Japanese word.
-func SetJapaneseLemmatizer(f func(word string) []string) { japaneseLemmatizer.Store(&f) }
-
-// JapaneseLemmas returns dictionary forms of word, nil when no lemmatizer is registered.
-func JapaneseLemmas(word string) []string {
-	if f := japaneseLemmatizer.Load(); f != nil {
-		return (*f)(word)
-	}
-	return nil
-}
-
-// SetJapaneseSegmenter installs a word segmenter for Japanese Han/kana runs; seg returns rune ranges covering the run in order, or nil to fall back to Unigram pieces.
-func SetJapaneseSegmenter(seg func(run string) [][2]int) { japaneseSegmenter.Store(&seg) }
-
-// hasKana reports whether text is Japanese, since Han runs alone cannot tell Japanese from Chinese.
-func hasKana(runes []rune) bool {
-	for _, r := range runes {
-		if unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) {
-			return true
-		}
-	}
-	return false
-}
-
-// Tokenize splits text into words like the WordPiece path does, then breaks each CJK run into words: with a Japanese segmenter installed, the dictionary words of kana-bearing text, otherwise the Unigram pieces the model would see, since those scripts have no spaces.
+// Tokenize splits text into words like the WordPiece path does, applies the configured word mergers, then breaks each CJK run into words: with an applicable Segmenter its words, otherwise the Unigram pieces the model would see, since those scripts have no spaces.
 func (t *UnigramTokenizer) Tokenize(text string) []WordSpan {
 	runes := []rune(text)
-	var seg func(string) [][2]int
-	if p := japaneseSegmenter.Load(); p != nil && hasKana(runes) {
-		seg = *p
+	var seg Segmenter
+	for _, s := range t.opts.segmenters {
+		if s.Applies(runes) {
+			seg = s
+			break
+		}
+	}
+	words := basicTokenize(text, false, true)
+	for _, merge := range t.opts.mergers {
+		words = merge(runes, words)
 	}
 	var out []WordSpan
-	for _, w := range mergeElisions(runes, basicTokenize(text, false, true)) {
+	for _, w := range words {
 		out = append(out, t.splitCJK(runes, w, seg)...)
 	}
 	return out
 }
 
-// frenchElisions are clitics written with a trailing apostrophe that UD treats as their own word.
-var frenchElisions = map[string]bool{
-	"l": true, "d": true, "j": true, "m": true, "t": true, "s": true, "n": true, "c": true,
-	"qu": true, "jusqu": true, "lorsqu": true, "puisqu": true, "quoiqu": true,
-}
-
-// mergeElisions glues an elided clitic to its apostrophe, so "l ' ami" becomes "l'" and "ami", and rejoins "aujourd'hui".
-func mergeElisions(runes []rune, words []WordSpan) []WordSpan {
-	var out []WordSpan
-	for i := 0; i < len(words); i++ {
-		w := words[i]
-		if i+2 < len(words) {
-			ap, next := words[i+1], words[i+2]
-			joined := (ap.Text == "'" || ap.Text == "’") && ap.Begin == w.End && next.Begin == ap.End
-			switch {
-			case joined && strings.EqualFold(w.Text, "aujourd") && strings.EqualFold(next.Text, "hui"):
-				w.Text, w.End = string(runes[w.Begin:next.End]), next.End
-				i += 2
-			case joined && frenchElisions[strings.ToLower(w.Text)] && unicode.IsLetter(runes[next.Begin]):
-				w.Text, w.End = w.Text+ap.Text, ap.End
-				i++
-			}
-		}
-		out = append(out, w)
-	}
-	return out
-}
-
 // splitCJK cuts out maximal Han/kana runs from w and segments each with Unigram.
-func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan, seg func(string) [][2]int) []WordSpan {
+func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan, seg Segmenter) []WordSpan {
 	src := runes[w.Begin:w.End]
 	hasCJK := slices.ContainsFunc(src, isCJK)
 	if !hasCJK {
@@ -355,7 +307,7 @@ func (t *UnigramTokenizer) splitCJK(runes []rune, w WordSpan, seg func(string) [
 			continue
 		}
 		if seg != nil {
-			if ranges := seg(string(src[i:j])); coversRun(ranges, j-i) {
+			if ranges := seg.Segment(string(src[i:j])); coversRun(ranges, j-i) {
 				for _, r := range ranges {
 					flush(i+r[0], i+r[1])
 				}

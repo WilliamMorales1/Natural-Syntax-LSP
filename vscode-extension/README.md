@@ -17,12 +17,12 @@ The models are too large to bundle. Export the ones you want once, from a checko
 ```bash
 scripts/setup.sh                     # POS, bert-base (~430 MB)
 scripts/setup.sh --model mobilebert  # POS, lighter (~105 MB)
-scripts/setup.sh --model pos-es      # POS, Spanish (~280 MB)
-scripts/setup.sh --model pos-fr      # POS, French (~280 MB)
-scripts/setup.sh --model multilingual  # semantic, 50+ languages (~470 MB)
-scripts/setup.sh --model dependency  # dependency, English (~470 MB)
-scripts/setup.sh --model dependency-es  # dependency, Spanish (~750 MB)
-scripts/setup.sh --model dependency-fr  # dependency, French (~350 MB)
+scripts/setup.sh --model xlmr-es      # POS, Spanish (~280 MB)
+scripts/setup.sh --model xlmr-fr      # POS, French (~280 MB)
+scripts/setup.sh --model multilingual-minilm  # semantic, 50+ languages (~470 MB)
+scripts/setup.sh --model en_ewt.electra-base  # dependency, English (~470 MB)
+scripts/setup.sh --model es_ancora.mbert  # dependency, Spanish (~750 MB)
+scripts/setup.sh --model fr_sequoia.camembert-large  # dependency, French (~350 MB)
 ```
 
 On Windows use `scripts/setup.ps1 -Model <name>`. Models go to `%APPDATA%\natural-syntax-ls\` or `~/.config/natural-syntax-ls/`.

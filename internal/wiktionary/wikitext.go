@@ -7,15 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
 
 // The REST definition endpoint returns 404 for pages it cannot parse (Chinese {{head|zh|hanzi}}, Japanese {{ja-see}} stubs), so those are read from wikitext.
-
-var langCodes = map[string]string{
-	"English": "en", "Translingual": "en", "Spanish": "es", "French": "fr", "Japanese": "ja", "Chinese": "zh",
-}
 
 var (
 	seeRe      = regexp.MustCompile(`\{\{(?:ja|zh)-see\|([^|}=]+)`)
@@ -28,20 +25,20 @@ var (
 	headingRe  = regexp.MustCompile(`^(={2,6})\s*([^=]+?)\s*={2,6}\s*$`)
 )
 
-func fetchWikitext(ctx context.Context, word string) (string, error) {
+func (c *Client) fetchWikitext(ctx context.Context, word string) (string, error) {
 	q := url.Values{"action": {"query"}, "titles": {word}, "prop": {"revisions"}, "rvprop": {"content"}, "rvslots": {"main"}, "format": {"json"}, "formatversion": {"2"}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://en.wiktionary.org/w/api.php?"+q.Encode(), nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	resp, err := client.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("wiktionary wikitext %q: %s", word, resp.Status)
+		return "", &StatusError{Word: word, StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	var r struct {
 		Query struct {
@@ -60,40 +57,40 @@ func fetchWikitext(ctx context.Context, word string) (string, error) {
 		return "", err
 	}
 	if len(r.Query.Pages) == 0 || len(r.Query.Pages[0].Revisions) == 0 {
-		return "", fmt.Errorf("wiktionary %q: missing", word)
+		return "", fmt.Errorf("wiktionary %q: %w", word, ErrNotFound)
 	}
 	return r.Query.Pages[0].Revisions[0].Slots.Main.Content, nil
 }
 
 // fetchViaWikitext builds a REST-shaped payload from page wikitext, following one {{ja-see}} or {{zh-see}} redirect.
-func fetchViaWikitext(ctx context.Context, word string, depth int) (map[string][]entry, error) {
-	text, err := fetchWikitext(ctx, word)
+func (c *Client) fetchViaWikitext(ctx context.Context, word string, depth int) (map[string][]entry, error) {
+	text, err := c.fetchWikitext(ctx, word)
 	if err != nil {
 		return nil, err
 	}
-	payload := parseWikitext(text)
+	payload := parseWikitext(text, c.sectionCodes())
 	if len(payload) == 0 && depth < 2 {
 		if m := seeRe.FindStringSubmatch(text); m != nil && m[1] != word {
-			if p, err := fetch(ctx, strings.TrimSpace(m[1])); err == nil {
+			if p, err := c.fetchRemote(ctx, strings.TrimSpace(m[1])); err == nil {
 				return p, nil
 			}
-			return fetchViaWikitext(ctx, strings.TrimSpace(m[1]), depth+1)
+			return c.fetchViaWikitext(ctx, strings.TrimSpace(m[1]), depth+1)
 		}
 	}
 	if len(payload) == 0 {
-		return nil, fmt.Errorf("wiktionary %q: no definitions", word)
+		return nil, fmt.Errorf("wiktionary %q: no definitions: %w", word, ErrNotFound)
 	}
 	return payload, nil
 }
 
 // parseWikitext extracts "# " definition lines under each language and part-of-speech heading.
-func parseWikitext(text string) map[string][]entry {
+func parseWikitext(text string, sections map[string]string) map[string][]entry {
 	out := map[string][]entry{}
 	var lang, pos string
 	var cur *entry
 	flush := func() {
 		if cur != nil && len(cur.Definitions) > 0 {
-			code := langCodes[cur.Language]
+			code := sections[cur.Language]
 			if code == "" {
 				code = "other"
 			}
@@ -162,21 +159,35 @@ func cleanWikitext(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// supplementHan adds the Chinese or Japanese sections from wikitext when the REST payload lacks them, as it does for pages mixing parsable and unparsable languages.
-func supplementHan(ctx context.Context, word string, payload map[string][]entry) {
-	if !strings.ContainsFunc(word, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
+// supplementWikitext adds the sections of languages whose entries the REST payload cannot parse, as it does for pages mixing parsable and unparsable languages.
+func (c *Client) supplementWikitext(ctx context.Context, word string, payload map[string][]entry) {
+	var want []string
+	for _, l := range c.langs {
+		if l.Wikitext && len(payload[l.Code]) == 0 && strings.ContainsFunc(word, func(r rune) bool { return unicode.Is(l.Script, r) }) {
+			want = append(want, l.Code)
+		}
+	}
+	if len(want) == 0 {
 		return
 	}
-	if len(payload["zh"]) > 0 && len(payload["ja"]) > 0 {
-		return
-	}
-	text, err := fetchWikitext(ctx, word)
+	text, err := c.fetchWikitext(ctx, word)
 	if err != nil {
 		return
 	}
-	for code, es := range parseWikitext(text) {
-		if (code == "zh" || code == "ja") && len(payload[code]) == 0 {
+	for code, es := range parseWikitext(text, c.sectionCodes()) {
+		if slices.Contains(want, code) {
 			payload[code] = es
 		}
 	}
+}
+
+// sectionCodes maps each language's Wiktionary section heading to its code.
+func (c *Client) sectionCodes() map[string]string {
+	m := map[string]string{}
+	for _, l := range c.langs {
+		for _, s := range l.Sections {
+			m[s] = l.Code
+		}
+	}
+	return m
 }

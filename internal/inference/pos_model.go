@@ -59,7 +59,7 @@ func loadLabels(labelsPath string) ([]postag.PartOfSpeech, []bool, error) {
 }
 
 // NewPOSModel loads a POS model and its labels sidecar, falling back to the default label order.
-func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
+func NewPOSModel(modelPath, vocabPath string, opts ...tokenizer.Option) (*POSModel, error) {
 	labels, cont, err := loadLabels(labelsPathFor(modelPath))
 	if err != nil {
 		// The default English order is only safe for the bundled English WordPiece models, which export no sidecar tokenizer.
@@ -72,7 +72,7 @@ func NewPOSModel(modelPath, vocabPath string) (*POSModel, error) {
 		}
 	}
 
-	base, err := newBaseModel(modelPath, vocabPath, "logits", int64(len(labels)))
+	base, err := newBaseModel(modelPath, vocabPath, "logits", int64(len(labels)), opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ Semantic mode assigns each word a color derived from its contextual embedding, s
 
 ## Example
 
-[semantic-example.txt](semantic-example.txt) is a single paragraph in which every sentence mixes words from four semantic groups:
+[semantic-example.txt](examples/semantic-example.txt) is a single paragraph in which every sentence mixes words from four semantic groups:
 
 > A fox found some bread near the old computer and seemed happy. Later a deer ate an apple beside the printer, looking scared. …
 

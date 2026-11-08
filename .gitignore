@@ -6,3 +6,8 @@ vscode-extension/bin/
 bin/
 .venv/
 .conda-env/
+
+# Dev-only notes
+docs/go-idioms.md
+docs/cjk-options.md
+docs/wiktionary-language-plan.md

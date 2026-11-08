@@ -14,7 +14,8 @@ import (
 	"time"
 	"unicode"
 
-	_ "natural-syntax-ls/internal/jaseg"
+	nlang "natural-syntax-ls/internal/lang"
+	"natural-syntax-ls/internal/lang/builtin"
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenizer"
 )
@@ -31,6 +32,8 @@ var udFiles = map[string]string{
 	"fr": "UD_French-GSD/master/fr_gsd-ud-test.conllu",
 	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
 	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
+	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
+	"ar": "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
 }
 
 type udWord struct{ form, upos, rel string }
@@ -85,11 +88,12 @@ var sections = map[string][]string{
 }
 
 type liveFetcher struct {
-	mu    sync.Mutex
-	pages map[string]map[string][]entry
-	errs  map[string]bool
-	last  time.Time
-	calls int
+	client *Client
+	mu     sync.Mutex
+	pages  map[string]map[string][]entry
+	errs   map[string]bool
+	last   time.Time
+	calls  int
 }
 
 func (lf *liveFetcher) get(ctx context.Context, word string) (map[string][]entry, error) {
@@ -109,7 +113,7 @@ func (lf *liveFetcher) get(ctx context.Context, word string) (map[string][]entry
 		}
 		lf.last = time.Now()
 		lf.calls++
-		p, err = fetch(ctx, word)
+		p, err = lf.client.fetchRemote(ctx, word)
 		if err == nil || !strings.Contains(err.Error(), "429") {
 			break
 		}
@@ -157,10 +161,14 @@ func TestLiveAccuracy(t *testing.T) {
 	if v := os.Getenv("NSLS_WIKT_N"); v != "" {
 		fmt.Sscan(v, &n)
 	}
-	lf := &liveFetcher{pages: map[string]map[string][]entry{}, errs: map[string]bool{}}
-	orig := fetchPayload
-	fetchPayload = lf.get
-	t.Cleanup(func() { fetchPayload = orig })
+	wl := nlang.WiktionaryLangs(builtin.Languages("../../lang"))
+	if os.Getenv("NSLS_WIKT_NOFORMS") != "" { // baseline without the Forms hooks
+		for i := range wl {
+			wl[i].Forms = nil
+		}
+	}
+	lf := &liveFetcher{client: NewClient(wl...), pages: map[string]map[string][]entry{}, errs: map[string]bool{}}
+	lf.client.fetch = lf.get
 
 	cfg := os.Getenv("NSLS_CFG_DIR")
 	if cfg == "" {
@@ -170,6 +178,7 @@ func TestLiveAccuracy(t *testing.T) {
 	tokFiles := map[string]string{
 		"en": "bert_base_vocab.txt", "es": "xlmr_es_tokenizer.json", "fr": "xlmr_fr_tokenizer.json",
 		"ja": "multilingual_minilm_tokenizer.json", "zh": "multilingual_minilm_tokenizer.json",
+		"ru": "xlmr_ru_tokenizer.json", "ar": "xlmr_ar_tokenizer.json",
 	}
 
 	var out *os.File
@@ -212,7 +221,7 @@ func TestLiveAccuracy(t *testing.T) {
 			var s stat
 			for _, w := range ws {
 				pos, rel := tag(w)
-				def, _, ok := fetchDefUncached(t.Context(), w.form, lang, "", pos, rel)
+				def, _, ok, _ := lf.client.lookup(t.Context(), w.form, lang, "", pos, rel)
 				s.n++
 				sec := ""
 				if ok {
@@ -265,7 +274,7 @@ func TestLiveAccuracy(t *testing.T) {
 		run("semantic", sample, func(udWord) (postag.PartOfSpeech, postag.Deprel) { return postag.O, postag.DepRoot }, false)
 
 		// pipeline: words the shipped tokenizer cuts from raw sentences, looked up with no tag.
-		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]))
+		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]), nlang.TokenizerOptions(builtin.Languages("../../lang"))...)
 		if err != nil {
 			t.Logf("%s: pipeline tokens skipped: %v", lang, err)
 			continue

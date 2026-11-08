@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"natural-syntax-ls/internal/inference"
+	"natural-syntax-ls/internal/lang"
 	"natural-syntax-ls/internal/postag"
 	"natural-syntax-ls/internal/tokenmap"
 	"natural-syntax-ls/internal/wiktionary"
@@ -71,11 +72,11 @@ func ParseMode(s string) (Mode, error) {
 
 // Config configures the LSP server's model/mode.
 type Config struct {
-	ModelPath       string // path to the mode's .onnx model
-	VocabPath       string // path to that same model's own _vocab.txt
-	Mode            Mode
-	EmbedHiddenSize int    // hidden dimension of embedding model (384 or 768); semantic mode only
-	Language        string // Wiktionary code of the model's language ("" when English or multilingual)
+	ModelPath string // path to the mode's .onnx model
+	VocabPath string // path to that same model's own _vocab.txt
+	Mode      Mode
+	Language  string          // Wiktionary code of the model's language ("" when English or multilingual)
+	Languages []lang.Language // language hooks for the tokenizer and Wiktionary
 }
 
 // Run starts the LSP server over stdin/stdout and blocks until the client disconnects or sends exit.
@@ -87,7 +88,7 @@ func Run(ctx context.Context, cfg Config) error {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-	srv := &lspServer{ctx: ctx, cfg: cfg, ready: make(chan struct{})}
+	srv := &lspServer{ctx: ctx, cfg: cfg, ready: make(chan struct{}), wikt: wiktionary.NewClient(lang.WiktionaryLangs(cfg.Languages)...)}
 	srv.wiktionary.Store(true) // on by default
 	defer srv.closeModel()
 	return srv.serve(os.Stdin, os.Stdout)
@@ -105,6 +106,7 @@ type lspServer struct {
 	shutdown    atomic.Bool
 	writeErr    atomic.Pointer[error] // first transport write failure
 
+	wikt           *wiktionary.Client     // nil disables lookups
 	wiktionary     atomic.Bool            // true = show Wiktionary defs (default)
 	wiktionaryLang atomic.Pointer[string] // code, "model", or "auto"; unset = "en"
 
@@ -285,13 +287,14 @@ func (s *lspServer) handleInitialize(rawParams json.RawMessage) (any, *rpcError)
 func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	var pred predictor
 	var err error
+	tokOpts := lang.TokenizerOptions(s.cfg.Languages)
 	switch s.cfg.Mode {
 	case ModeSemantic:
-		pred, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, s.cfg.EmbedHiddenSize)
+		pred, err = inference.NewEmbeddingModel(s.cfg.ModelPath, s.cfg.VocabPath, tokOpts...)
 	case ModeDependency:
-		pred, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath)
+		pred, err = inference.NewDependencyModel(s.cfg.ModelPath, s.cfg.VocabPath, tokOpts...)
 	default:
-		pred, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath)
+		pred, err = inference.NewPOSModel(s.cfg.ModelPath, s.cfg.VocabPath, tokOpts...)
 	}
 	if err != nil {
 		slog.Error("load model", "err", err)
@@ -599,15 +602,19 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 	if reg == nil {
 		return nil, nil
 	}
-	reply := make(chan *hoverQueryResult, 1)
-	reg.hover(p.TextDocument.URI, p.Position.Line, p.Position.Character, reply)
-	res, _ := awaitReply(s.context(), reg, reply)
+	ctx, cancel := context.WithTimeout(s.context(), replyTimeout)
+	defer cancel()
+	res, err := reg.hover(ctx, p.TextDocument.URI, p.Position.Line, p.Position.Character)
+	if err != nil {
+		slog.Debug("hover", "err", err)
+		return nil, nil
+	}
 	if res == nil || res.tok == nil {
 		return nil, nil
 	}
 	tok := res.tok
 	var wiktDef, wiktURL string
-	if s.wiktionary.Load() {
+	if s.wiktionary.Load() && s.wikt != nil {
 		lang := "en"
 		if p := s.wiktionaryLang.Load(); p != nil {
 			lang = *p
@@ -619,25 +626,12 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 				lang = "en"
 			}
 		}
-		if def, url, ok := wiktionary.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
+		if def, url, ok := s.wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
 			wiktDef, wiktURL = def, url
 		}
 	}
 	text := formatHoverContent(tok, res.dependents, wiktDef, wiktURL)
 	return hoverResult{Contents: markupContent{Kind: "markdown", Value: text}}, nil
-}
-
-// awaitReply waits for a registry reply; ok is false on timeout, cancellation, registry shutdown, or a closed (superseded) reply channel.
-func awaitReply[T any](ctx context.Context, reg *documentRegistry, reply <-chan T) (v T, ok bool) {
-	ctx, cancel := context.WithTimeout(ctx, replyTimeout)
-	defer cancel()
-	select {
-	case v, ok = <-reply:
-		return v, ok
-	case <-ctx.Done():
-	case <-reg.done:
-	}
-	return v, false
 }
 
 // --- semanticTokens/full ---
@@ -656,10 +650,14 @@ func (s *lspServer) handleSemanticTokensFull(p semanticTokensParams) (any, *rpcE
 	if reg == nil {
 		return empty, nil
 	}
-	reply := make(chan []uint32, 1)
-	reg.semanticTokens(p.TextDocument.URI, reply)
-	data, ok := awaitReply(s.context(), reg, reply) // zero when a newer request superseded this one
-	if !ok || data == nil {
+	ctx, cancel := context.WithTimeout(s.context(), replyTimeout)
+	defer cancel()
+	data, err := reg.semanticTokens(ctx, p.TextDocument.URI)
+	if err != nil {
+		slog.Debug("semantic tokens", "err", err)
+		return empty, nil
+	}
+	if data == nil {
 		return empty, nil
 	}
 	return semanticTokensResult{Data: data}, nil
