@@ -2,6 +2,7 @@
 package wiktionary
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -305,7 +306,8 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 		e := &entries[i]
 		lpos := strings.ToLower(e.PartOfSpeech)
 		switch {
-		case strings.EqualFold(e.PartOfSpeech, target), target == "Noun" && lpos == "proper noun",
+		case strings.EqualFold(e.PartOfSpeech, target), (target == "Noun" || target == nominal) && lpos == "proper noun",
+			target == nominal && (lpos == "noun" || lpos == "pronoun"),
 			(target == "Verb" || target == "Adjective") && lpos == "participle",
 			target == "Preposition" && (lpos == "particle" || lpos == "postposition"),
 			(target == "Particle" || target == "Preposition") && lpos == "hanzi" && grammaticalGloss(e):
@@ -318,11 +320,18 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 	}
 
 	// Numeral glyphs: Translingual before English in every tier; words: reverse.
+	// Spelling variants point elsewhere for the meaning, so they come last in their tier.
 	ordered := func(b bucket) []*entry {
+		var es []*entry
 		if numeralGlyph {
-			return append(b.trans, b.main...)
+			es = append(b.trans, b.main...)
+		} else {
+			es = append(b.main, b.trans...)
 		}
-		return append(b.main, b.trans...)
+		slices.SortStableFunc(es, func(x, y *entry) int {
+			return cmp.Compare(b2i(altForm(firstNonEmpty(x))), b2i(altForm(firstNonEmpty(y))))
+		})
+		return es
 	}
 
 	for _, e := range ordered(matched) {
@@ -336,6 +345,18 @@ func pickDef(entries []entry, target string, numeralGlyph bool) (string, string,
 		}
 	}
 	return "", "", false
+}
+
+var altFormRe = regexp.MustCompile(`(?i)^(?:[\w-]+\s+){0,3}(?:form|spelling|variant) of\b`)
+
+// altForm reports whether a gloss only names another spelling ("alternative form of 元"), not an inflection.
+func altForm(def string) bool { return altFormRe.MatchString(def) }
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 var grammarGlossRe = regexp.MustCompile(`(?i)\b(?:marker|particle|nominali[sz]er|auxiliary|possessive|genitive|topic|complementi[sz]er)\b`)
@@ -407,14 +428,17 @@ func posCategory(pos postag.PartOfSpeech) string {
 	}
 }
 
+// nominal is the target for argument relations, filled by a noun or a pronoun (ja 私 as nsubj is "I", not the noun "private matter").
+const nominal = "Nominal"
+
 // deprelCategory guesses a Wiktionary POS category from a UD dependency relation,
 // since dependency mode has no POS tag (deprels are not POS tags: e.g. nsubj can be a noun
 // or pronoun, root can be a verb or noun). Best-effort based on the relation's typical filler.
 func deprelCategory(rel postag.Deprel) string {
 	switch rel {
-	case postag.DepNsubj, postag.DepObj, postag.DepIobj, postag.DepObl, postag.DepNmod,
-		postag.DepAppos, postag.DepCompound, postag.DepFlat, postag.DepList, postag.DepVocative,
-		postag.DepExpl, postag.DepClf, postag.DepCsubj:
+	case postag.DepNsubj, postag.DepObj, postag.DepIobj, postag.DepObl, postag.DepNmod, postag.DepVocative, postag.DepExpl:
+		return nominal
+	case postag.DepAppos, postag.DepCompound, postag.DepFlat, postag.DepList, postag.DepClf, postag.DepCsubj:
 		return "Noun"
 	case postag.DepAmod:
 		return "Adjective"

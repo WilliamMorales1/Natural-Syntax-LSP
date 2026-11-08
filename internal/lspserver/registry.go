@@ -95,6 +95,7 @@ type hoverQueryResult struct {
 	tok        *postag.Token
 	dependents []dependent
 	language   string // detected language of the token's line, else of the whole document; "" when unsure
+	hasDeprel  bool   // tok.Deprel comes from a dependency parser, not the zero value
 }
 
 // chunkResult holds per-chunk prediction results and the word spans used.
@@ -324,7 +325,7 @@ func (dr *documentRegistry) hover(ctx context.Context, uri string, line, charact
 		return nil, errClosed
 	}
 	if doc != nil {
-		if res := tokenAt(doc, line, character, dr.detect); res != nil {
+		if res := dr.tokenAt(doc, line, character); res != nil {
 			return res, nil
 		}
 	}
@@ -338,7 +339,15 @@ func (dr *documentRegistry) hover(ctx context.Context, uri string, line, charact
 	if doc == nil {
 		return nil, nil
 	}
-	return tokenAt(doc, line, character, dr.detect), nil
+	return dr.tokenAt(doc, line, character), nil
+}
+
+func (dr *documentRegistry) tokenAt(doc *document, line, character uint32) *hoverQueryResult {
+	res := tokenAt(doc, line, character, dr.detect)
+	if res != nil {
+		res.hasDeprel = dr.useDeprel
+	}
+	return res
 }
 
 func (dr *documentRegistry) handleItem(item *textItem, words []tokenizer.WordSpan, m predictor) {

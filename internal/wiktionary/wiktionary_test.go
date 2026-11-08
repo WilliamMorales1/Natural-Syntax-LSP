@@ -3,6 +3,7 @@ package wiktionary
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestCategories(t *testing.T) {
 		}
 	}
 	for d, want := range map[postag.Deprel]string{
-		postag.DepNsubj: "Noun", postag.DepAmod: "Adjective", postag.DepCase: "Preposition", postag.DepPunct: "",
+		postag.DepNsubj: nominal, postag.DepCompound: "Noun", postag.NoDeprel: "", postag.DepAmod: "Adjective", postag.DepCase: "Preposition", postag.DepPunct: "",
 	} {
 		if got := deprelCategory(d); got != want {
 			t.Errorf("deprelCategory(%v) = %q, want %q", d, got, want)
@@ -214,5 +215,49 @@ func TestParticleSenseRanking(t *testing.T) {
 	}
 	if def, _, _ := pickDef(zh, "Noun", false); def != "bright; clear" {
 		t.Errorf("zh noun = %q", def)
+	}
+}
+
+func TestFetchDefWithoutTagOrRelation(t *testing.T) {
+	t.Parallel()
+	def := func(lang, pos, text string) entry {
+		return entry{PartOfSpeech: pos, Language: lang, Definitions: []sense{{text}}}
+	}
+	pages := map[string]map[string][]entry{
+		"amico": {"it": {
+			def("Italian", "Noun", "friend"),
+			def("Italian", "Verb", "first-person singular present indicative of amicarsi"),
+		}},
+		"本": {"ja": {
+			def("Japanese", "Noun", `<span class="form-of-definition">alternative form of 元</span>`),
+			def("Japanese", "Noun", "a book"),
+		}},
+		"私": {"ja": {
+			def("Japanese", "Pronoun", "I, me"),
+			def("Japanese", "Noun", "a personal or private matter"),
+		}},
+	}
+	c := NewClient()
+	c.fetch = func(_ context.Context, word string) (map[string][]entry, error) {
+		if p, ok := pages[word]; ok {
+			return p, nil
+		}
+		return nil, ErrNotFound
+	}
+	for _, tc := range []struct {
+		word, lang string
+		rel        postag.Deprel
+		want       string
+	}{
+		// The zero Deprel is acl, a verb relation; semantic mode must not inherit it.
+		{"amico", "it", postag.NoDeprel, "friend"},
+		{"本", "ja", postag.NoDeprel, "a book"},
+		{"本", "ja", postag.DepObj, "a book"},
+		{"私", "ja", postag.DepNsubj, "I, me"},
+	} {
+		got, _, ok := c.FetchDef(context.Background(), tc.word, tc.lang, "", postag.O, tc.rel)
+		if !ok || !strings.HasSuffix(got, tc.want) {
+			t.Errorf("FetchDef(%s, %v) = %q, want ...%q", tc.word, tc.rel, got, tc.want)
+		}
 	}
 }

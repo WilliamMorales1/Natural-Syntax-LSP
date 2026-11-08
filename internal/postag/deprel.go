@@ -51,6 +51,9 @@ const (
 	NumDeprels = iota
 )
 
+// NoDeprel marks a token with no dependency relation (POS and semantic modes), unlike the zero value DepAcl.
+const NoDeprel Deprel = NumDeprels
+
 var deprelNames = [NumDeprels]string{
 	"acl", "advcl", "advmod", "amod", "appos", "aux", "case", "cc",
 	"ccomp", "clf", "compound", "conj", "cop", "csubj", "dep", "det",
@@ -67,10 +70,13 @@ var deprelByName = func() map[string]Deprel {
 	return m
 }()
 
-// String returns the UD relation name, or dep(n) when out of range.
+// String returns the UD relation name, "" for NoDeprel, or dep(n) when out of range.
 func (d Deprel) String() string {
 	if d < NumDeprels {
 		return deprelNames[d]
+	}
+	if d == NoDeprel {
+		return ""
 	}
 	return fmt.Sprintf("dep(%d)", int(d))
 }

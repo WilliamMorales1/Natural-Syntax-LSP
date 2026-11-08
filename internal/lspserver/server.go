@@ -671,6 +671,10 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 			spec = *p
 		}
 		modelLang := s.cfg.Language
+		deprel := tok.Deprel
+		if !res.hasDeprel {
+			deprel = postag.NoDeprel
+		}
 		// A comma list is a priority order: the first language with a definition wins.
 		for lang := range strings.SplitSeq(spec, ",") {
 			lang = strings.TrimSpace(lang)
@@ -685,7 +689,7 @@ func (s *lspServer) handleHover(p hoverParams) (any, *rpcError) {
 			if lang == "" {
 				lang = "en"
 			}
-			if def, url, ok := wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, tok.Deprel); ok {
+			if def, url, ok := wikt.FetchDef(s.context(), tok.Word, lang, modelLang, tok.Tag, deprel); ok {
 				wiktDef, wiktURL = def, url
 				break
 			}
