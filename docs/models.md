@@ -18,6 +18,8 @@
 | `es_ancora.mbert` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
 | `fr_sequoia.camembert-large` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
 | `ru_syntagrus.DeepPavlov` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
+| `de_hdt.dbmdz-bert-base` | `de_hdt.dbmdz-bert-base` | ~120 MB | Dependency | de | int8; UAS/LAS 82.9 / 75.9 on GSD (fp32 83.0 / 76.1); trained on HDT, so the lower score partly reflects the treebank change |
+| `it_isdt.dbmdz-electra-xxl` | `it_isdt.dbmdz-electra-xxl` | ~120 MB | Dependency | it | int8; UAS/LAS 95.6 / 93.9 on ISDT (fp32 95.8 / 94.0) |
 | `zh_ud.mbert` | `zh_ud.mbert` | ~470 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); fp32 only; UAS/LAS 86.9 / 83.3 on the full GSD test set (500 sentences) |
 | `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.5 / 85.5 on the full GSD test set (543 sentences) with kagome words. Needs `fugashi` and `unidic-lite` at export time |
 
@@ -38,7 +40,7 @@ Checked against the Hugging Face model cards and the UD treebank READMEs. The se
 | `xlmr-es`, `xlmr-fr`, `xlmr-ru`, `xlmr-ja`, `xlmr-ar`, `xlmr-de`, `xlmr-it`, `xlmr-pt` | Apache-2.0 | Universal POS, 17 tags |
 | `chinese-roberta-upos` | Apache-2.0 | Universal POS with `B-`/`I-` word pieces, 45 labels |
 | `multilingual-minilm` | Apache-2.0 | none (embeddings) |
-| diaparser parsers (`en_ewt`, `es_ancora`, `fr_sequoia`, `ru_syntagrus`, `ja_gsd`) | diaparser is MIT; weights follow the training treebank: EWT CC BY-SA 4.0, AnCora CC BY 4.0, Sequoia LGPL-LR, SynTagRus **CC BY-NC-SA 4.0**, Japanese-GSD CC BY-SA 4.0 | UD relations, see [tags.md](tags.md) |
+| diaparser parsers (`en_ewt`, `es_ancora`, `fr_sequoia`, `ru_syntagrus`, `ja_gsd`, `de_hdt`, `it_isdt`) | diaparser is MIT; weights follow the training treebank: EWT CC BY-SA 4.0, AnCora CC BY 4.0, Sequoia LGPL-LR, SynTagRus **CC BY-NC-SA 4.0**, Japanese-GSD CC BY-SA 4.0, HDT CC BY-SA 4.0, ISDT **CC BY-NC-SA 3.0** | UD relations, see [tags.md](tags.md) |
 | `zh_ud.mbert` | CC BY-SA 4.0 (trained on Chinese-GSD, CC BY-SA 4.0) | UD relations |
 
 Other tag sets: label files may also use EAGLES (`NCMS000`) or CKIP (`Na`, `VC`) names, which decode to the Universal classes (`internal/postag/tagsets.go`). The CKIP transformers models are GPL-3.0 and are not in the catalog. A label that fits no inventory decodes as `O` and is logged when the model loads.

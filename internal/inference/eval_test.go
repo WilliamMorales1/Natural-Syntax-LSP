@@ -239,7 +239,7 @@ func TestEvalDependency(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov"} {
+	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov", "de": "de_hdt_dbmdz_bert_base", "it": "it_isdt_dbmdz_electra_xxl"} {
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := modelBase(dir, slug+"_dependency")

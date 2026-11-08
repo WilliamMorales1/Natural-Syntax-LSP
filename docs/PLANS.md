@@ -11,10 +11,9 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 1. Auto-detect never switches the model (German file gets English tags).
 2. Wiktionary lemma lookup for ru and ar inflected forms.
 3. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-4. New-language workflow: de and it dependency parsers (diaparser), pt parser search.
-5. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-6. Benchmark on another platform, with hover on.
-7. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+4. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+5. Benchmark on another platform, with hover on.
+6. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -59,13 +58,12 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 - Model metadata in Lua: labels, UPOS mapping, hidden size, normalization. `export_model.py` should emit `<model>.lua` next to the ONNX file.
 - `Reload` on script file change (optional).
 
-## New-language workflow (de, it, pt)
+## New-language workflow
 
 - Auto-detect never switches the model, so a German file under the default setup gets English POS tags. Only `:NSLang` changes models.
 - Arabic hover now strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms and other clitics still miss.
 - Semantic mode has no POS, so homographs pick the wrong sense (`amico`, `faulen`, `كلب`).
-- Untested diaparser parsers: `de_hdt.dbmdz-bert-base`, `it_isdt.dbmdz-*`. No pt parser found.
-- Dependency mode and `:NSLang` have no match for de/it/pt.
+- No Portuguese diaparser parser found; dependency mode has no pt model.
 
 ## Language identification
 

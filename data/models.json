@@ -125,6 +125,22 @@
       "description": "Russian"
     },
     {
+      "name": "de_hdt.dbmdz-bert-base",
+      "mode": "dependency",
+      "source": "de_hdt.dbmdz-bert-base",
+      "language": "de",
+      "description": "German diaparser UD parser (dbmdz BERT-base)",
+      "int8": true
+    },
+    {
+      "name": "it_isdt.dbmdz-electra-xxl",
+      "mode": "dependency",
+      "source": "it_isdt.dbmdz-electra-xxl",
+      "language": "it",
+      "description": "Italian diaparser UD parser (dbmdz ELECTRA-xxl)",
+      "int8": true
+    },
+    {
       "name": "ja_gsd.mbert",
       "mode": "dependency",
       "source": "ja_gsd.mbert",
