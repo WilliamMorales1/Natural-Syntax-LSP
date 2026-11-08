@@ -6,19 +6,18 @@ Only unfinished items are listed. Shipped behavior and measurements live in `doc
 
 After finishing each item: run `go test ./...`, commit it, then start the next one without waiting. Drop the item from this file in the same commit.
 
-Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
+Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Test `setup.ps1` and the Lua script loading on Windows.
-2. Auto-detect never switches the model (German file gets English tags).
-3. Wiktionary lemma lookup for ru and ar inflected forms.
-4. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-5. Evaluate ja int8 POS with kagome words.
-6. Katakana pieces in semantic mode show one color per piece.
-7. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-8. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-9. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-10. Benchmark on another platform, with hover on.
-11. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Auto-detect never switches the model (German file gets English tags).
+2. Wiktionary lemma lookup for ru and ar inflected forms.
+3. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+4. Evaluate ja int8 POS with kagome words.
+5. Katakana pieces in semantic mode show one color per piece.
+6. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+7. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+8. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+9. Benchmark on another platform, with hover on.
+10. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -38,7 +37,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ### Export and setup
 
-- Test `setup.ps1` on Windows (no pwsh available so far).
 
 ### Validation
 
@@ -65,7 +63,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 - Model metadata in Lua: labels, UPOS mapping, hidden size, normalization. `export_model.py` should emit `<model>.lua` next to the ONNX file.
 - Per-language startup timing (target under 5 ms).
 - `Reload` on script file change (optional).
-- Windows check.
 
 ## New-language workflow (de, it, pt, ar)
 
