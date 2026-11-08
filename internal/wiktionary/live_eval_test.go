@@ -33,7 +33,6 @@ var udFiles = map[string]string{
 	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
 	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
 	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
-	"ar": "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
 }
 
 type udWord struct{ form, upos, rel string }
@@ -161,7 +160,7 @@ func TestLiveAccuracy(t *testing.T) {
 	if v := os.Getenv("NSLS_WIKT_N"); v != "" {
 		fmt.Sscan(v, &n)
 	}
-	wl := nlang.WiktionaryLangs(builtin.Languages("../../lang"))
+	wl := nlang.WiktionaryLangs(builtin.Languages("../../data/lang"))
 	if os.Getenv("NSLS_WIKT_NOFORMS") != "" { // baseline without the Forms hooks
 		for i := range wl {
 			wl[i].Forms = nil
@@ -178,7 +177,7 @@ func TestLiveAccuracy(t *testing.T) {
 	tokFiles := map[string]string{
 		"en": "bert_base_vocab.txt", "es": "xlmr_es_tokenizer.json", "fr": "xlmr_fr_tokenizer.json",
 		"ja": "multilingual_minilm_tokenizer.json", "zh": "multilingual_minilm_tokenizer.json",
-		"ru": "xlmr_ru_tokenizer.json", "ar": "xlmr_ar_tokenizer.json",
+		"ru": "xlmr_ru_tokenizer.json",
 	}
 
 	var out *os.File
@@ -274,7 +273,7 @@ func TestLiveAccuracy(t *testing.T) {
 		run("semantic", sample, func(udWord) (postag.PartOfSpeech, postag.Deprel) { return postag.O, postag.DepRoot }, false)
 
 		// pipeline: words the shipped tokenizer cuts from raw sentences, looked up with no tag.
-		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]), nlang.TokenizerOptions(builtin.Languages("../../lang"))...)
+		tk, err := tokenizer.Open(filepath.Join(cfg, tokFiles[lang]), nlang.TokenizerOptions(builtin.Languages("../../data/lang"), "")...)
 		if err != nil {
 			t.Logf("%s: pipeline tokens skipped: %v", lang, err)
 			continue

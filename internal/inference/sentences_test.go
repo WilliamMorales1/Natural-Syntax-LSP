@@ -21,12 +21,9 @@ func TestSplitSentencesScripts(t *testing.T) {
 		want     []string
 	}{
 		{"english", "Go home . Stay . ok", []string{"Go home .", "Stay .", "ok"}},
-		{"arabic question", "هل أنت هنا ؟ نعم", []string{"هل أنت هنا ؟", "نعم"}},
-		{"arabic full stop", "ذهب الولد ۔ عاد", []string{"ذهب الولد ۔", "عاد"}},
 		{"russian guillemets", "Он сказал « да . » Потом ушёл", []string{"Он сказал « да . »", "Потом ушёл"}},
 		{"cjk closer", "今日 は 。 」 明日", []string{"今日 は 。 」", "明日"}},
 		{"cjk enders", "あ ！ い ？ う", []string{"あ ！", "い ？", "う"}},
-		{"arabic comma", "نعم ، لا", []string{"نعم ، لا"}},
 	} {
 		var got []string
 		for _, s := range splitSentences(wordsOf(c.in)) {

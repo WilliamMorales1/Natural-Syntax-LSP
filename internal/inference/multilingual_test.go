@@ -119,12 +119,12 @@ func TestMultilingualSemantic(t *testing.T) {
 		"cat": {
 			"en": {"The cat sleeps on the sofa.", "cat"}, "es": {"El gato duerme en el sofá.", "gato"},
 			"fr": {"Le chat dort sur le canapé.", "chat"}, "ja": {"猫はソファで寝ています。", "猫"}, "zh": {"猫在沙发上睡觉。", "猫"},
-			"ru": {"Кошка спит на диване.", "Кошка"}, "ar": {"القطة تنام على الأريكة.", "القطة"},
+			"ru": {"Кошка спит на диване.", "Кошка"},
 		},
 		"car": {
 			"en": {"The car stops on the street.", "car"}, "es": {"El coche para en la calle.", "coche"},
 			"fr": {"La voiture s'arrête dans la rue.", "voiture"}, "ja": {"車は道路で止まります。", "車"}, "zh": {"汽车在街上停下。", "汽车"},
-			"ru": {"Машина стоит на улице.", "Машина"}, "ar": {"السيارة تقف في الشارع.", "السيارة"},
+			"ru": {"Машина стоит на улице.", "Машина"},
 		},
 	}
 	embed := func(f form) []float32 {
@@ -153,7 +153,7 @@ func TestMultilingualSemantic(t *testing.T) {
 		}
 		return s
 	}
-	langs := []string{"en", "es", "fr", "ja", "zh", "ru", "ar"}
+	langs := []string{"en", "es", "fr", "ja", "zh", "ru"}
 	for _, l1 := range langs {
 		for _, l2 := range langs {
 			if l1 == l2 {
@@ -219,9 +219,6 @@ func TestMultilingualDependency(t *testing.T) {
 		}},
 		{"ru_syntagrus_DeepPavlov", "Красивая кошка ест свежую рыбу.", map[string][2]string{
 			"Красивая": {"кошка", "amod"}, "кошка": {"ест", "nsubj"}, "рыбу": {"ест", "obj"}, "свежую": {"рыбу", "amod"},
-		}},
-		{"ar_padt_asafaya", "يقرأ الولد الكتاب الجديد.", map[string][2]string{
-			"الولد": {"يقرأ", "nsubj"}, "الكتاب": {"يقرأ", "obj"}, "الجديد": {"الكتاب", "amod"},
 		}},
 	} {
 		t.Run(tc.slug+"/"+tc.text, func(t *testing.T) {

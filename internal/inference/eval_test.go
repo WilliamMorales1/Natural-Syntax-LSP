@@ -41,7 +41,6 @@ var udTreebanks = map[string]string{
 	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
 	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
 	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
-	"ar": "UD_Arabic-PADT/master/ar_padt-ud-test.conllu",
 }
 
 func udDir(t *testing.T) string {
@@ -181,7 +180,6 @@ func TestEvalPOS(t *testing.T) {
 		{"ja", udposPrefix + "ja", "_tokenizer.json"},
 		{"zh", udposPrefix + "zh", "_tokenizer.json"},
 		{"ru", "xlmr_ru", "_tokenizer.json"},
-		{"ar", "xlmr_ar", "_tokenizer.json"},
 		{"zh-char", yasukoZHPrefix, "_vocab.txt"},
 	} {
 		lang, _, _ := strings.Cut(tc.lang, "-")
@@ -232,7 +230,7 @@ func TestEvalDependency(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for lang, slug := range map[string]string{"es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov", "ar": "ar_padt_asafaya"} {
+	for lang, slug := range map[string]string{"es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov"} {
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := filepath.Join(dir, slug+"_dependency")
