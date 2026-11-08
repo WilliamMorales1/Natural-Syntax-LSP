@@ -20,7 +20,7 @@
 | `ru_syntagrus.DeepPavlov` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
 | `de_hdt.dbmdz-bert-base` | `de_hdt.dbmdz-bert-base` | ~120 MB | Dependency | de | int8; UAS/LAS 82.9 / 75.9 on GSD (fp32 83.0 / 76.1); trained on HDT, so the lower score partly reflects the treebank change |
 | `it_isdt.dbmdz-electra-xxl` | `it_isdt.dbmdz-electra-xxl` | ~120 MB | Dependency | it | int8; UAS/LAS 95.6 / 93.9 on ISDT (fp32 95.8 / 94.0) |
-| `zh_ud.mbert` | `zh_ud.mbert` | ~470 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); fp32 only; UAS/LAS 86.9 / 83.3 on the full GSD test set (500 sentences) |
+| `zh_ud.mbert` | `zh_ud.mbert` | ~250 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); partial int8; UAS/LAS 85.9 / 81.9 on the full GSD test set (500 sentences), fp32 86.9 / 83.3 |
 | `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.5 / 85.5 on the full GSD test set (543 sentences) with kagome words. Needs `fugashi` and `unidic-lite` at export time |
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
@@ -65,11 +65,11 @@ Across languages, the nearest word in another language has the right group 99% o
 - English quality matches mpnet on this test; colors are slightly less separated than with either removed English model.
 - es, fr, zh and ja all match English on group accuracy.
 - Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Before this, every tokenizer piece got its own mark, so katakana `キツネ` reached the model as `▁キ ▁ツ ▁ネ` (ja 0.17, zh 0.88).
-- Pieces are still the unit that gets a color: a katakana word split into several pieces shows several colors, though they now come from the right context.
+- Japanese words come from kagome, so a katakana word gets one color (`キツネ`, `コンピューター`). UniDic short units still split compounds such as `スマートフォン` into `スマート` and `フォン`, matching UD Japanese-GSD.
 
 ## Other languages
 
-Anything outside the catalog (other treebanks, other UD languages) can be exported by hand: `python scripts/export_model.py DIR --mode pos|semantic|dependency --model <Hugging Face repo id or diaparser name>`. The name on disk is the id with `-`, `.`, `/` → `_`; SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it. `wietsedv/xlm-roberta-base-ft-udpos28-<code>` covers most UD languages for POS.
+Anything outside the catalog (other treebanks, other UD languages) can be exported by hand: `python scripts/export_model.py DIR --mode pos|semantic|dependency --model <Hugging Face repo id or diaparser name>`. The name on disk is the id with `-`, `.`, `/` → `_`; SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it. `wietsedv/xlm-roberta-base-ft-udpos28-<code>` covers most UD languages for POS. Spans always come from the model's own tokenizer (WordPiece or SentencePiece Unigram); SentencePiece BPE tokenizers (mmBERT, Llama-style) are not supported.
 
 Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
 
@@ -94,9 +94,25 @@ The cost is false splits of rare words and names that start with `و ف ب ل ك
 
 Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
 
-diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` trains one on UD Chinese-GSD (Traditional) and GSDSimp (CC BY-SA 4.0) with `hfl/chinese-roberta-wwm-ext` as encoder (about 20 minutes on a Colab T4). The parser works on characters and finds word boundaries itself: the tokenizer's units (one Han character, one punctuation mark, one letter/digit run) are the parser tokens, and a multi-unit word links each unit but the last to the last with the relation `wp`. The server merges `wp` chains into whole-word tokens, and the last unit supplies the word's head and relation, so no separate segmenter is needed and labels are native UD (no mapping). Training drops about 5% of sentences whose units straddle two gold words. On the first 300 test sentences, counting a word only when its span matches the gold word: UAS/LAS 85.6 / 82.3 on GSD and 85.5 / 82.2 on GSDSimp. int8 drops that to about 80 / 76, so keep fp32 (~470 MB). Setup exports it from the Hugging Face repo, which also holds the training script.
+diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` trains one on UD Chinese-GSD (Traditional) and GSDSimp (CC BY-SA 4.0) with `hfl/chinese-roberta-wwm-ext` as encoder (about 20 minutes on a Colab T4). The parser works on characters and finds word boundaries itself: the tokenizer's units (one Han character, one punctuation mark, one letter/digit run) are the parser tokens, and a multi-unit word links each unit but the last to the last with the relation `wp`. The server merges `wp` chains into whole-word tokens, and the last unit supplies the word's head and relation, so no separate segmenter is needed and labels are native UD (no mapping). Training drops about 5% of sentences whose units straddle two gold words. On the first 300 test sentences, counting a word only when its span matches the gold word: UAS/LAS 85.6 / 82.3 on GSD and 85.5 / 82.2 on GSDSimp. Quantizing every weight drops that to about 80 / 76. The errors compound in the middle feed-forward layers, so the catalog entry (`int8_only`, `int8_fp32` in `models.json`) quantizes the encoder's projections except the feed-forward layers of blocks 6-8 (full GSD test set, UAS/LAS):
+
+| Weights in int8 | Size | UAS / LAS |
+| --------------- | ---- | --------- |
+| none (fp32) | 459 MB | 86.9 / 83.3 |
+| encoder, FFN of blocks 6-8 fp32 (shipped) | 247 MB | 85.9 / 81.9 |
+| encoder blocks 0-5 | 332 MB | 86.0 / 82.2 |
+| feed-forward layers only | 289 MB | 82.6 / 77.6 |
+| feed-forward of one block (6, 7 or 8) | 444 MB | 86.4-86.8 / 82.5-83.2 |
+| feed-forward only, `reduce_range` | 289 MB | 63.4 / 52.1 |
+
+Server RSS falls from 666 to 347 MB. For full accuracy, export without `--int8`. Setup exports it from the Hugging Face repo, which also holds the training script.
 
 ## Definition lookup coverage
+
+Hover looks up the token's text, then the forms its language script offers (`wiktionary.forms` in `data/lang/*.lua`). Limits:
+
+- Chinese has no lemmatizer, and `-tags nojaseg` builds have no Japanese lemmas. kagome and the zh model already split `私は` and `学生们的`, so the Japanese lemma fallback and Chinese prefix trimming only matter for pieces that still carry a particle or suffix.
+- Semantic mode has no POS, so a homograph gets its page's first non-variant section (`faulen` in `faulen Hund` shows the verb "to rot"). Dependency mode picks the section from the relation.
 
 `NSLS_WIKT_EVAL=1 go test ./internal/wiktionary -run TestLiveAccuracy -v` looks up 100 unique content words per language from the UD test treebank (POS mode) and counts the words with a Wiktionary definition (hit) and, of those, how many matched the model's POS section.
 
@@ -112,7 +128,7 @@ diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` train
 
 ## Startup and latency per language
 
-Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-1200 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. ru dependency was not exported locally.
+Through headless Neovim on the ThinkPad X280 (i7-8650U), Wiktionary definitions on, one fresh server per row: `NSLS_NVIM_BENCH=1 NSLS_BENCH_OUT=table.md go test ./internal/e2e -run TestNvimBench` (`NSLS_BENCH_WIKT=0` turns definitions off). Ready is server start to first tokens. Japanese is slowest (3 s) because the kagome dictionary loads with it. Hover is 20 requests spread over the long document; the first lookup of a word goes to Wiktionary (the max column, 75-1200 ms on home broadband), repeats come from the server's cache (cached column). Definitions counts hovers that showed one, out of hovers that landed on a token. dependency/ru, exported later, used 937 MB at ready and 1124 MB at peak; its timings were taken while another process held four cores and are left out. The dependency/zh row is the fp32 parser.
 
 Where edit time goes (`go test -bench PredictChunk -cpuprofile` in `internal/inference`): over 99% is inside ONNX Runtime. Tokenizing, pooling, decoding and span mapping in Go take about 0.3% (10-20 ms of 3.6 s per 20 dependency runs), so rewriting those loops as matrix products would not show. `BenchmarkRegistryOpen` (20 paragraphs, stub model) takes 6 ms, mostly garbage collection.
 

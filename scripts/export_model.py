@@ -89,6 +89,7 @@ def _load_catalog():
 
 
 _CATALOG = _load_catalog()
+CATALOG_BY_NAME = {m["name"]: m for m in _CATALOG}
 POS_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "pos"}
 SEMANTIC_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "semantic"}
 MODELS = {**POS_MODELS, **SEMANTIC_MODELS}
@@ -152,15 +153,32 @@ else:
     mode = "dependency"
 
 
-def _quantize_int8(onnx_path):
-    """Replace onnx_path with a dynamically int8-quantized copy and drop its external data file."""
+def _quantize_int8(onnx_path, name=None):
+    """Replace onnx_path with a dynamically int8-quantized copy and drop its external data file.
+
+    A catalog entry may narrow the quantized MatMuls: int8_only is a node-name substring they must
+    contain, int8_fp32 lists substrings that keep a node fp32 (layers whose errors compound).
+    """
     try:
         from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError as e:
         raise SystemExit(f"--int8 needs onnxruntime: {e}")
+    entry = CATALOG_BY_NAME.get(name, {})
+    narrow = {}
+    if "int8_only" in entry or "int8_fp32" in entry:
+        import onnx
+
+        only, keep = entry.get("int8_only", ""), entry.get("int8_fp32", [])
+        nodes = [
+            n.name
+            for n in onnx.load(onnx_path).graph.node
+            if n.op_type == "MatMul" and only in n.name and not any(k in n.name for k in keep)
+        ]
+        narrow = {"nodes_to_quantize": nodes, "op_types_to_quantize": ["MatMul"]}
+        print(f"Quantizing {len(nodes)} MatMul nodes")
     tmp = onnx_path + ".int8.tmp"
     quantize_dynamic(
-        onnx_path, tmp, weight_type=QuantType.QInt8, use_external_data_format=False
+        onnx_path, tmp, weight_type=QuantType.QInt8, use_external_data_format=False, **narrow
     )
     os.replace(tmp, onnx_path)
     data = onnx_path + ".data"
@@ -382,7 +400,7 @@ def _export_dependency(model_name, out_dir):
     )
     print("ONNX export done.")
     if args.int8:
-        _quantize_int8(onnx_path)
+        _quantize_int8(onnx_path, model_name)
 
     bert_model_id = m.feat_embed.model
     print(f"Fetching tokenizer from {bert_model_id}...")
@@ -475,7 +493,7 @@ else:
 
 print("ONNX export done.")
 if args.int8:
-    _quantize_int8(onnx_path)
+    _quantize_int8(onnx_path, args.model)
 
 tokenizer_files = _write_tokenizer_files(model_id, slug, out_dir)
 vocab_path = ", ".join(tokenizer_files)

@@ -153,7 +153,10 @@
       "mode": "dependency",
       "source": "Hydragon123/zh-ud-diaparser",
       "language": "zh",
-      "description": "Chinese, character level"
+      "description": "Chinese, character level",
+      "int8": true,
+      "int8_only": "/encoder/layer.",
+      "int8_fp32": ["/attention/self/MatMul", "layer.6/intermediate/", "layer.6/output/", "layer.7/intermediate/", "layer.7/output/", "layer.8/intermediate/", "layer.8/output/"]
     }
   ]
 }

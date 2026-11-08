@@ -21,7 +21,7 @@
 The server embeds a 1.7 MB language detector, about 11 microseconds per line; `ExampleDetect` in `internal/langid` lists its languages. Nothing needs configuring:
 
 - Hover looks the word up in the language of its line (`detect`). A line too short to tell borrows the nearest of the five lines above that can; failing that the whole document's language, then English.
-- With an English model configured (the default), a document detected as another language is analysed by that language's installed model for the current mode (`models.json`), loaded in the background on first use, alongside the English model for documents open at start (`switch/pos/es` bench: first Spanish tags at about 1.0 s, against 1.3 s loading one after the other); the document shows no tags until it is ready (or until it fails to load, then the English model analyses it). If no open document needs the English model once it has loaded, its weights are freed until one does. At most two extra models are kept, and like the configured one each frees its weights after `-idle-unload` (default 5 minutes) without use, then reloads on the next edit; a text too short to tell keeps the model it had. Any non-English or multilingual `model` setting, and `:NSLang CODE`, disable switching.
+- With an English model configured (the default), a document detected as another language is analysed by that language's installed model for the current mode (`models.json`), loaded in the background on first use, alongside the English model for documents open at start (`switch/pos/es` bench: first Spanish tags at about 1.0 s, against 1.3 s loading one after the other); the document shows no tags until it is ready (or until it fails to load, then the English model analyses it). If no open document needs the English model once it has loaded, its weights are freed until one does. At most two extra models are kept, and like the configured one each frees its weights after `-idle-unload` (default 5 minutes) without use, then reloads on the next edit; a text too short to tell keeps the model it had. Any non-English or multilingual `model` setting, and `:NSLang CODE`, disable switching. The model follows the whole document's language: a file mixing languages gets one model, though hover and tokenizer rules still follow each line.
 - Language-specific tokenizer rules (French elisions such as `l'ami`) apply only to lines detected as that language. When the language cannot be told, as with very short text, every rule applies.
 
 Retrain on Tatoeba per-language dumps (`<iso3>_sentences.tsv.bz2` from `downloads.tatoeba.org/exports/per_language/<iso3>/`) plus optional extra text, one sentence per line in `<code>.txt` (for example the `# text =` lines of UD treebank train files):
@@ -30,7 +30,16 @@ Retrain on Tatoeba per-language dumps (`<iso3>_sentences.tsv.bz2` from `download
 go run ./internal/langid/train -data TATOEBA_DIR -extra EXTRA_DIR -out internal/langid/linear.bin -epochs 6 -n 150000 -crop 0.6
 ```
 
-`NSLS_LANGID_DIR=TATOEBA_DIR go test ./internal/langid -run HeldOut -v` reports held-out accuracy by text length and a confusion matrix (99-100% on whole sentences, 85-99% on texts of 6-12 characters); `NSLS_LANGID_UD=DIR` with `<code>.test.txt` files scores out-of-domain text. Add `NSLS_LANGID_LINEAR=FILE` to score a candidate model without installing it. To add a language, add its row to `langs` in `internal/langid/train/main.go` and to the test tables, then retrain.
+`NSLS_LANGID_DIR=TATOEBA_DIR go test ./internal/langid -run HeldOut -v` reports held-out accuracy by text length and a confusion matrix; `NSLS_LANGID_UD=DIR` with `<code>.test.txt` files scores out-of-domain text. Add `NSLS_LANGID_LINEAR=FILE` to score a candidate model without installing it. To add a language, add its row to `langs` in `internal/langid/train/main.go` and to the test tables, then retrain.
+
+Held-out Tatoeba accuracy (2026-11-08 dumps, every 20th sentence):
+
+| Text length | ja | zh | ar | ko | de | ru | uk | it | en | pt | fr | es | ca |
+| ----------- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| 6-12 chars | 99.9 | 99.8 | 100 | 99.6 | 95.9 | 95.0 | 94.3 | 93.8 | 93.0 | 88.6 | 88.2 | 86.9 | 54.5 |
+| 21+ chars | 100 | 99.7 | 99.9 | 100 | 100 | 100 | 99.9 | 99.9 | 99.8 | 99.9 | 100 | 99.8 | 96.3 |
+
+Short Latin-script lines are the weak spot: Spanish and Portuguese, French and Italian confuse each other, and Catalan has only about 11k training sentences. Texts of 1-5 characters are right 0-67% of the time or abstain, which is why hover borrows a nearby line's language.
 
 ## Colors
 
@@ -46,7 +55,7 @@ The server logs to stderr through `log/slog`: warnings and errors by default, de
 
 ## Testing
 
-Open [test.txt](examples/test.txt) after installation; words color within about 10 s (POS), 5 s (semantic) or 15 s (dependency). [semantic-example.txt](examples/semantic-example.txt) gives animals, food, technology and feelings their own color families.
+Open [test.txt](examples/test.txt) after installation; words color within about 10 s (POS), 5 s (semantic) or 15 s (dependency). [semantic-example.txt](examples/semantic-example.txt) gives animals, food, technology and feelings their own color families. In a VS Code extension test, POS and dependency tokens and hover can be read back with the `vscode.provideDocumentSemanticTokens` and `vscode.executeHoverProvider` commands; semantic-mode colors are decorations, which the API cannot read, so check those by eye.
 
 ### Automated tests
 

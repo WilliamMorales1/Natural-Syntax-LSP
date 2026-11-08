@@ -30,7 +30,7 @@ Needs Go instead: a new tokenizer flag (`luaload/options.go`), an unspaced-scrip
 ## Steps
 
 1. Write `<code>.lua`. To ship it, put it in `data/lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
-2. Add the model to `data/models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). The server and `scripts/export_model.py` read it; nothing else in Go or Python names models.
+2. Add the model to `data/models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`; `int8_only` and `int8_fp32` narrow which MatMul nodes get quantized, by node-name substring). The server and `scripts/export_model.py` read it; nothing else in Go or Python names models.
 3. Still hardcoded, one line each: `scripts/setup.sh` and `setup.ps1` (`export_*` function, `--model` case, `all` list), the `naturalSyntaxLs.model` enum in `vscode-extension/package.json`, and the model, license and accuracy in `docs/models.md`.
 4. Verify with the opt-in tests in [settings.md](settings.md#automated-tests) (`NSLS_EVAL`, `NSLS_WIKT_EVAL` with the treebank in `udFiles`, `NSLS_NVIM_BENCH`), and `go build -tags nojaseg ./...`.
 5. If the language detector does not know it (`ExampleDetect` in `internal/langid`), tokenizer rules apply to every line. Retrain it as in [settings.md](settings.md#language-detection). Galician was tried and dropped: about 10k sentences gave 64% held-out accuracy against Spanish and Portuguese.
