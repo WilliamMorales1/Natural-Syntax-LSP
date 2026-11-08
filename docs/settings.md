@@ -58,7 +58,10 @@ Open [test.txt](examples/test.txt) after installation; words color within about 
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
 | `NSLS_WIKT_EVAL=1` | `internal/wiktionary` `TestLiveAccuracy` | Live Wiktionary hits on UD treebank words (`udFiles`) |
 | `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across languages (the table in models.md covers en, es, fr, zh, ja; ru is in the test but not yet in that table) |
+| `NSLS_MODEL_COST=1` (or `NLS_TAG_DUMP=DIR`) | `internal/inference` `TestModelCost` | Wall and CPU time per mode for a long document and one sentence; `NLS_TAG_DUMP` also writes each mode's tokens for before/after diffs |
 | `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency (Wiktionary on; `NSLS_BENCH_WIKT=0` off) and server memory, through a real headless Neovim on Linux, macOS or Windows; `NSLS_BENCH_ONLY` filters cases |
+
+The model tests in `internal/inference` load each installed model once per run and share it across tests.
 
 `go test -short -race ./...` is the CI check (`.github/workflows/ci.yml`). Fuzz targets run with `go test ./internal/lspserver -run xxx -fuzz FuzzApplyContentChange`; others are `FuzzParseCPUList` (`internal/inference`) and `FuzzStripHTML` (`internal/wiktionary`).
 

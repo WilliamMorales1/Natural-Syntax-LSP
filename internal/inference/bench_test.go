@@ -13,10 +13,12 @@ import (
 )
 
 // testModels maps each mode to its model slug and loader; loaders return nil when files are missing.
-var testModels = []struct {
+type testModel struct {
 	name string
 	load func(dir string) (Predictor, error)
-}{
+}
+
+var testModels = []testModel{
 	{"pos", func(dir string) (Predictor, error) {
 		return NewPOSModel(testModelFiles(dir, "bert_base"))
 	}},
@@ -80,11 +82,10 @@ func BenchmarkPredictChunk(b *testing.B) {
 	words := tokenizer.BasicTokenize(string(raw))
 	for _, tm := range testModels {
 		b.Run(tm.name, func(b *testing.B) {
-			m, err := tm.load(dir)
+			m, err := sharedModel(dir, tm.name, tm.load)
 			if err != nil {
 				b.Skip(err)
 			}
-			b.Cleanup(func() { m.Close() })
 			for b.Loop() {
 				if _, err := m.PredictChunk(words); err != nil {
 					b.Fatal(err)
@@ -94,8 +95,11 @@ func BenchmarkPredictChunk(b *testing.B) {
 	}
 }
 
-// TestModelCost prints wall/CPU time per mode for a full-document run and a one-sentence run; NLS_TAG_DUMP=dir also writes each mode's outputs for before/after diffing.
+// TestModelCost prints wall/CPU time per mode for a full-document run and a one-sentence run; NLS_TAG_DUMP=dir also writes each mode's outputs for before/after diffing. Off unless NSLS_MODEL_COST=1 or NLS_TAG_DUMP is set, since it checks nothing.
 func TestModelCost(t *testing.T) {
+	if os.Getenv("NSLS_MODEL_COST") == "" && os.Getenv("NLS_TAG_DUMP") == "" {
+		t.Skip("set NSLS_MODEL_COST=1")
+	}
 	dir := testDataDir(t)
 	raw, err := os.ReadFile("../../docs/examples/test.txt")
 	if err != nil {
@@ -106,11 +110,10 @@ func TestModelCost(t *testing.T) {
 
 	for _, tm := range testModels {
 		t.Run(tm.name, func(t *testing.T) {
-			m, err := tm.load(dir)
+			m, err := sharedModel(dir, tm.name, tm.load)
 			if err != nil {
 				t.Skip(err)
 			}
-			t.Cleanup(func() { m.Close() })
 			m.PredictChunk(sentence) // warm-up
 
 			measure := func(name string, runs int, f func()) {

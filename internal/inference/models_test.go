@@ -2,6 +2,7 @@ package inference
 
 import (
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -11,16 +12,52 @@ import (
 	"natural-syntax-ls/internal/tokenizer"
 )
 
+// shared holds each test model loaded once for the package run; TestMain closes them.
+var shared struct {
+	sync.Mutex
+	models map[string]Predictor
+	errs   map[string]error
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	for _, p := range shared.models {
+		p.Close()
+	}
+	os.Exit(code)
+}
+
+// sharedModel returns the named test model, loading it on first use.
+func sharedModel(dir, name string, load func(string) (Predictor, error)) (Predictor, error) {
+	shared.Lock()
+	defer shared.Unlock()
+	if p, ok := shared.models[name]; ok {
+		return p, nil
+	}
+	if err, ok := shared.errs[name]; ok {
+		return nil, err
+	}
+	if shared.models == nil {
+		shared.models, shared.errs = map[string]Predictor{}, map[string]error{}
+	}
+	p, err := load(dir)
+	if err != nil {
+		shared.errs[name] = err
+		return nil, err
+	}
+	shared.models[name] = p
+	return p, nil
+}
+
 // forEachModel runs f against every installed model, skipping those whose files are missing.
 func forEachModel(t *testing.T, f func(t *testing.T, m Predictor)) {
 	dir := testDataDir(t)
 	for _, tm := range testModels {
 		t.Run(tm.name, func(t *testing.T) {
-			m, err := tm.load(dir)
+			m, err := sharedModel(dir, tm.name, tm.load)
 			if err != nil {
 				t.Skip(err)
 			}
-			t.Cleanup(func() { m.Close() })
 			f(t, m)
 		})
 	}
