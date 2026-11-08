@@ -21,24 +21,28 @@ type DependencyModel struct {
 	session   *ort.DynamicAdvancedSession
 	tokenizer tokenizer.Tokenizer
 	rels      []postag.Deprel // index → decoded Deprel, loaded from _dependency_rels.json; index 0 is the unused "<bos>" placeholder
+	wordPart  int             // index of the "wp" relation of character-level models, else 0
 }
+
+// wordPartRel is the relation a character-level model uses to link a unit to the last unit of its word.
+const wordPartRel = "wp"
 
 // depRelsPathFor derives the rel-labels JSON path from the model path.
 func depRelsPathFor(modelPath string) string {
 	return strings.TrimSuffix(modelPath, ".onnx") + "_rels.json"
 }
 
-func loadDepRels(relsPath string) ([]postag.Deprel, error) {
+func loadDepRels(relsPath string) (rels []postag.Deprel, wordPart int, err error) {
 	data, err := os.ReadFile(relsPath)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var raw []string
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// unrecognized/placeholder ("<bos>") labels decode as generic "dep"
-	return decodeEnumList(raw, postag.ParseDeprel, postag.DepDep), nil
+	return decodeEnumList(raw, postag.ParseDeprel, postag.DepDep), slices.Index(raw, wordPartRel), nil
 }
 
 // NewDependencyModel loads the dependency-parsing ONNX model.
@@ -48,7 +52,7 @@ func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (
 		return nil, err
 	}
 
-	rels, err := loadDepRels(depRelsPathFor(modelPath))
+	rels, wordPart, err := loadDepRels(depRelsPathFor(modelPath))
 	if err != nil {
 		releaseEnv()
 		return nil, fmt.Errorf("load dependency rel labels: %w", err)
@@ -63,7 +67,7 @@ func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (
 		return nil, fmt.Errorf("create ort session: %w", err)
 	}
 
-	return &DependencyModel{session: session, tokenizer: tok, rels: rels}, nil
+	return &DependencyModel{session: session, tokenizer: tok, rels: rels, wordPart: max(wordPart, 0)}, nil
 }
 
 // Close releases the ORT session and environment.
@@ -230,30 +234,67 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 	// words[wi] corresponds to seq row wi+1 (row 0 is the synthetic root).
 	numRealWords := seqLen - 1
 
-	tokens := make([]postag.Token, 0, len(words))
-	for wi := range numRealWords {
-		w := words[wi]
-		if tokenizer.IsAllPunct(w.Text) {
+	// Character-level models mark a multi-unit word by pointing each unit but the last at the last one with the word-part relation.
+	groups := make([][2]int, 0, numRealWords) // inclusive unit index ranges
+	for wi := 0; wi < numRealWords; {
+		end := wi
+		if m.wordPart > 0 {
+			row := wi + 1
+			head := argmaxFloat32ExceptSelf(arcData[row*seqLen:(row+1)*seqLen], row)
+			relRow := relData[(row*seqLen+head)*numRels : (row*seqLen+head+1)*numRels]
+			if head > row && slices.Index(relRow[1:], slices.Max(relRow[1:]))+1 == m.wordPart {
+				end = head - 1
+				for k := wi; k < end; k++ { // a gap in the source cuts the word
+					if words[k].End != words[k+1].Begin {
+						end = k
+						break
+					}
+				}
+			}
+		}
+		groups = append(groups, [2]int{wi, end})
+		wi = end + 1
+	}
+	groupOf := make([]int, numRealWords)
+	for gi, g := range groups {
+		for k := g[0]; k <= g[1]; k++ {
+			groupOf[k] = gi
+		}
+	}
+
+	tokens := make([]postag.Token, 0, len(groups))
+	for _, g := range groups {
+		first, last := words[g[0]], words[g[1]]
+		text := first.Text
+		for k := g[0] + 1; k <= g[1]; k++ {
+			text += words[k].Text
+		}
+		if tokenizer.IsAllPunct(text) {
 			continue
 		}
-		row := wi + 1
-		arcRow := arcData[row*seqLen : (row+1)*seqLen]
+		row := g[1] + 1 // the last unit carries the word's head and relation
+		arcRow := slices.Clone(arcData[row*seqLen : (row+1)*seqLen])
+		for k := g[0] + 1; k <= row; k++ { // a word cannot hang off its own units
+			arcRow[k] = float32(math.Inf(-1))
+		}
 		head := argmaxFloat32ExceptSelf(arcRow, row)
 		score := float64(softmaxAt(arcRow, head))
 
 		hasHead := head != 0 // row/col 0 is the root sentinel
 		var headOffset uint32
 		if hasHead {
-			headWordIdx := head - 1
-			if headWordIdx >= 0 && headWordIdx < len(words) {
-				headOffset = words[headWordIdx].Begin
+			if hi := head - 1; hi >= 0 && hi < numRealWords {
+				headOffset = words[groups[groupOf[hi]][0]].Begin
 			} else {
 				hasHead = false
 			}
 		}
 
 		relBase := (row*seqLen + head) * numRels
-		relRow := relData[relBase : relBase+numRels]
+		relRow := slices.Clone(relData[relBase : relBase+numRels])
+		if m.wordPart > 0 {
+			relRow[m.wordPart] = float32(math.Inf(-1))
+		}
 		relClass := slices.Index(relRow[1:], slices.Max(relRow[1:])) + 1 // skip index 0, the unused "<bos>" placeholder
 		var rel postag.Deprel
 		if relClass < len(m.rels) { // a rels file holding only "<bos>" leaves no real class
@@ -261,14 +302,14 @@ func (m *DependencyModel) predictSentence(words []tokenizer.WordSpan) ([]postag.
 		}
 
 		tokens = append(tokens, postag.Token{
-			Word:            w.Text,
+			Word:            text,
 			Score:           score,
 			Tag:             postag.O,
 			HasHead:         hasHead,
 			HeadOffsetBegin: headOffset,
 			Deprel:          rel,
-			OffsetBegin:     w.Begin,
-			OffsetEnd:       w.End,
+			OffsetBegin:     first.Begin,
+			OffsetEnd:       last.End,
 			Description:     rel.String(),
 		})
 	}

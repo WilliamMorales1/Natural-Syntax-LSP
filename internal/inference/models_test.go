@@ -37,8 +37,14 @@ func checkTokens(t *testing.T, words []tokenizer.WordSpan, toks []postag.Token) 
 		if wi == len(words) {
 			t.Fatalf("token %+v matches no remaining word", tok)
 		}
-		if w := words[wi]; w.Text != tok.Word || w.End != tok.OffsetEnd {
-			t.Fatalf("token %q %d-%d vs word %q %d-%d", tok.Word, tok.OffsetBegin, tok.OffsetEnd, w.Text, w.Begin, w.End)
+		// A character-level parser may join consecutive words into one token.
+		joined := words[wi].Text
+		for wi+1 < len(words) && words[wi].End < tok.OffsetEnd {
+			wi++
+			joined += words[wi].Text
+		}
+		if w := words[wi]; joined != tok.Word || w.End != tok.OffsetEnd {
+			t.Fatalf("token %q %d-%d vs words ending %q %d-%d", tok.Word, tok.OffsetBegin, tok.OffsetEnd, w.Text, w.Begin, w.End)
 		}
 		if tokenizer.IsAllPunct(tok.Word) {
 			t.Errorf("punctuation token %q emitted", tok.Word)

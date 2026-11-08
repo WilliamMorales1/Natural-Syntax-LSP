@@ -100,6 +100,9 @@ PKGS=(transformers torch onnx onnxscript onnxruntime requests)
 if catalog | awk -F'\t' -v m="$MODEL" '($1 == m || m == "all") && $2 == "dependency" {f=1} END {exit !f}'; then
     PKGS+=(diaparser)
 fi
+if [[ "$MODEL" == "all" || "$MODEL" == "ja_gsd.mbert" ]]; then
+    PKGS+=(fugashi unidic-lite) # the Japanese parser's tokenizer
+fi
 
 # env_python prints the interpreter path inside a venv/conda env, which differs on Windows.
 env_python() {

@@ -217,6 +217,15 @@ func TestMultilingualDependency(t *testing.T) {
 		{"fr_sequoia_camembert_large", "L'ami d'aujourd'hui lit un livre.", map[string][2]string{
 			"ami": {"lit", "nsubj"}, "livre": {"lit", "obj"},
 		}},
+		{"ja_gsd_mbert", "私は赤い本を読みます。", map[string][2]string{
+			"私": {"読み", "nsubj"}, "本": {"読み", "obj"}, "赤い": {"本", "acl"},
+		}},
+		{"zh_ud_mbert", "我喜欢红色的书。", map[string][2]string{
+			"我": {"喜欢", "nsubj"}, "书": {"喜欢", "obj"},
+		}},
+		{"zh_ud_mbert", "自然语言处理很有趣。", map[string][2]string{
+			"处理": {"有趣", "nsubj"},
+		}},
 		{"ru_syntagrus_DeepPavlov", "Красивая кошка ест свежую рыбу.", map[string][2]string{
 			"Красивая": {"кошка", "amod"}, "кошка": {"ест", "nsubj"}, "рыбу": {"ест", "obj"}, "свежую": {"рыбу", "amod"},
 		}},
@@ -241,6 +250,9 @@ func TestMultilingualDependency(t *testing.T) {
 			byOffset := map[uint32]string{}
 			for _, w := range words {
 				byOffset[w.Begin] = w.Text
+			}
+			for _, tok := range toks { // joined characters name their head by the whole word
+				byOffset[tok.OffsetBegin] = tok.Word
 			}
 			var line []string
 			got := map[string][2]string{}

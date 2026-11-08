@@ -91,6 +91,21 @@
       "source": "ru_syntagrus.DeepPavlov",
       "language": "ru",
       "description": "Russian"
+    },
+    {
+      "name": "ja_gsd.mbert",
+      "mode": "dependency",
+      "source": "ja_gsd.mbert",
+      "language": "ja",
+      "description": "Japanese, kagome words",
+      "int8": true
+    },
+    {
+      "name": "zh_ud.mbert",
+      "mode": "dependency",
+      "source": "Hydragon123/zh-ud-diaparser",
+      "language": "zh",
+      "description": "Chinese, character level"
     }
   ]
 }

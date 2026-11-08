@@ -14,6 +14,8 @@
 | `es_ancora.mbert` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
 | `fr_sequoia.camembert-large` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
 | `ru_syntagrus.DeepPavlov` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
+| `zh_ud.mbert` | `zh_ud.mbert` | ~470 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); fp32 only; UAS/LAS 85.6 / 82.3 on GSD |
+| `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.2 / 84.9 on GSD with kagome words (fp32 89.3 / 84.9). Needs `fugashi` and `unidic-lite` at export time |
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
 
@@ -37,6 +39,8 @@ Measured through Neovim (`internal/e2e`, `NSLS_NVIM_BENCH=1`): time to first res
 | en electra dependency | 0.8 s | 130 ms | 684 MB |
 | es mBERT dependency (fp32) | 1.1 s | 130 ms | 919 MB |
 | fr CamemBERT dependency (int8) | 1.2 s | 244 ms | 492 MB |
+| ja mBERT dependency (int8, kagome words) | 2.7 s | 92 ms | 779 MB |
+| zh character-level dependency (fp32) | 0.9 s | 161 ms | 675 MB |
 
 Start-up is slower than English because of the 250k-piece vocabulary and tokenizer load. The French parser is about twice as slow per edit as the English one.
 
@@ -71,8 +75,15 @@ The models in the table above have setup names. Anything else (other treebanks, 
 | es, fr, ru, ja, zh | POS (UPOS mapped onto the Penn token types; all but zh are catalog entries `xlmr-<code>`) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ru`, `-ja`, `-zh`) |
 | zh | POS, whole words (character-level B-/I- tagger) | `chinese-roberta-upos` in the catalog (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
 | all | Semantic | `--mode semantic --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
-| es, fr, ru | Dependency | `--mode dependency --model es_ancora.mbert`, `fr_sequoia.camembert-large` or `ru_syntagrus.DeepPavlov` (needs `diaparser`) |
+| es, fr, ru, ja | Dependency | `--mode dependency --model es_ancora.mbert`, `fr_sequoia.camembert-large`, `ru_syntagrus.DeepPavlov` or `ja_gsd.mbert` (needs `diaparser`) |
+| zh | Dependency, character level | `--mode dependency --model zh_ud.mbert` (downloads the checkpoint from Hugging Face; retrain with `scripts/train_zh_dependency.py`, see below) |
 
 Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
 
-The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `chinese-roberta-upos` (`KoichiYasuoka/chinese-roberta-base-upos`): it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. The vocab file is found next to the model. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level). No Japanese or Chinese dependency parser is wired up yet.
+The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `chinese-roberta-upos` (`KoichiYasuoka/chinese-roberta-base-upos`): it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. The vocab file is found next to the model. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level).
+
+### Japanese and Chinese dependency parsers
+
+Japanese uses the released diaparser `ja_gsd.mbert` (Tohoku BERT, WordPiece). Its config names a mecab word tokenizer, so the WordPiece tokenizer leaves Han/kana runs whole and cuts them with the kagome segmenter, the same words UD Japanese-GSD uses. Without kagome (`-tags nojaseg`) each character becomes a word and accuracy collapses. On the first 300 GSD test sentences: UAS/LAS 89.3 / 84.9 (int8 89.2 / 84.9), 88.4 / 84.1 when words must also match the gold spans.
+
+diaparser publishes no Chinese parser, so `scripts/train_zh_dependency.py` trains one on UD Chinese-GSD (Traditional) and GSDSimp (CC BY-SA 4.0) with `hfl/chinese-roberta-wwm-ext` as encoder (about 20 minutes on a Colab T4). The parser works on characters and finds word boundaries itself: the tokenizer's units (one Han character, one punctuation mark, one letter/digit run) are the parser tokens, and a multi-unit word links each unit but the last to the last with the relation `wp`. The server merges `wp` chains into whole-word tokens, and the last unit supplies the word's head and relation, so no separate segmenter is needed and labels are native UD (no mapping). Training drops about 5% of sentences whose units straddle two gold words. On the first 300 test sentences, counting a word only when its span matches the gold word: UAS/LAS 85.6 / 82.3 on GSD and 85.5 / 82.2 on GSDSimp. int8 drops that to about 80 / 76, so keep fp32 (~470 MB). Setup exports it from the Hugging Face repo, which also holds the training script.

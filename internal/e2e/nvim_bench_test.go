@@ -126,6 +126,8 @@ func benchCases(t *testing.T) []benchCase {
 		benchCase{"dependency/es", "dependency", "es", "es_ancora_mbert_dependency", ml},
 		benchCase{"dependency/fr", "dependency", "fr", "fr_sequoia_camembert_large_dependency", ml},
 		benchCase{"dependency/ru", "dependency", "ru", "ru_syntagrus_DeepPavlov_dependency", ml},
+		benchCase{"dependency/ja", "dependency", "ja", "ja_gsd_mbert_dependency", ml},
+		benchCase{"dependency/zh", "dependency", "zh", "zh_ud_mbert_dependency", ml},
 	)
 	return cases
 }

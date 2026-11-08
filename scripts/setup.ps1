@@ -63,6 +63,7 @@ Step "Installing Python dependencies (transformers, torch, onnx, onnxscript, req
 
 $PKGS = @("transformers","torch","onnx","onnxscript","onnxruntime","requests")
 if ($SELECTED | Where-Object { $_.mode -eq "dependency" }) { $PKGS += "diaparser" }
+if ($SELECTED | Where-Object { $_.name -eq "ja_gsd.mbert" }) { $PKGS += @("fugashi","unidic-lite") }
 
 # Native stderr can throw under ErrorActionPreference=Stop in Windows PowerShell 5, so probes go through try/catch.
 function Test-Native([scriptblock]$cmd) {

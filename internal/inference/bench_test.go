@@ -43,7 +43,7 @@ func testDataDir(t testing.TB) string {
 		t.Skip("no user config dir")
 	}
 	dir := filepath.Join(cfg, "natural-syntax-ls")
-	lib := filepath.Join(dir, "libonnxruntime.so")
+	lib := filepath.Join(dir, "lib", "libonnxruntime.so")
 	if _, err := os.Stat(lib); err != nil {
 		t.Skipf("missing %s", lib)
 	}

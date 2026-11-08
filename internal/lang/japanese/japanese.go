@@ -13,7 +13,7 @@ import (
 func Language() lang.Language {
 	l := lang.Language{
 		Code:          "ja",
-		ModelPrefixes: []string{"xlmr_ja"},
+		ModelPrefixes: []string{"xlmr_ja", "ja_gsd"},
 		Wiktionary: &lang.Wiktionary{
 			Code: "ja", Sections: []string{"Japanese"}, Wikitext: true, Script: unicode.Han,
 		},

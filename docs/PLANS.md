@@ -10,8 +10,8 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Katakana words in semantic mode show one color per piece. Kagome gives whole words but one word was still off.
 - ja int8 POS with kagome words: not evaluated.
-- ja dependency parser: diaparser `ja_gsd.mbert` on kagome words. Not tried.
-- zh dependency parser: `zh_ctb7` uses Stanford labels, so a label mapping is needed.
+- ja and zh dependency: measured on 300 sentences only; run the full GSD test set and a hover/semantic-token check in an editor.
+- zh dependency int8 loses about 5 points (UAS 85.6 to 80.0). Try quantizing only the encoder, or per-channel.
 - `KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos`: untested (LUW B-/I- tags over char-sized Unigram pieces, would need piece merging after tagging).
 
 ### POS labels

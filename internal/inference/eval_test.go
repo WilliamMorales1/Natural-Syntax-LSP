@@ -36,11 +36,12 @@ type udSentence struct {
 }
 
 var udTreebanks = map[string]string{
-	"es": "UD_Spanish-AnCora/master/es_ancora-ud-test.conllu",
-	"fr": "UD_French-GSD/master/fr_gsd-ud-test.conllu",
-	"ja": "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
-	"zh": "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
-	"ru": "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
+	"es":  "UD_Spanish-AnCora/master/es_ancora-ud-test.conllu",
+	"fr":  "UD_French-GSD/master/fr_gsd-ud-test.conllu",
+	"ja":  "UD_Japanese-GSD/master/ja_gsd-ud-test.conllu",
+	"zh":  "UD_Chinese-GSD/master/zh_gsd-ud-test.conllu",
+	"zhs": "UD_Chinese-GSDSimp/master/zh_gsdsimp-ud-test.conllu",
+	"ru":  "UD_Russian-GSD/master/ru_gsd-ud-test.conllu",
 }
 
 func udDir(t *testing.T) string {
@@ -230,7 +231,7 @@ func TestEvalDependency(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for lang, slug := range map[string]string{"es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov"} {
+	for lang, slug := range map[string]string{"ja": "ja_gsd_mbert", "zh": "zh_ud_mbert", "zhs": "zh_ud_mbert", "es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov"} {
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := filepath.Join(dir, slug+"_dependency")
@@ -243,8 +244,13 @@ func TestEvalDependency(t *testing.T) {
 				t.Logf("%s %s: skipped: %v", lang, variant, err)
 				continue
 			}
-			var uas, las, total int
+			var uas, las, total, strictUAS, strictLAS, goldTotal int
 			for _, s := range sents {
+				for _, g := range s.toks {
+					if !g.mwt && g.rel != "punct" {
+						goldTotal++
+					}
+				}
 				byBegin := map[uint32]int{}
 				for i, tok := range s.toks {
 					if !tok.mwt && tok.rel != "punct" {
@@ -271,14 +277,23 @@ func TestEvalDependency(t *testing.T) {
 					headOK := (g.head == 0 && !p.HasHead) || (p.HasHead && idBegin[g.head] == int(p.HeadOffsetBegin))
 					if headOK {
 						uas++
+						relOK := false
 						if want, ok := postag.ParseDeprel(strings.SplitN(g.rel, ":", 2)[0]); ok && want == p.Deprel {
 							las++
+							relOK = true
+						}
+						if int(p.OffsetEnd) == g.end { // same word boundaries as the gold tokens
+							strictUAS++
+							if relOK {
+								strictLAS++
+							}
 						}
 					}
 				}
 			}
 			m.Close()
 			t.Logf("DEP %s %-4s %d sentences: UAS %.1f%% LAS %.1f%% over %d words", lang, variant, len(sents), 100*float64(uas)/float64(max(total, 1)), 100*float64(las)/float64(max(total, 1)), total)
+			t.Logf("DEP %s %-4s strict (gold word spans, %d gold words): UAS %.1f%% LAS %.1f%%", lang, variant, goldTotal, 100*float64(strictUAS)/float64(max(goldTotal, 1)), 100*float64(strictLAS)/float64(max(goldTotal, 1)))
 		}
 	}
 }

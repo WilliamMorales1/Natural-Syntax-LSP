@@ -102,6 +102,9 @@ DEFAULT_DEPENDENCY_MODEL = next(
     "en_ewt.electra-base",
 )
 
+# Dependency catalog entries whose source is a Hugging Face repo hold a diaparser checkpoint named after the entry.
+DEPENDENCY_SOURCES = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "dependency"}
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "out_dir",
@@ -238,8 +241,17 @@ def _export_dependency(model_name, out_dir):
     from diaparser.parsers import Parser
     from torch import nn
 
+    source = DEPENDENCY_SOURCES.get(model_name, model_name)
+    if "/" in source and not os.path.exists(source):
+        from huggingface_hub import hf_hub_download
+
+        source = hf_hub_download(source, model_name)
+    if os.path.exists(source):
+        # A local checkpoint pickles diaparser classes, which recent torch refuses to load by default.
+        _load = torch.load
+        torch.load = lambda *a, **k: _load(*a, **{**k, "weights_only": False})
     print(f"Loading diaparser model {model_name}...")
-    p = Parser.load(model_name)
+    p = Parser.load(source)
     m = p.model
     m.eval()
 

@@ -111,7 +111,7 @@ func TestEditRetagsAcrossOldChunkBoundary(t *testing.T) {
 	}
 	cfg, _ := os.UserConfigDir()
 	dir := filepath.Join(cfg, "natural-syntax-ls")
-	lib := filepath.Join(dir, "libonnxruntime.so")
+	lib := filepath.Join(dir, "lib", "libonnxruntime.so")
 	if _, err := os.Stat(lib); err != nil {
 		t.Skipf("missing %s", lib)
 	}
@@ -358,7 +358,7 @@ func TestModelEditLatency(t *testing.T) {
 		t.Skipf("no user config dir: %v", err)
 	}
 	dir := filepath.Join(cfg, "natural-syntax-ls")
-	lib := filepath.Join(dir, "libonnxruntime.so")
+	lib := filepath.Join(dir, "lib", "libonnxruntime.so")
 	if _, err := os.Stat(lib); err != nil {
 		t.Skipf("missing %s", lib)
 	}

@@ -34,12 +34,16 @@ type BERTTokenizer struct {
 	charCJK bool
 	// hfPunct splits every apostrophe like HF BertTokenizer, instead of the English-specific contraction handling.
 	hfPunct bool
+	// wordSeg is set for models whose word_tokenizer_type is a morphological analyzer (mecab): Han/kana runs stay whole until segmented.
+	wordSeg bool
+	opts    options
 }
 
 // tokenizerConfig is the subset of a HF tokenizer_config.json that changes how text is split.
 type tokenizerConfig struct {
 	TokenizeChineseChars *bool  `json:"tokenize_chinese_chars"`
 	SubwordTokenizerType string `json:"subword_tokenizer_type"`
+	WordTokenizerType    string `json:"word_tokenizer_type"`
 }
 
 // SidecarPath maps "x_vocab.txt" to "x_tokenizer.json"; a path already naming the sidecar is returned as is.
@@ -51,16 +55,16 @@ func SidecarPath(vocabPath string) string {
 }
 
 // Open loads the tokenizer a model ships with: a Unigram tokenizer.json sidecar if present, else the WordPiece vocab.txt.
-// Options apply to Unigram tokenizers only; WordPiece models keep their fixed pretokenization.
+// Segmenters apply to Unigram tokenizers and to WordPiece models whose config names a mecab word tokenizer; other WordPiece models keep their fixed pretokenization.
 func Open(vocabPath string, opts ...Option) (Tokenizer, error) {
 	if data, err := os.ReadFile(SidecarPath(vocabPath)); err == nil && isUnigramFile(data) {
 		return parseUnigram(data, opts...)
 	}
-	return Load(vocabPath)
+	return Load(vocabPath, opts...)
 }
 
 // Load reads a BERT vocab.txt file and builds a tokenizer from it.
-func Load(vocabPath string) (*BERTTokenizer, error) {
+func Load(vocabPath string, opts ...Option) (*BERTTokenizer, error) {
 	f, err := os.Open(vocabPath)
 	if err != nil {
 		return nil, fmt.Errorf("load vocab: %w", err)
@@ -92,9 +96,12 @@ func Load(vocabPath string) (*BERTTokenizer, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read tokenizer config for %s: %w", vocabPath, err)
 	}
+	wordSeg := cfg.WordTokenizerType == "mecab"
 	return &BERTTokenizer{
 		// HF BertTokenizer defaults tokenize_chinese_chars to true when the config omits it.
-		charCJK: hasSidecar && (cfg.TokenizeChineseChars == nil || *cfg.TokenizeChineseChars) || cfg.SubwordTokenizerType == "character",
+		charCJK: !wordSeg && (hasSidecar && (cfg.TokenizeChineseChars == nil || *cfg.TokenizeChineseChars) || cfg.SubwordTokenizerType == "character"),
+		wordSeg: wordSeg,
+		opts:    newOptions(opts),
 		hfPunct: hasSidecar,
 		vocab:   vocab,
 		unkID:   vocab["[UNK]"],
@@ -107,7 +114,61 @@ func Load(vocabPath string) (*BERTTokenizer, error) {
 
 // Tokenize splits text into word spans following this tokenizer's own pretokenization.
 func (t *BERTTokenizer) Tokenize(text string) []WordSpan {
-	return basicTokenize(text, t.charCJK, t.hfPunct)
+	words := basicTokenize(text, t.charCJK, t.hfPunct)
+	if !t.wordSeg {
+		return words
+	}
+	runes := []rune(text)
+	var seg Segmenter
+	for _, s := range t.opts.segmenters {
+		if s.Applies(runes) {
+			seg = s
+			break
+		}
+	}
+	var out []WordSpan
+	for _, w := range words {
+		out = append(out, splitCJKRuns(runes, w, seg)...)
+	}
+	return out
+}
+
+// splitCJKRuns cuts each Han/kana run of w into seg's words, or single characters when seg is nil or fails.
+func splitCJKRuns(runes []rune, w WordSpan, seg Segmenter) []WordSpan {
+	src := runes[w.Begin:w.End]
+	if !slices.ContainsFunc(src, isCJK) {
+		return []WordSpan{w}
+	}
+	var parts []WordSpan
+	flush := func(from, to int) {
+		parts = append(parts, WordSpan{Text: string(src[from:to]), Begin: w.Begin + uint32(from), End: w.Begin + uint32(to)})
+	}
+	for i := 0; i < len(src); {
+		j := i
+		cjk := isCJK(src[i])
+		for j < len(src) && isCJK(src[j]) == cjk {
+			j++
+		}
+		var ranges [][2]int
+		if cjk && seg != nil {
+			ranges = seg.Segment(string(src[i:j]))
+		}
+		switch {
+		case !cjk:
+			flush(i, j)
+		case coversRun(ranges, j-i):
+			for _, r := range ranges {
+				flush(i+r[0], i+r[1])
+			}
+		default:
+			for k := i; k < j; k++ {
+				flush(k, k+1)
+			}
+		}
+		i = j
+	}
+	parts[0].BlockStart = w.BlockStart
+	return parts
 }
 
 // CLSID returns the vocab id of [CLS].
