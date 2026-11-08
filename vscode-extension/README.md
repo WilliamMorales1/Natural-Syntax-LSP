@@ -4,9 +4,9 @@ Colors prose by part of speech, contextual meaning, or dependency relation, usin
 
 ![color highlighting and hover](https://raw.githubusercontent.com/WilliamMorales1/Natural-Syntax-LSP/master/docs/screenshotExample.png)
 
-- **POS mode** (default): BERT/MobileBERT part-of-speech tags, colored by your theme.
+- **POS mode** (default): BERT/MobileBERT part-of-speech tags (XLM-R for Spanish, French, Russian), colored by your theme.
 - **Semantic mode**: words used alike get similar colors (multilingual MiniLM embeddings).
-- **Dependency mode**: Universal Dependencies relations from a biaffine parser.
+- **Dependency mode**: Universal Dependencies relations from a biaffine parser (English, Spanish, French, Russian).
 
 Everything runs locally. The server binary and ONNX Runtime are bundled (Windows x64, Linux x64, macOS arm64).
 
@@ -19,10 +19,14 @@ scripts/setup.sh                     # POS, bert-base (~430 MB)
 scripts/setup.sh --model mobilebert  # POS, lighter (~105 MB)
 scripts/setup.sh --model xlmr-es      # POS, Spanish (~280 MB)
 scripts/setup.sh --model xlmr-fr      # POS, French (~280 MB)
+scripts/setup.sh --model xlmr-ru      # POS, Russian (~280 MB)
+scripts/setup.sh --model xlmr-ja      # POS, Japanese (~280 MB)
+scripts/setup.sh --model chinese-roberta-upos  # POS, Chinese (~410 MB)
 scripts/setup.sh --model multilingual-minilm  # semantic, 50+ languages (~470 MB)
 scripts/setup.sh --model en_ewt.electra-base  # dependency, English (~470 MB)
 scripts/setup.sh --model es_ancora.mbert  # dependency, Spanish (~750 MB)
 scripts/setup.sh --model fr_sequoia.camembert-large  # dependency, French (~350 MB)
+scripts/setup.sh --model ru_syntagrus.DeepPavlov  # dependency, Russian (~750 MB)
 ```
 
 On Windows use `scripts/setup.ps1 -Model <name>`. Models go to `%APPDATA%\natural-syntax-ls\` or `~/.config/natural-syntax-ls/`.
@@ -40,6 +44,8 @@ Then pick a mode with `naturalSyntaxLs.mode` and a matching `naturalSyntaxLs.mod
 | `naturalSyntaxLs.scoreThreshold` | `null` (0.333) | Minimum POS confidence to highlight |
 | `naturalSyntaxLs.tokenMapUpdate` | `{}` | Override POS to token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true` | Wiktionary definitions in hover |
+| `naturalSyntaxLs.wiktionaryLanguage` | `"detect,en"` | Hover definition language priority: `detect`, a code, `model`, `auto`, or a list |
+| `naturalSyntaxLs.langDir` | `""` | Extra directory of language `*.lua` scripts |
 | `naturalSyntaxLs.semanticLightness` | `0.75` | OKLCH lightness of semantic colors |
 | `naturalSyntaxLs.semanticChroma` | `0.14` | OKLCH chroma of semantic colors |
 

@@ -101,7 +101,7 @@ Mode and model are fixed when the server starts, picked by the `-mode`, `-model`
 | `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/multilingual_minilm/multilingual_minilm.onnx") }` |
 | `dependency` | `{ "natural-syntax-ls", "-mode", "dependency", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/en_ewt_electra_base_dependency/en_ewt_electra_base_dependency.onnx") }` |
 
-Swap `bert_base` for `mobilebert`, `xlmr_es`, or `xlmr_fr` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency` or `fr_sequoia_camembert_large_dependency`, to use other models.
+Swap `bert_base` for `mobilebert`, `xlmr_es`, `xlmr_fr`, `xlmr_ru`, `xlmr_ja` or `chinese_roberta_upos` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency`, `fr_sequoia_camembert_large_dependency` or `ru_syntagrus_DeepPavlov_dependency` (the slug keeps the model name's case), to use other models.
 
 To switch at runtime, use `:NSMode pos|semantic|dependency` (defined above).
 

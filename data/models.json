@@ -41,6 +41,21 @@
       "int8": true
     },
     {
+      "name": "xlmr-ja",
+      "mode": "pos",
+      "source": "wietsedv/xlm-roberta-base-ft-udpos28-ja",
+      "language": "ja",
+      "description": "Japanese",
+      "int8": true
+    },
+    {
+      "name": "chinese-roberta-upos",
+      "mode": "pos",
+      "source": "KoichiYasuoka/chinese-roberta-base-upos",
+      "language": "zh",
+      "description": "Chinese, whole words"
+    },
+    {
       "name": "multilingual-minilm",
       "mode": "semantic",
       "source": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",

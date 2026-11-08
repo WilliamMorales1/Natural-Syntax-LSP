@@ -115,9 +115,8 @@ func benchCases(t *testing.T) []benchCase {
 	}
 	cases = append(
 		cases,
-		benchCase{"pos/ja", "pos", "ja", "wietsedv_xlm_roberta_base_ft_udpos28_ja", ml},
-		benchCase{"pos/zh", "pos", "zh", "wietsedv_xlm_roberta_base_ft_udpos28_zh", ml},
-		benchCase{"pos/zh-char", "pos", "zh", "KoichiYasuoka_chinese_roberta_base_upos", ml},
+		benchCase{"pos/ja", "pos", "ja", "xlmr_ja", ml},
+		benchCase{"pos/zh", "pos", "zh", "chinese_roberta_upos", ml},
 	)
 	for _, l := range []string{"es", "fr", "ja", "zh", "ru"} {
 		cases = append(cases, benchCase{"semantic/" + l, "semantic", l, "multilingual_minilm", ml})
@@ -168,10 +167,10 @@ func TestNvimBench(t *testing.T) {
 		if only != "" && !strings.Contains(c.name, only) {
 			continue
 		}
-		model := filepath.Join(c.dir, c.model+".onnx")
 		if c.dir == "" {
 			continue
 		}
+		model := filepath.Join(c.dir, "models", c.model, c.model+".onnx")
 		if _, err := os.Stat(model); err != nil {
 			t.Logf("skip %s: %v", c.name, err)
 			continue

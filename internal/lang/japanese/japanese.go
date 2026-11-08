@@ -12,7 +12,8 @@ import (
 // Language returns the Japanese hooks.
 func Language() lang.Language {
 	l := lang.Language{
-		Code: "ja",
+		Code:          "ja",
+		ModelPrefixes: []string{"xlmr_ja"},
 		Wiktionary: &lang.Wiktionary{
 			Code: "ja", Sections: []string{"Japanese"}, Wikitext: true, Script: unicode.Han,
 		},

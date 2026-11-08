@@ -9,7 +9,7 @@ import (
 
 // Language returns the Chinese hooks.
 func Language() lang.Language {
-	return lang.Language{Code: "zh", Wiktionary: &lang.Wiktionary{
+	return lang.Language{Code: "zh", ModelPrefixes: []string{"chinese_roberta"}, Wiktionary: &lang.Wiktionary{
 		Code: "zh", Sections: []string{"Chinese"}, Wikitext: true, Script: unicode.Han, Forms: forms,
 	}}
 }

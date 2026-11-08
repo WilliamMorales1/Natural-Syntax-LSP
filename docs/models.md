@@ -7,6 +7,8 @@
 | `xlmr-es` | `xlmr-es` | ~280 MB | POS | es | XLM-R UPOS, int8; 96.7% on AnCora |
 | `xlmr-fr` | `xlmr-fr` | ~280 MB | POS | fr | XLM-R UPOS, int8; 96.2% on GSD |
 | `xlmr-ru` | `xlmr-ru` | ~280 MB | POS | ru | XLM-R UPOS (Apache-2.0), int8; 93.0% on GSD (fp32 93.5%) |
+| `xlmr-ja` | `xlmr-ja` | ~280 MB | POS | ja | XLM-R UPOS, int8; 96.2% on GSD with kagome words (fp32 97.1%) |
+| `chinese-roberta-upos` | `chinese-roberta-upos` | ~410 MB | POS | zh | `KoichiYasuoka/chinese-roberta-base-upos` (Apache-2.0), whole words; 91.6% of characters on GSDSimp, fp32 only |
 | `multilingual-minilm` (default for semantic) | `multilingual-minilm` | ~470 MB | Semantic | 50+ | `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim |
 | `en_ewt.electra-base` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
 | `es_ancora.mbert` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
@@ -28,6 +30,8 @@ Measured through Neovim (`internal/e2e`, `NSLS_NVIM_BENCH=1`): time to first res
 | en `bert-base` POS | 0.45 s | 93 ms | 397 MB |
 | es / fr POS (int8) | 1.1 s | 62 ms | 450 MB |
 | ru POS (int8) | 1.0 s | 60 ms | 457 MB |
+| ja POS (int8, kagome words) | 3.3 s | 133 ms | 1037 MB |
+| zh POS (`chinese-roberta-upos`, fp32) | 0.46 s | 120 ms | 404 MB |
 | en `mpnet` semantic (removed) | 0.42 s | 90 ms | 385 MB |
 | multilingual MiniLM semantic | 0.8 s | 26-43 ms | 203 MB |
 | en electra dependency | 0.8 s | 130 ms | 684 MB |
@@ -38,7 +42,7 @@ Start-up is slower than English because of the 250k-piece vocabulary and tokeniz
 
 ## Semantic quality across languages
 
-`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQuality -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
+`NSLS_SEMANTIC_EVAL=1 NSLS_ML_DIR=... go test ./internal/inference -run TestSemanticQualityAcrossLanguages -v` (`semantic_eval_test.go`). Each language has a paragraph in the style of [semantic-example.txt](examples/semantic-example.txt): 24 target words in four groups (animals, food, technology, emotions). `sep` is mean between-group over mean within-group embedding distance, `colsep` the same on the colors after the per-document plane fit, `grp` leave-one-out nearest-centroid group accuracy (chance 0.25).
 
 | Model / language | sep | colsep | grp |
 | ---------------- | --- | ------ | --- |
@@ -58,17 +62,17 @@ Across languages, the nearest word in another language has the right group 99% o
 - Semantic mode encodes words that touch in the source (Japanese, Chinese, punctuation) without a word-start mark, as the encoder saw them in training. Before this, every tokenizer piece got its own mark, so katakana `キツネ` reached the model as `▁キ ▁ツ ▁ネ` (ja 0.17, zh 0.88).
 - Pieces are still the unit that gets a color: a katakana word split into several pieces shows several colors, though they now come from the right context.
 
-## Other languages (experimental)
+## Other languages
 
-The Spanish, French, and multilingual models above have setup names. Anything else (Japanese and Chinese POS, other treebanks) can be exported by hand: use an explicit `--mode` and a Hugging Face repo id; the model name on disk is the repo id with `-`, `.`, `/` → `_`. SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it.
+The models in the table above have setup names. Anything else (other treebanks, other UD languages) can be exported by hand: use an explicit `--mode` and a Hugging Face repo id; the model name on disk is the repo id with `-`, `.`, `/` → `_`. SentencePiece models ship `{slug}_tokenizer.json` instead of `{slug}_vocab.txt`. Run the server with `-model <path>.onnx`; the tokenizer file is found next to it.
 
 | Language | Mode | Export |
 | -------- | ---- | ------ |
-| es, fr, ja, zh | POS (UPOS mapped onto the Penn token types) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ja`, `-zh`) |
-| zh | POS, whole words (character-level B-/I- tagger) | `--mode pos --model KoichiYasuoka/chinese-roberta-base-upos` (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
+| es, fr, ru, ja, zh | POS (UPOS mapped onto the Penn token types; all but zh are catalog entries `xlmr-<code>`) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ru`, `-ja`, `-zh`) |
+| zh | POS, whole words (character-level B-/I- tagger) | `chinese-roberta-upos` in the catalog (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
 | all | Semantic | `--mode semantic --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
 | es, fr, ru | Dependency | `--mode dependency --model es_ancora.mbert`, `fr_sequoia.camembert-large` or `ru_syntagrus.DeepPavlov` (needs `diaparser`) |
 
 Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Kanji-only text cannot be told from Chinese and also uses pieces.
 
-The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `KoichiYasuoka/chinese-roberta-base-upos`: it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. Use it with `-vocab` pointing at its `_vocab.txt`. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level). No Japanese or Chinese dependency parser is wired up yet.
+The XLM-R Chinese model tags the multi-character pieces of its SentencePiece vocabulary, which can fuse a particle or preposition with its noun (79.2% of characters on GSDSimp). Prefer `chinese-roberta-upos` (`KoichiYasuoka/chinese-roberta-base-upos`): it tags each character as `B-`, `I-` or a plain UPOS label, and the server joins `I-` characters to the word before them, so tokens are whole words (`北京`, `大学`, `自然`, `语言`) and 91.6% of characters get the right tag. The vocab file is found next to the model. int8 (`scripts/quantize_model.py`) cuts it from 438 MB to 104 MB and RSS from 397 to 218 MB, but accuracy drops to 86.5%, so keep fp32 unless memory is tight. Neovim edit latency: 108 ms fp32, 81 ms int8. Traditional Chinese scored the same in the Python test (91.1% word level). No Japanese or Chinese dependency parser is wired up yet.
