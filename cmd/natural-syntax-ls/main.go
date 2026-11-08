@@ -33,6 +33,7 @@ func run() error {
 	modeFlag := flag.String("mode", "pos", "Highlighting mode: pos, semantic, or dependency")
 	forced := flag.String("lang", "", "Language code (en, fr, es, ...) that replaces detection and picks that language's model when -model is not given; empty detects per line")
 	threads := flag.Int("threads", 0, "ORT threads per inference chunk (0 = auto from physical cores)")
+	idle := flag.Duration("idle-unload", inference.DefaultIdleUnload, "Free a model's weights after it sits unused this long; reloaded on next edit (0 = never)")
 	langDir := flag.String("lang-dir", "", "Extra directory of language *.lua scripts, loaded last, after <exe dir>/lang, <model dir>/lang and <config dir>/natural-syntax-ls/lang")
 	_ = flag.Bool("stdio", false, "Use stdio transport (default; accepted for LSP client compatibility)")
 	flag.Parse()
@@ -100,6 +101,7 @@ func run() error {
 	}
 
 	inference.SetIntraOpThreads(*threads)
+	inference.SetIdleUnload(*idle)
 	scriptDirs := []string{filepath.Join(repoData, "lang"), filepath.Join(exeDir, "lang"), filepath.Join(filepath.Dir(*modelPath), "lang"), filepath.Join(dataDir, "lang"), *langDir}
 	languages := builtin.Languages(scriptDirs...)
 

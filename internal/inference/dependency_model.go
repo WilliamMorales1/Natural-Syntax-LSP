@@ -18,7 +18,7 @@ import (
 
 // DependencyModel runs a biaffine dependency-parsing ONNX model (BERT + BiLSTM + biaffine arc/relation scorers; see scripts/export_model.py).
 type DependencyModel struct {
-	session  *ort.DynamicAdvancedSession
+	session  *idleSession
 	tok      *tokHolder
 	rels     []postag.Deprel // index → decoded Deprel, loaded from _dependency_rels.json; index 0 is the unused "<bos>" placeholder
 	wordPart int             // index of the "wp" relation of character-level models, else 0
@@ -58,13 +58,13 @@ func NewDependencyModel(modelPath, vocabPath string, opts ...tokenizer.Option) (
 		return nil, fmt.Errorf("load dependency rel labels: %w", err)
 	}
 
-	session, err := newDynamicSession(modelPath,
+	session, err := newIdleSession(modelPath,
 		[]string{"input_ids", "attention_mask", "pool_matrix"},
 		[]string{"arc_logits", "rel_logits"},
 	)
 	if err != nil {
 		releaseEnv()
-		return nil, fmt.Errorf("create ort session: %w", err)
+		return nil, err
 	}
 
 	return &DependencyModel{session: session, tok: newTokHolder(tok, vocabPath), rels: rels, wordPart: max(wordPart, 0)}, nil

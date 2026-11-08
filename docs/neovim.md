@@ -26,6 +26,10 @@ vim.lsp.config("natural_syntax_ls", {
   root_dir = function(_, on_dir)
     on_dir(vim.fn.getcwd())
   end,
+  -- One server per Neovim; matching on root_dir would start another (and load its models again) after every :cd.
+  reuse_client = function(client, config)
+    return client.name == config.name and not client:is_stopped()
+  end,
   handlers = {
     -- Semantic mode sends hex colors in a custom notification instead of semantic tokens.
     ["$/nls/semanticColors"] = function(_, result)
@@ -126,6 +130,8 @@ To switch at runtime, use `:NSMode pos|semantic|dependency` (defined above).
 Semantic mode emits no semantic tokens. The server pushes each word's hex color in a custom `$/nls/semanticColors` notification instead (`{ uri, tokens = { { line, character, length, color } } }`, columns in codepoints). Neovim drops unknown notifications, so the config above includes a handler that paints them as extmarks.
 
 The server re-pushes after every edit, so colors catch up once inference finishes. Tune them with `initializationOptions = { semantic_lightness = 0.6, semantic_chroma = 0.14 }` (lower lightness for light colorschemes).
+
+`-idle-unload 5m` (the default) frees a model's weights once it has gone that long without an edit to analyse, so an idle Neovim holds about 70 MB instead of 0.4-2 GB; the next edit reloads it in about a second. `0` keeps models loaded.
 
 `-threads N` sets ONNX Runtime threads per chunk; the default (0) uses the physical core count, capped at 4, and runs chunks in parallel on any cores left over.
 

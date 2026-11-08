@@ -18,7 +18,7 @@ const ChunkSize = 200
 
 // baseModel holds the ONNX session shared by BERT-style token models (POSModel, EmbeddingModel); inputs are sized to each chunk, never padded.
 type baseModel struct {
-	session    *ort.DynamicAdvancedSession
+	session    *idleSession
 	tok        *tokHolder
 	outputName string
 	lastDim    int64
@@ -125,13 +125,13 @@ func newBaseModel(modelPath, vocabPath, outputName string, lastDim int64, opts .
 	if err != nil {
 		return nil, err
 	}
-	session, err := newDynamicSession(modelPath,
+	session, err := newIdleSession(modelPath,
 		[]string{"input_ids", "attention_mask", "token_type_ids"},
 		[]string{outputName},
 	)
 	if err != nil {
 		releaseEnv()
-		return nil, fmt.Errorf("create ort session: %w", err)
+		return nil, err
 	}
 	return &baseModel{session: session, tok: newTokHolder(tok, vocabPath), outputName: outputName, lastDim: lastDim}, nil
 }
