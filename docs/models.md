@@ -14,8 +14,8 @@
 | `es_ancora.mbert` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
 | `fr_sequoia.camembert-large` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
 | `ru_syntagrus.DeepPavlov` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
-| `zh_ud.mbert` | `zh_ud.mbert` | ~470 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); fp32 only; UAS/LAS 85.6 / 82.3 on GSD |
-| `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.2 / 84.9 on GSD with kagome words (fp32 89.3 / 84.9). Needs `fugashi` and `unidic-lite` at export time |
+| `zh_ud.mbert` | `zh_ud.mbert` | ~470 MB | Dependency | zh | Character-level diaparser trained here (CC BY-SA 4.0, [Hydragon123/zh-ud-diaparser](https://huggingface.co/Hydragon123/zh-ud-diaparser)); fp32 only; UAS/LAS 86.9 / 83.3 on the full GSD test set (500 sentences) |
+| `ja_gsd.mbert` | `ja_gsd.mbert` | ~120 MB | Dependency | ja | int8; UAS/LAS 89.5 / 85.5 on the full GSD test set (543 sentences) with kagome words. Needs `fugashi` and `unidic-lite` at export time |
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
 

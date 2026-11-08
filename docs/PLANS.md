@@ -8,20 +8,19 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows checks run in the GitHub Actions workflow (`.github/workflows/ci.yml`), heavy exports run on Colab, VS Code is installed.
 
-1. ja and zh dependency: full GSD test set, then hover and semantic-token check.
-2. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
-3. Test `setup.ps1` and the Lua script loading on Windows.
-4. Auto-detect never switches the model (German file gets English tags).
-5. Arabic hover: strip `ال` and tashkeel.
-6. Wiktionary lemma lookup for ru and ar inflected forms.
-7. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-8. Evaluate ja int8 POS with kagome words.
-9. Katakana pieces in semantic mode show one color per piece.
-10. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-11. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-12. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-13. Benchmark on another platform, with hover on.
-14. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. VS Code checks: semantic tokens, hover, edits, definitions, ja/zh hover.
+2. Test `setup.ps1` and the Lua script loading on Windows.
+3. Auto-detect never switches the model (German file gets English tags).
+4. Arabic hover: strip `ال` and tashkeel.
+5. Wiktionary lemma lookup for ru and ar inflected forms.
+6. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+7. Evaluate ja int8 POS with kagome words.
+8. Katakana pieces in semantic mode show one color per piece.
+9. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+10. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+11. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+12. Benchmark on another platform, with hover on.
+13. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -31,7 +30,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Katakana words in semantic mode show one color per piece. Kagome gives whole words but one word was still off.
 - ja int8 POS with kagome words: not evaluated.
-- ja and zh dependency: measured on 300 sentences only; run the full GSD test set and a hover/semantic-token check in an editor.
+- Dependency mode has no POS, so definitions pick senses from the relation alone: ja `私` (nsubj) shows the noun sense "a personal or private matter", `本` and `読み` show rare senses. Use the lemma or a coarse POS guess.
 - zh dependency int8 loses about 5 points (UAS 85.6 to 80.0). Try quantizing only the encoder, or per-channel.
 - `KoichiYasuoka/deberta-base-japanese-wikipedia-luw-upos`: untested (LUW B-/I- tags over char-sized Unigram pieces, would need piece merging after tagging).
 
