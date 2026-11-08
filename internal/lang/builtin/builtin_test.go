@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"natural-syntax-ls/internal/lang"
@@ -12,7 +13,7 @@ import (
 )
 
 // repoLang is the shipped script directory, which setup scripts copy into the config dir.
-const repoLang = "../../../lang"
+const repoLang = "../../../data/lang"
 
 func byCode(t *testing.T, code string, dirs ...string) lang.Language {
 	t.Helper()
@@ -30,12 +31,12 @@ func TestScriptedLanguagesLoad(t *testing.T) {
 	for _, l := range Languages(repoLang) {
 		codes = append(codes, l.Code)
 	}
-	for _, want := range []string{"en", "fr", "es", "ru", "ar"} {
+	for _, want := range []string{"en", "fr", "es", "ru"} {
 		if !slices.Contains(codes, want) {
 			t.Errorf("missing %q in %q", want, codes)
 		}
 	}
-	if !slices.Equal(codes[:5], []string{"en", "fr", "es", "ru", "ar"}) {
+	if !slices.Equal(codes[:4], []string{"en", "fr", "es", "ru"}) {
 		t.Errorf("order = %q", codes)
 	}
 }
@@ -44,7 +45,7 @@ func TestForModel(t *testing.T) {
 	langs := Languages(repoLang)
 	for in, want := range map[string]string{
 		"xlmr_ru_pos.onnx": "ru", "/m/XLMR_RU_int8.onnx": "ru", "ru_syntagrus.onnx": "ru",
-		"xlmr_ar_pos.onnx": "ar", "ar_padt.onnx": "ar", "xlmr_es.onnx": "es", "es_ancora.mbert.onnx": "es",
+		"xlmr_es.onnx": "es", "es_ancora.mbert.onnx": "es",
 		"xlmr_fr.onnx": "fr", "fr_sequoia.camembert.onnx": "fr", "bert_base.onnx": "", "multilingual_minilm.onnx": "",
 	} {
 		if got := lang.ForModel(langs, in); got != want {
@@ -62,18 +63,6 @@ func TestRussianForms(t *testing.T) {
 	}
 	if got := forms("дом"); len(got) != 0 {
 		t.Errorf("Forms(дом) = %q, want none", got)
-	}
-}
-
-func TestArabicForms(t *testing.T) {
-	forms := byCode(t, "ar").Wiktionary.Forms
-	for in, want := range map[string]string{"وَالْكِتَاب": "والكتاب", "كـتـاب": "كتاب", "مُحَمَّد": "محمد"} {
-		if got := forms(in); !slices.Contains(got, want) {
-			t.Errorf("Forms(%q) = %q, want it to contain %q", in, got, want)
-		}
-	}
-	if got := forms("كتاب"); len(got) != 0 {
-		t.Errorf("Forms(كتاب) = %q, want none", got)
 	}
 }
 
@@ -150,5 +139,28 @@ func TestDirOverridesByCode(t *testing.T) {
 	}
 	if got := lang.ForModel(langs, "xlmr_fr.onnx"); got != "fr" {
 		t.Errorf("fr lost: %q", got)
+	}
+}
+
+func TestElisionsOnlyInDetectedFrench(t *testing.T) {
+	const tiny = `{"model": {"type": "Unigram", "unk_id": 1, "vocab": [
+  ["[CLS]", 0], ["[UNK]", 0], ["[SEP]", 0], ["l'", -4], ["ami", -5], ["a", -9], ["m", -9], ["i", -9]]},
+ "pre_tokenizer": {"type": "Whitespace"},
+ "post_processor": {"single": [{"SpecialToken": {"id": "[CLS]"}}, {"Sequence": {"id": "A"}}, {"SpecialToken": {"id": "[SEP]"}}]}}`
+	path := filepath.Join(t.TempDir(), "m_tokenizer.json")
+	if err := os.WriteFile(path, []byte(tiny), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := tokenizer.Open(path, lang.TokenizerOptions(Languages(repoLang), "")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, w := range tok.Tokenize("Le renard saute par-dessus le chien, et l'ami regarde.\nThe quick brown fox jumps over the lazy dog, and l'ami watches.") {
+		got = append(got, w.Text)
+	}
+	joined := " " + strings.Join(got, " ") + " "
+	if !strings.Contains(joined, " l' ami regarde") || !strings.Contains(joined, " l ' ami watches") {
+		t.Errorf("tokens = %q", got)
 	}
 }

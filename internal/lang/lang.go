@@ -4,8 +4,10 @@ package lang
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"natural-syntax-ls/internal/langid"
 	"natural-syntax-ls/internal/tokenizer"
 )
 
@@ -36,11 +38,25 @@ func ForModel(langs []Language, modelPath string) string {
 	return ""
 }
 
-// TokenizerOptions gathers the tokenizer options of langs.
-func TokenizerOptions(langs []Language) []tokenizer.Option {
-	var opts []tokenizer.Option
+// TokenizerOptions gathers the tokenizer options of langs. A language the detector knows gets its options only on text detected as that language; others apply everywhere.
+// A non-empty forced code replaces detection: every text counts as that language.
+func TokenizerOptions(langs []Language, forced string) []tokenizer.Option {
+	known := langid.Languages()
+	detect := langid.Detect
+	if forced != "" {
+		known = append(known, forced)
+		detect = func(string) string { return forced }
+	}
+	opts := []tokenizer.Option{tokenizer.WithDetector(detect)}
 	for _, l := range langs {
-		opts = append(opts, l.Tokenizer...)
+		if len(l.Tokenizer) == 0 {
+			continue
+		}
+		if slices.Contains(known, l.Code) {
+			opts = append(opts, tokenizer.WithLanguage(l.Code, l.Tokenizer...))
+		} else {
+			opts = append(opts, l.Tokenizer...)
+		}
 	}
 	return opts
 }

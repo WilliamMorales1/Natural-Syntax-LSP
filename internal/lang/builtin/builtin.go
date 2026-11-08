@@ -9,7 +9,7 @@ import (
 )
 
 // order fixes the "auto" Wiktionary lookup order; other codes follow in load order.
-var order = []string{"en", "fr", "es", "ru", "ar", "ja", "zh"}
+var order = []string{"en", "fr", "es", "ru", "ja", "zh"}
 
 // Languages returns the native languages, then the *.lua files found in dirs; a later definition replaces an earlier one with the same code.
 func Languages(dirs ...string) []lang.Language {
