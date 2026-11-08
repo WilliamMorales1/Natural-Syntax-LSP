@@ -10,9 +10,8 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 
 1. Auto-detect never switches the model (German file gets English tags).
 2. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-3. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-4. Benchmark on another platform, with hover on.
-5. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+3. Benchmark on another platform, with hover on.
+4. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -66,7 +65,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ## Language identification
 
-- Hover has no previous-line smoothing. Needs document line history.
 - Wikipedia text was not used for training.
 - `docs/settings.md` accuracy ranges are rounded.
 - 6-12 character accuracy for Latin-script languages is 87-94%.

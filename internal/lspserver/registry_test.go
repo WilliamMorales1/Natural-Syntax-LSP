@@ -547,3 +547,28 @@ func TestHoverWaitsForUnanalysedChunk(t *testing.T) {
 		t.Fatalf("hover = %+v, %v", o.res, o.err)
 	}
 }
+
+func TestShortLineBorrowsEarlierLanguage(t *testing.T) {
+	detect := func(s string) string {
+		switch {
+		case strings.Contains(s, "bonjour"):
+			return "fr"
+		case strings.Contains(s, "hello"):
+			return "en"
+		}
+		return ""
+	}
+	doc := &document{text: "bonjour tout le monde\nok\n\nhello there\nhm"}
+	for _, c := range []struct {
+		off  int
+		want string
+	}{{0, "fr"}, {22, "fr"}, {28, "en"}, {40, "en"}} {
+		if got := doc.lineLanguage(c.off, detect); got != c.want {
+			t.Errorf("offset %d: %q, want %q", c.off, got, c.want)
+		}
+	}
+	far := &document{text: "bonjour\n1\n2\n3\n4\n5\n6\nx"}
+	if got := far.lineLanguage(len([]rune(far.text))-1, detect); got != "" {
+		t.Errorf("beyond lookback = %q, want none", got)
+	}
+}

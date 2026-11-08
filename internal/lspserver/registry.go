@@ -51,16 +51,29 @@ func (d *document) language(detect func(string) string) string {
 // docSample caps how much of a text is read to guess its language.
 const docSample = 4000
 
-// lineText returns the text of the line holding the rune offset.
-func (d *document) lineText(offset int) string {
+// lineN returns the text of line n.
+func (d *document) lineN(n int) string {
 	ix := d.lineIndex()
-	n := ix.lineOf(offset)
 	end := len(ix.runes)
 	if n+1 < len(ix.starts) {
 		end = ix.starts[n+1]
 	}
 	return string(ix.runes[ix.starts[n]:end])
 }
+
+// lineLanguage names the language of the line holding offset. A line too short to tell borrows the nearest earlier line that can, within lookback lines, so a one-word line in a French paragraph stays French.
+func (d *document) lineLanguage(offset int, detect func(string) string) string {
+	n := d.lineIndex().lineOf(offset)
+	for i := n; i >= 0 && i >= n-lookback; i-- {
+		if l := detect(d.lineN(i)); l != "" {
+			return l
+		}
+	}
+	return ""
+}
+
+// lookback bounds how many earlier lines a short line may borrow its language from.
+const lookback = 5
 
 // lineIndex returns the document's line index, building it once per document.
 func (d *document) lineIndex() *lineIndex {
@@ -352,7 +365,7 @@ func tokenAt(doc *document, line, character uint32, detect func(string) string) 
 		return nil
 	}
 	tok := doc.tokens[i]
-	res := &hoverQueryResult{tok: &tok, language: detect(doc.lineText(off))}
+	res := &hoverQueryResult{tok: &tok, language: doc.lineLanguage(off, detect)}
 	if res.language == "" {
 		res.language = doc.language(detect)
 	}
