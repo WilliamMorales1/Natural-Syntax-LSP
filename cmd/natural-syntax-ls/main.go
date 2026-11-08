@@ -57,11 +57,11 @@ func run() error {
 	repoData := filepath.Join(exeDir, "..", "data")
 	dirs := []string{dataDir, exeDir}
 
+	catalog, err := models.Load(repoData, exeDir, dataDir)
+	if err != nil {
+		return fmt.Errorf("read model catalog: %w", err)
+	}
 	if *modelPath == "" {
-		catalog, err := models.Load(repoData, exeDir, dataDir)
-		if err != nil {
-			return fmt.Errorf("read model catalog: %w", err)
-		}
 		var candidates []string
 		for _, stem := range catalog.StemsFor(string(mode), *forced) {
 			for _, dir := range dirs {
@@ -111,6 +111,7 @@ func run() error {
 		Language:  modelLanguage(languages, *modelPath, *forced),
 		Forced:    *forced,
 		Languages: languages,
+		Switch:    switchFor(catalog, mode, *modelPath, *forced, dirs),
 	}); err != nil {
 		return fmt.Errorf("lsp: %w", err)
 	}
@@ -159,6 +160,45 @@ func matchesLang(c models.Catalog, code, modelPath string) bool {
 	for _, m := range c.Models {
 		if m.Stem() == base && (m.Language == code || m.Language == "") {
 			return true
+		}
+	}
+	return false
+}
+
+// switchFor returns the per-language model lookup, or nil when the configured model is not an English one: a model picked for another language is the user's choice and stays.
+func switchFor(c models.Catalog, mode lspserver.Mode, modelPath, forced string, dirs []string) func(string) (string, string) {
+	if forced != "" || !isEnglishModel(c, modelPath) {
+		return nil
+	}
+	return func(code string) (string, string) {
+		for _, m := range c.Models {
+			if m.Mode != string(mode) || m.Language != code {
+				continue
+			}
+			stem := m.Stem()
+			var candidates []string
+			for _, dir := range dirs {
+				candidates = append(candidates, filepath.Join(dir, "models", stem, stem+".onnx"), filepath.Join(dir, stem+".onnx"))
+			}
+			path := findFile(candidates...)
+			if path == "" {
+				continue
+			}
+			base := strings.TrimSuffix(path, ".onnx")
+			if vocab := findFile(base+"_vocab.txt", base+"_tokenizer.json"); vocab != "" {
+				return path, vocab
+			}
+		}
+		return "", ""
+	}
+}
+
+// isEnglishModel reports whether the catalog marks modelPath as an English model.
+func isEnglishModel(c models.Catalog, modelPath string) bool {
+	base := strings.TrimSuffix(filepath.Base(modelPath), ".onnx")
+	for _, m := range c.Models {
+		if m.Stem() == base {
+			return m.Language == "en"
 		}
 	}
 	return false

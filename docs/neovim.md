@@ -145,4 +145,4 @@ Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's
 - detection is switched off, so the tokenizer rules in `lang/es.lua`-style scripts and the hover lookup treat all text as that language;
 - hover definitions use `es,en`.
 
-`:NSLang auto` returns to per-line detection and the default models. `:NSMode` keeps the forced language. The server flag is `-lang CODE`.
+`:NSLang auto` returns to per-line detection and the default models; with an English model, a document in another language is switched to that language's installed model (see settings.md, Language detection). `:NSMode` keeps the forced language. The server flag is `-lang CODE`.

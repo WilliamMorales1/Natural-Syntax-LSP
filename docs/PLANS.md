@@ -8,10 +8,9 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
-1. Auto-detect never switches the model (German file gets English tags).
-2. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-3. Benchmark on another platform, with hover on.
-4. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+1. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+2. Benchmark on another platform, with hover on.
+3. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -58,7 +57,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 ## New-language workflow
 
-- Auto-detect never switches the model, so a German file under the default setup gets English POS tags. Only `:NSLang` changes models.
+- Model switching follows the whole document's language; a mixed-language file gets one model.
 - Arabic hover now strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms and other clitics still miss.
 - Semantic mode has no POS, so homographs pick the wrong sense (`amico`, `faulen`, `كلب`).
 - No Portuguese diaparser parser found; dependency mode has no pt model.

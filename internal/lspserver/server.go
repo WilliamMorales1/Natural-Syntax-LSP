@@ -81,6 +81,8 @@ type Config struct {
 	Language  string          // Wiktionary code of the model's language ("" when English or multilingual)
 	Forced    string          // language code that replaces detection for tokenizing and hover; "" detects
 	Languages []lang.Language // language hooks for the tokenizer and Wiktionary
+	// Switch names the installed model and vocab for a detected language; nil keeps one model for every text.
+	Switch func(code string) (modelPath, vocabPath string)
 }
 
 // Run starts the LSP server over stdin/stdout and blocks until the client disconnects or sends exit.
@@ -107,6 +109,7 @@ type lspServer struct {
 
 	loadStarted atomic.Bool
 	predictor   predictor // owned by the server; set before ready closes
+	switcher    *switcher // nil unless cfg.Switch is set
 	shutdown    atomic.Bool
 	writeErr    atomic.Pointer[error] // first transport write failure
 
@@ -132,6 +135,9 @@ func (s *lspServer) closeModel() {
 	<-s.ready
 	if reg := s.registry.Load(); reg != nil {
 		reg.Close()
+	}
+	if s.switcher != nil {
+		s.switcher.close()
 	}
 	if s.predictor != nil {
 		if err := s.predictor.Close(); err != nil {
@@ -329,6 +335,15 @@ func (s *lspServer) loadModel(rawOpts *json.RawMessage) {
 	if s.cfg.Forced != "" {
 		forced := s.cfg.Forced
 		reg.detect = func(string) string { return forced }
+	}
+	if s.cfg.Switch != nil && s.cfg.Forced == "" {
+		sw := newSwitcher(s.cfg)
+		s.switcher = sw
+		reg.pick = func(text string, cur predictor) predictor { return sw.pick(text, cur, pred) }
+		sw.onReady = func() {
+			reg.refresh()
+			s.sendRequest("workspace/semanticTokens/refresh")
+		}
 	}
 	if s.cfg.Mode == ModeSemantic {
 		// O → nil so encodeSemanticTokens emits nothing; colors come via semanticColors push instead.

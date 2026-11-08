@@ -572,3 +572,44 @@ func TestShortLineBorrowsEarlierLanguage(t *testing.T) {
 		t.Errorf("beyond lookback = %q, want none", got)
 	}
 }
+
+type fixedTagModel struct{ tag postag.PartOfSpeech }
+
+func (m fixedTagModel) PredictChunk(words []tokenizer.WordSpan) ([]postag.Token, error) {
+	toks := make([]postag.Token, 0, len(words))
+	for _, w := range words {
+		toks = append(toks, postag.Token{Word: w.Text, Score: 1, Tag: m.tag, OffsetBegin: w.Begin, OffsetEnd: w.End})
+	}
+	return toks, nil
+}
+
+func (fixedTagModel) Close() error { return nil }
+
+func TestRegistrySwitchesModelAndRefreshes(t *testing.T) {
+	base, alt := fixedTagModel{postag.NN}, fixedTagModel{postag.VB}
+	reg := newDocumentRegistry(base)
+	ready := false
+	reg.pick = func(text string, cur predictor) predictor {
+		if ready && strings.Contains(text, "hund") {
+			return alt
+		}
+		return cur
+	}
+	const text = "der hund läuft schnell."
+	before := syncTokens(reg, text, 1)
+	if got := reg.stores[testURI].model; got != predictor(base) {
+		t.Fatalf("model before load = %v, want base", got)
+	}
+	ready = true
+	reg.refresh()
+	after, err := reg.semanticTokens(t.Context(), testURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.stores[testURI].model != predictor(alt) {
+		t.Fatal("document did not move to the switched model")
+	}
+	if slices.Equal(before, after) {
+		t.Error("tokens unchanged after switching model")
+	}
+}

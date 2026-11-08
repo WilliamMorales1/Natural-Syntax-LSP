@@ -109,6 +109,9 @@ type chunkResult struct {
 type documentStore struct {
 	queued        *textItem
 	queuedWords   []tokenizer.WordSpan
+	queuedModel   predictor
+	model         predictor // model of the pass in flight or last finished; nil before the first
+	lastItem      *textItem // latest accepted text, for re-running under another model
 	processing    bool
 	doc           *document
 	run           *run // in-flight pass while processing
@@ -141,8 +144,9 @@ type documentRegistry struct {
 	threshold  float64
 	workers    int // parallel chunk predictions per document
 	stores     map[string]*documentStore
-	onDocReady func(uri string, doc *document) // called after each chunk and on completion
-	detect     func(text string) string        // names a text's language for hover
+	onDocReady func(uri string, doc *document)            // called after each chunk and on completion
+	detect     func(text string) string                   // names a text's language for hover
+	pick       func(text string, cur predictor) predictor // chooses the model for a text; nil keeps model
 }
 
 // newDocumentRegistry starts a registry around model; the caller keeps ownership of model.
@@ -185,13 +189,47 @@ func (dr *documentRegistry) do(f func()) bool {
 
 // update queues a new document version for prediction.
 func (dr *documentRegistry) update(item *textItem) {
-	var words []tokenizer.WordSpan
-	if tt, ok := dr.model.(textTokenizer); ok {
-		words = tt.Tokenize(item.text)
-	} else {
-		words = tokenizer.BasicTokenize(item.text)
+	m := dr.modelFor(item)
+	words := tokenizeWith(m, item.text)
+	dr.do(func() { dr.handleItem(item, words, m) })
+}
+
+// tokenizeWith splits text the way m dictates, else by the basic rules.
+func tokenizeWith(m predictor, text string) []tokenizer.WordSpan {
+	if tt, ok := m.(textTokenizer); ok {
+		return tt.Tokenize(text)
 	}
-	dr.do(func() { dr.handleItem(item, words) })
+	return tokenizer.BasicTokenize(text)
+}
+
+// modelFor picks the model that should analyse item's text.
+func (dr *documentRegistry) modelFor(item *textItem) predictor {
+	m := dr.model
+	dr.do(func() {
+		if st := dr.stores[item.uri]; st != nil && st.model != nil {
+			m = st.model
+		}
+		if dr.pick != nil {
+			m = dr.pick(item.text, m)
+		}
+	})
+	return m
+}
+
+// refresh re-runs every document whose preferred model changed, e.g. after a language's model finished loading.
+func (dr *documentRegistry) refresh() {
+	dr.do(func() {
+		for _, st := range dr.stores {
+			if st.lastItem == nil || st.model == nil || dr.pick == nil {
+				continue
+			}
+			m := dr.pick(st.lastItem.text, st.model)
+			if m == st.model && (st.queuedModel == nil || st.queuedModel == m) {
+				continue
+			}
+			dr.scheduleProcessing(st.lastItem, tokenizeWith(m, st.lastItem.text), m, st)
+		}
+	})
 }
 
 // discard drops all state for uri and releases requests waiting on it.
@@ -289,13 +327,14 @@ func (dr *documentRegistry) hover(ctx context.Context, uri string, line, charact
 	return tokenAt(doc, line, character, dr.detect), nil
 }
 
-func (dr *documentRegistry) handleItem(item *textItem, words []tokenizer.WordSpan) {
+func (dr *documentRegistry) handleItem(item *textItem, words []tokenizer.WordSpan, m predictor) {
 	store := dr.storeFor(item.uri)
 	if store.latestVersion >= item.version {
 		return
 	}
 	store.latestVersion = item.version
-	dr.scheduleProcessing(item, words, store)
+	store.lastItem = item
+	dr.scheduleProcessing(item, words, m, store)
 }
 
 func (dr *documentRegistry) handlePartialPredicted(uri string, chunkIdx int, cr *chunkResult) {
@@ -345,9 +384,9 @@ func (dr *documentRegistry) finalize(uri string, store *documentStore) {
 	}
 
 	if queued := store.queued; queued != nil {
-		words := store.queuedWords
-		store.queued, store.queuedWords = nil, nil
-		dr.scheduleProcessing(queued, words, store)
+		words, m := store.queuedWords, store.queuedModel
+		store.queued, store.queuedWords, store.queuedModel = nil, nil, nil
+		dr.scheduleProcessing(queued, words, m, store)
 	}
 }
 
@@ -383,15 +422,22 @@ func hasDependents(tokens []postag.Token, headBegin uint32) bool {
 	})
 }
 
-func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer.WordSpan, store *documentStore) {
+func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer.WordSpan, m predictor, store *documentStore) {
 	if store.processing {
 		store.queued = item
 		store.queuedWords = words
+		store.queuedModel = m
 		return
+	}
+	// Chunks and the color plane belong to one model, so a switch starts clean.
+	if store.model != m {
+		store.chunkResults = nil
+		store.plane = inference.SemanticPlane{}
+		store.model = m
 	}
 	store.processing = true
 	store.run = &run{done: make(chan struct{})}
-	store.queued, store.queuedWords = nil, nil
+	store.queued, store.queuedWords, store.queuedModel = nil, nil, nil
 	store.processingText = item.text
 	store.processingVersion = item.version
 
@@ -440,7 +486,7 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 		for range dr.workers {
 			wg.Go(func() {
 				for i := range jobs {
-					cr := dr.predictChunk(chunks[i], threshold)
+					cr := dr.predictChunk(m, chunks[i], threshold)
 					dr.do(func() { dr.handlePartialPredicted(uri, i, cr) })
 				}
 			})
@@ -455,14 +501,14 @@ func (dr *documentRegistry) scheduleProcessing(item *textItem, words []tokenizer
 }
 
 // predictChunk runs the model on one chunk; errors yield an empty result so the chunk still completes.
-func (dr *documentRegistry) predictChunk(words []tokenizer.WordSpan, threshold float64) *chunkResult {
+func (dr *documentRegistry) predictChunk(m predictor, words []tokenizer.WordSpan, threshold float64) *chunkResult {
 	var tokens []postag.Token
 	var embeds [][]float32
 	var err error
-	if dr.embedder != nil {
-		tokens, embeds, err = dr.embedder.EmbedChunk(words)
+	if emb, ok := m.(embedder); ok && dr.embedder != nil {
+		tokens, embeds, err = emb.EmbedChunk(words)
 	} else {
-		tokens, err = dr.model.PredictChunk(words)
+		tokens, err = m.PredictChunk(words)
 	}
 	if err != nil {
 		tokens, embeds = nil, nil

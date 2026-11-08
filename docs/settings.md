@@ -21,6 +21,7 @@
 The server embeds a small language detector (a linear model over hashed character n-grams and words, 1.7 MB, about 11 microseconds per line; en, fr, es, de, it, pt, ru, ja, zh, ar, ca, uk, ko). Nothing needs configuring:
 
 - Hover looks the word up in the language of its line (`detect`). A line too short to tell borrows the nearest of the five lines above that can; failing that the whole document's language, then English.
+- With an English model configured (the default), a document detected as another language is analysed by that language's installed model for the current mode (`models.json`), loaded in the background on first use, so English tags show until it is ready. At most two extra models stay loaded; a text too short to tell keeps the model it had. Any non-English or multilingual `model` setting, and `:NSLang CODE`, disable switching.
 - Language-specific tokenizer rules (French elisions such as `l'ami`) apply only to lines detected as that language. When the language cannot be told, as with very short text, every rule applies.
 
 Retrain on Tatoeba per-language dumps (`<iso3>_sentences.tsv.bz2` from `downloads.tatoeba.org/exports/per_language/<iso3>/`) plus optional extra text, one sentence per line in `<code>.txt` (for example the `# text =` lines of UD treebank train files):
