@@ -226,7 +226,7 @@ Arabic:
 - Step 6 Neovim (X280, int8, `internal/e2e`): pos/ru ready 998 ms, edit 60 ms, RSS 457 MB; pos/ar ready 974 ms, edit 51 ms, RSS 451 MB; semantic/ru and /ar ready ~900 ms, edit 23-25 ms, RSS ~205 MB. Matches es/fr.
 - Step 7 Wiktionary (60 words, live, `NSLS_WIKT_NOFORMS=1` gives the baseline): ru pos hit 63.3 to 65.0, pipeline 60.0 to 61.7; ar pos 51.7 to 51.7, pipeline 38.3 to 40.0. Small gain, hooks kept. Most misses are inflected forms (ru `спортивной`, ar `الأكبر`, `للعدل`) and proper nouns; fixing that needs lemmatization, not done.
 - Step 8 done (README, `docs/models.md`, `docs/settings.md`). Bidi controls (U+200E/F, 061C, 202A-E, 2066-69) glued to words in `basicTokenize`; now word breaks (`isWordBreak`, test `internal/tokenizer/bidi_test.go`). Mixed Arabic/Latin/number lines tokenize correctly.
-- Open: ru/ar dependency parser search (diaparser catalog names unverified); Wiktionary lemma lookup for inflected ru/ar forms; Arabic clitic segmentation (decision: leave pieces).
+- Open: Wiktionary lemma lookup for inflected ru/ar forms; Arabic clitic segmentation (decision: leave pieces).
 
 # Lua-defined languages and models plan
 
@@ -293,3 +293,60 @@ return {
 - Ported Russian, Arabic, French output identical to Go versions on the test treebanks.
 - `go build` for all release targets still cgo-free; `go test -short -race ./...` passes.
 - Malicious or looping script fails that language only, with a logged error; server keeps running.
+
+# Russian and Arabic dependency parser plan
+
+Goal: find, export and evaluate a UD dependency parser for each of Russian and Arabic, or record why none ships. Follows the same checks the es and fr parsers passed.
+
+## Search
+
+1. List the diaparser catalog (`diaparser.parsers.Parser.get_available_models()` or its README table) for Russian (`ru_*`) and Arabic (`ar_*`) entries. Names are unverified; expect something like `ru_syntagrus.*` and `ar_padt.*`.
+2. If the catalog has none, search the Hugging Face Hub with `hub_repo_search` for UD biaffine or token-classification-style parsers (`ru`, `ar`; tags `dependency-parsing`, `udpipe`, `trankit`). Parsers that are not biaffine or need a non-BERT encoder are out of scope unless they export to the same 3-input/2-output graph (`input_ids`, `attention_mask`, `pool_matrix` to `arc_logits`, `rel_logits`).
+3. Record for each candidate: encoder and tokenizer type (WordPiece or Unigram, both supported; SentencePiece BPE is not), model size, license, label set (UD or not), training treebank.
+
+## Acceptance for a candidate
+
+- Exports with `export_model.py --model <catalog name>` and runs through Go on test sentences with correct heads and relations.
+- Tokenizer is supported in Go. A parser whose encoder needs a morphological segmenter (as ja did with MeCab) is rejected.
+- Labels are UD, or a mapping exists. Unknown relations decode as no color, so check the label list against `postag.ParseDeprel` before anything else.
+- License allows redistribution of the export steps (users download weights themselves).
+- UAS/LAS on UD test (first 200 sentences, `TestEvalDependency` in `eval_test.go`) for fp32 and int8. Reject int8 if UAS drops more than a few points (the Spanish parser fell from 91 to 42).
+- Latency and memory in `internal/e2e` (`dependency/ru`, `dependency/ar`), expect fr-like figures if the encoder is large; must fit under 1.2 GB.
+
+## Language risks
+
+Russian:
+- SynTagRus is the large treebank, but check its license for derived models; GSD is the safer eval set (already used for POS).
+- Rich morphology means a large subword count per word; check the `maxSeqLen` truncation drops no words on test sentences.
+
+Arabic:
+- PADT splits clitics into syntactic words and diaparser models trained on it expect those words. Whole written words fed to the parser will score lower and attach wrongly. Options: leave as is and document, or add a clitic segmenter (costly, see the POS plan). Measure UAS/LAS with gold-segmented and raw input to size the gap before deciding.
+- Dependency relations may carry subtypes (`obl:arg`, `nmod:poss`); confirm `ParseDeprel` handles the `:` forms.
+
+## Steps
+
+1. Search and record candidates in the table below.
+2. Export the best candidate per language on Colab (per the compute rule), `--int8` and fp32.
+3. Write failing tests first: anchor (head, relation) pairs in `TestMultilingualDependency`, `ParseDeprel` cases for any new labels.
+4. Evaluate UAS/LAS, then latency and memory.
+5. Wire in: `export_model.py`, `setup.sh`, `setup.ps1` (`dependency-ru`, `dependency-ar`), extension enum, `ModelPrefixes` on the language packages (`ru_*`, `ar_*` file stems), `docs/models.md`, README.
+6. If nothing passes, write the reason here and stop; POS and semantic stay the shipped modes.
+
+## Candidates
+
+Search 2026-11-07, diaparser README (IWPT 2020 table). Encoder inferred from the name suffix; size, license and tokenizer type still to confirm from the checkpoint config.
+
+| Lang | Catalog name | Treebank | UAS / LAS (README) | Encoder | Verdict |
+| ---- | ------------ | -------- | ------------------ | ------- | ------- |
+| ru | `ru_syntagrus.DeepPavlov` | SynTagRus | 94.97 / 93.72 | DeepPavlov RuBERT (WordPiece, supported) | candidate; export next |
+| ar | `ar_padt.bert` | PADT | 87.75 / 83.25 | loads as English bert-base-uncased (30522 vocab, EWT) | rejected: README name is wrong |
+| ar | `ar_padt.asafaya` (real release asset, 1.4 GB) | PADT | - | asafaya Arabic BERT, 32k WordPiece | shipped, int8 |
+
+Results (first 200 UD test sentences, `TestEvalDependency`):
+
+| Lang | Treebank | fp32 UAS / LAS | int8 UAS / LAS | Ships |
+| ---- | -------- | -------------- | -------------- | ----- |
+| ru | GSD | 90.8 / 80.4 | 81.8 / 67.8 | fp32 (int8 loses 9 UAS) |
+| ar | PADT | 77.7 / 72.0 | 77.5 / 71.9 | int8 |
+
+Arabic scores whole written words against PADT heads at matching word starts, so clitic-attached words are not scored; the gap versus the README figure (87.75) is raw input, as predicted. Anchor tests in `TestMultilingualDependency` pass. Neovim (X280): dependency/ru fp32 ready 1213 ms, edit 125 ms, RSS 955 MB (peak 1118); dependency/ar int8 ready 1121 ms, edit 182 ms, RSS 494 MB. Wired: `setup.sh`/`setup.ps1` (`dependency-ru`, `dependency-ar`), extension enum, `ModelPrefixes` (`ru_syntagrus`, `ar_padt`), `docs/models.md`, `docs/install.md`. Lesson: verify a catalog name against the release assets (`gh api repos/Unipisa/diaparser/releases`) and check the exported vocab size before trusting it.

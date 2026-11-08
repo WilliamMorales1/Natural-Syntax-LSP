@@ -217,6 +217,12 @@ func TestMultilingualDependency(t *testing.T) {
 		{"fr_sequoia_camembert_large", "L'ami d'aujourd'hui lit un livre.", map[string][2]string{
 			"ami": {"lit", "nsubj"}, "livre": {"lit", "obj"},
 		}},
+		{"ru_syntagrus_DeepPavlov", "Красивая кошка ест свежую рыбу.", map[string][2]string{
+			"Красивая": {"кошка", "amod"}, "кошка": {"ест", "nsubj"}, "рыбу": {"ест", "obj"}, "свежую": {"рыбу", "amod"},
+		}},
+		{"ar_padt_asafaya", "يقرأ الولد الكتاب الجديد.", map[string][2]string{
+			"الولد": {"يقرأ", "nsubj"}, "الكتاب": {"يقرأ", "obj"}, "الجديد": {"الكتاب", "amod"},
+		}},
 	} {
 		t.Run(tc.slug+"/"+tc.text, func(t *testing.T) {
 			base := filepath.Join(dir, tc.slug+"_dependency")

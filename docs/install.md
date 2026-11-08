@@ -15,6 +15,8 @@ scripts/setup.sh --model multilingual  # semantic mode, paraphrase-multilingual-
 scripts/setup.sh --model dependency  # dependency mode, en_ewt.electra-base UD parser (~470 MB)
 scripts/setup.sh --model dependency-es  # Spanish parser, fp32 (~750 MB)
 scripts/setup.sh --model dependency-fr  # French parser, int8 (~350 MB)
+scripts/setup.sh --model dependency-ru  # Russian parser, fp32 (~750 MB)
+scripts/setup.sh --model dependency-ar  # Arabic parser, int8 (~330 MB)
 scripts/setup.sh --model all         # all models
 ```
 

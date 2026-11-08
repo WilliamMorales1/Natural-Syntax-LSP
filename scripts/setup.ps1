@@ -3,10 +3,10 @@
 .SYNOPSIS
     Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 .PARAMETER Model
-    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, or all.
+    Which model to export: bert-base (default), mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, dependency-ru, dependency-ar, or all.
 #>
 param(
-    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","pos-ru","pos-ar","multilingual","dependency","dependency-es","dependency-fr","all")]
+    [ValidateSet("bert-base","mobilebert","pos-es","pos-fr","pos-ru","pos-ar","multilingual","dependency","dependency-es","dependency-fr","dependency-ru","dependency-ar","all")]
     [string]$Model = "bert-base"
 )
 
@@ -155,6 +155,8 @@ function Export-Multilingual { Export-SemanticModel "multilingual-minilm" "multi
 function Export-DepEn  { Export-DependencyModel "en_ewt.electra-base" "English (~470 MB)" }
 function Export-DepEs  { Export-DependencyModel "es_ancora.mbert" "Spanish (fp32, ~750 MB)" }
 function Export-DepFr  { Export-DependencyModel "fr_sequoia.camembert-large" "French (int8, ~350 MB)" @("--int8") }
+function Export-DepRu  { Export-DependencyModel "ru_syntagrus.DeepPavlov" "Russian (fp32, ~750 MB)" }
+function Export-DepAr  { Export-DependencyModel "ar_padt.asafaya" "Arabic (int8, ~330 MB)" @("--int8") }
 
 switch ($Model) {
     "bert-base"     { Export-POSModel "bert-base"  "BERT-base POS (~400 MB)" }
@@ -167,6 +169,8 @@ switch ($Model) {
     "dependency"    { Export-DepEn }
     "dependency-es" { Export-DepEs }
     "dependency-fr" { Export-DepFr }
+    "dependency-ru" { Export-DepRu }
+    "dependency-ar" { Export-DepAr }
     "all"           {
         Export-POSModel "bert-base"  "BERT-base POS (~400 MB)"
         Export-POSModel "mobilebert" "MobileBERT POS (~100 MB)"
@@ -178,6 +182,8 @@ switch ($Model) {
         Export-DepEn
         Export-DepEs
         Export-DepFr
+        Export-DepRu
+        Export-DepAr
     }
 }
 

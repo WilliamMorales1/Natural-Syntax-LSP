@@ -232,7 +232,7 @@ func TestEvalDependency(t *testing.T) {
 		t.Skip("NSLS_EVAL unset")
 	}
 	dirs := evalDirs(t)
-	for lang, slug := range map[string]string{"es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large"} {
+	for lang, slug := range map[string]string{"es": "es_ancora_mbert", "fr": "fr_sequoia_camembert_large", "ru": "ru_syntagrus_DeepPavlov", "ar": "ar_padt_asafaya"} {
 		sents := loadTreebank(t, lang, evalLimit())
 		for variant, dir := range dirs {
 			base := filepath.Join(dir, slug+"_dependency")

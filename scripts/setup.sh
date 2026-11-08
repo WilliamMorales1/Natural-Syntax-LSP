@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build natural-syntax-ls: export ONNX model, copy ORT runtime, compile binary.
 #
-# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|pos-ru|pos-ar|multilingual|dependency|dependency-es|dependency-fr|all]
+# Usage: ./scripts/setup.sh [--model bert-base|mobilebert|pos-es|pos-fr|pos-ru|pos-ar|multilingual|dependency|dependency-es|dependency-fr|dependency-ru|dependency-ar|all]
 #   --model  Which model to export (default: bert-base)
 
 set -euo pipefail
@@ -24,13 +24,13 @@ done
 
 # Validate early.
 case "$MODEL" in
-bert-base | mobilebert | pos-es | pos-fr | pos-ru | pos-ar | multilingual | dependency | dependency-es | dependency-fr | all) ;;
+bert-base | mobilebert | pos-es | pos-fr | pos-ru | pos-ar | multilingual | dependency | dependency-es | dependency-fr | dependency-ru | dependency-ar | all) ;;
 minilm | mpnet)
     echo "ERROR: '$MODEL' was replaced by 'multilingual' (paraphrase-multilingual-MiniLM-L12-v2)." >&2
     exit 1
     ;;
 *)
-    echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, or all." >&2
+    echo "ERROR: Unknown model '$MODEL'. Use bert-base, mobilebert, pos-es, pos-fr, pos-ru, pos-ar, multilingual, dependency, dependency-es, dependency-fr, dependency-ru, dependency-ar, or all." >&2
     exit 1
     ;;
 esac
@@ -194,6 +194,8 @@ export_multilingual() { export_semantic_model multilingual-minilm "multilingual 
 export_dep_en() { export_dependency_model en_ewt.electra-base "English (en_ewt.electra-base, ~470 MB)"; }
 export_dep_es() { export_dependency_model es_ancora.mbert "Spanish (es_ancora.mbert, fp32, ~750 MB)"; }
 export_dep_fr() { export_dependency_model fr_sequoia.camembert-large "French (fr_sequoia.camembert-large, int8, ~350 MB)" --int8; }
+export_dep_ru() { export_dependency_model ru_syntagrus.DeepPavlov "Russian (ru_syntagrus.DeepPavlov, fp32, ~750 MB)"; }
+export_dep_ar() { export_dependency_model ar_padt.asafaya "Arabic (ar_padt.asafaya, int8, ~330 MB)" --int8; }
 
 case "$MODEL" in
 bert-base) export_pos_model bert-base "BERT-base POS (~400 MB)" ;;
@@ -206,6 +208,8 @@ multilingual) export_multilingual ;;
 dependency) export_dep_en ;;
 dependency-es) export_dep_es ;;
 dependency-fr) export_dep_fr ;;
+dependency-ru) export_dep_ru ;;
+dependency-ar) export_dep_ar ;;
 all)
     export_pos_model bert-base "BERT-base POS (~400 MB)"
     export_pos_model mobilebert "MobileBERT POS (~100 MB)"
@@ -217,6 +221,8 @@ all)
     export_dep_en
     export_dep_es
     export_dep_fr
+    export_dep_ru
+    export_dep_ar
     ;;
 esac
 

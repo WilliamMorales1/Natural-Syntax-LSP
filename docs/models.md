@@ -12,6 +12,8 @@
 | `dependency` (default for dependency) | `en_ewt.electra-base` | ~470 MB | Dependency | en | diaparser biaffine UD parser (ELECTRA-base encoder) |
 | `dependency-es` | `es_ancora.mbert` | ~750 MB | Dependency | es | fp32 only; int8 drops UAS from 91 to 42 |
 | `dependency-fr` | `fr_sequoia.camembert-large` | ~350 MB | Dependency | fr | int8; UAS/LAS 90.5 / 86.0 |
+| `dependency-ru` | `ru_syntagrus.DeepPavlov` | ~750 MB | Dependency | ru | fp32 only; UAS/LAS 90.8 / 80.4 on GSD (int8 81.8 / 67.8) |
+| `dependency-ar` | `ar_padt.asafaya` | ~330 MB | Dependency | ar | int8; UAS/LAS 77.5 / 71.9 on PADT (fp32 77.7 / 72.0); parses whole written words, not PADT clitic-split words |
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
 
@@ -67,7 +69,7 @@ The Spanish, French, and multilingual models above have setup names. Anything el
 | es, fr, ja, zh | POS (UPOS mapped onto the Penn token types) | `python scripts/export_model.py DIR --mode pos --model wietsedv/xlm-roberta-base-ft-udpos28-es` (also `-fr`, `-ja`, `-zh`) |
 | zh | POS, whole words (character-level B-/I- tagger) | `--mode pos --model KoichiYasuoka/chinese-roberta-base-upos` (Apache-2.0; 91.6% of characters on GSDSimp vs 79.2% for the XLM-R zh model) |
 | all | Semantic | `--mode semantic --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
-| es, fr | Dependency | `--mode dependency --model es_ancora.mbert` or `fr_sequoia.camembert-large` (needs `diaparser`) |
+| es, fr, ru, ar | Dependency | `--mode dependency --model es_ancora.mbert`, `fr_sequoia.camembert-large`, `ru_syntagrus.DeepPavlov` or `ar_padt.asafaya` (needs `diaparser`) |
 
 Japanese text that contains kana is split into UniDic short-unit words by [kagome](https://github.com/ikawaha/kagome) (the word standard of UD Japanese-GSD), so the Japanese POS model tags real words: 97.1% of characters on GSD, up from 74.4% with tokenizer pieces. kagome's dictionary is embedded in the binary (+37 MB) and decoded on the first Japanese text: start-up goes from 1.1 s to 3.2 s and RSS from about 450 MB to about 1 GB, and edits are 40-50% slower (int8: 137 vs 94 ms). int8 Japanese POS keeps 96.2% (fp32 97.1%). Build with `-tags nojaseg` to leave it out; Japanese then falls back to tokenizer pieces. Build with `-tags english` to leave out kagome and the Chinese script tables together (the `*_english.*` release archives). Kanji-only text cannot be told from Chinese and also uses pieces.
 

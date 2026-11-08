@@ -132,7 +132,11 @@ func benchCases(t *testing.T) []benchCase {
 		cases,
 		benchCase{"dependency/es", "dependency", "es", "es_ancora_mbert_dependency", ml},
 		benchCase{"dependency/fr", "dependency", "fr", "fr_sequoia_camembert_large_dependency", ml},
+		benchCase{"dependency/ru", "dependency", "ru", "ru_syntagrus_DeepPavlov_dependency", ml},
 	)
+	if q := os.Getenv("NSLS_ML_QDIR"); q != "" {
+		cases = append(cases, benchCase{"dependency/ar", "dependency", "ar", "ar_padt_asafaya_dependency", q})
+	}
 	return cases
 }
 

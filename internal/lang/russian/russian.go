@@ -12,7 +12,7 @@ import (
 func Language() lang.Language {
 	return lang.Language{
 		Code:          "ru",
-		ModelPrefixes: []string{"xlmr_ru"},
+		ModelPrefixes: []string{"xlmr_ru", "ru_syntagrus"},
 		Wiktionary:    &lang.Wiktionary{Code: "ru", Sections: []string{"Russian"}, Forms: Forms},
 	}
 }
