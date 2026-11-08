@@ -309,7 +309,8 @@ mkdir -p "$DATA_DIR/lang"
 for f in "$ROOT"/lang/*.lua; do
     [[ -f "$DATA_DIR/lang/$(basename "$f")" ]] || cp "$f" "$DATA_DIR/lang/"
 done
-ok "Language scripts: $DATA_DIR/lang"
+[[ -f "$DATA_DIR/models.json" ]] || cp "$ROOT/models.json" "$DATA_DIR/models.json"
+ok "Language scripts: $DATA_DIR/lang; model catalog: $DATA_DIR/models.json"
 
 # ── 7. Install binary to user bin directory ────────────────────────────────
 

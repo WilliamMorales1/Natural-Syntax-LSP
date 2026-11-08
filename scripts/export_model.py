@@ -31,7 +31,7 @@ tokenizer_config.json copied to {slug}_tokenizer.json when one exists.
 Spanish dependency parser loses accuracy when quantized, so leave it fp32).
 
 Usage:
-    python export_model.py [output_dir] [--model mobilebert|bert-base|xlmr-es|xlmr-fr|xlmr-ru|xlmr-ar|multilingual-minilm|en_ewt.electra-base|<hf repo id>] [--mode pos|semantic|dependency] [--int8]
+    python export_model.py [output_dir] [--model <name from models.json>|<hf repo id>] [--mode pos|semantic|dependency] [--int8]
 """
 
 import argparse
@@ -74,22 +74,29 @@ class _DropsTokenTypeIds(torch.nn.Module):
         return self.inner(input_ids=input_ids, attention_mask=attention_mask)
 
 
-POS_MODELS = {
-    "mobilebert": "mrm8488/mobilebert-finetuned-pos",
-    "bert-base": "QCRI/bert-base-multilingual-cased-pos-english",
-    "xlmr-es": "wietsedv/xlm-roberta-base-ft-udpos28-es",
-    "xlmr-fr": "wietsedv/xlm-roberta-base-ft-udpos28-fr",
-    "xlmr-ru": "wietsedv/xlm-roberta-base-ft-udpos28-ru",
-    "xlmr-ar": "wietsedv/xlm-roberta-base-ft-udpos28-ar",
-}
-SEMANTIC_MODELS = {
-    "multilingual-minilm": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-}
+def _load_catalog():
+    """Read models.json: next to the repo root, else the config dir, so no model name lives in this script."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cfg = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    for d in (os.path.join(here, ".."), os.path.join(cfg, "natural-syntax-ls")):
+        path = os.path.join(d, "models.json")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)["models"]
+    raise SystemExit("models.json not found next to the repo or in the config dir")
+
+
+_CATALOG = _load_catalog()
+POS_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "pos"}
+SEMANTIC_MODELS = {m["name"]: m["source"] for m in _CATALOG if m["mode"] == "semantic"}
 MODELS = {**POS_MODELS, **SEMANTIC_MODELS}
 
 # diaparser (github.com/Unipisa/diaparser) catalog name used when --model is
 # omitted or isn't a known POS/semantic name.
-DEFAULT_DEPENDENCY_MODEL = "en_ewt.electra-base"
+DEFAULT_DEPENDENCY_MODEL = next(
+    (m["source"] for m in _CATALOG if m["mode"] == "dependency" and m.get("default")),
+    "en_ewt.electra-base",
+)
 
 parser = argparse.ArgumentParser()
 parser.add_argument(

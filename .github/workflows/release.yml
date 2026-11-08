@@ -105,7 +105,7 @@ jobs:
       # The server reads language scripts from <exe dir>/lang.
       - name: Bundle language scripts
         shell: bash
-        run: cp -r lang vscode-extension/bin/${{ matrix.platform }}/lang
+        run: cp -r lang models.json vscode-extension/bin/${{ matrix.platform }}/
 
       - uses: actions/upload-artifact@v4.6.2
         with:
@@ -143,7 +143,7 @@ jobs:
           mkdir -p $D
           go build -tags english -trimpath -ldflags "-s -w" -o $D/${{ matrix.binary }} ./cmd/natural-syntax-ls/
           cp LICENSE vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }} $D/
-          cp -r lang $D/lang
+          cp -r lang models.json $D/
           chmod +x $D/${{ matrix.binary }}
           tar czf dist/natural-syntax-ls_${{ matrix.platform }}_english.tar.gz -C $D .
 
@@ -161,6 +161,7 @@ jobs:
           go build -tags english -trimpath -ldflags "-s -w" -o "$d/${{ matrix.binary }}" ./cmd/natural-syntax-ls/
           Copy-Item LICENSE, "vscode-extension/bin/${{ matrix.platform }}/${{ matrix.ort_dest }}" $d/
           Copy-Item lang "$d/lang" -Recurse
+          Copy-Item models.json $d/
           Compress-Archive -Path "$d/*" -DestinationPath dist/natural-syntax-ls_${{ matrix.platform }}_english.zip
 
       - uses: actions/upload-artifact@v4.6.2

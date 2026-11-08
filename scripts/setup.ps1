@@ -228,7 +228,9 @@ Get-ChildItem (Join-Path $ROOT "lang") -Filter *.lua | ForEach-Object {
     $dest = Join-Path $langDest $_.Name
     if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
 }
-Ok "Language scripts: $langDest"
+$catDest = Join-Path $DATA_DIR "models.json"
+if (-not (Test-Path $catDest)) { Copy-Item (Join-Path $ROOT "models.json") $catDest }
+Ok "Language scripts: $langDest; model catalog: $catDest"
 
 # ── 7. Install binary to user bin directory ───────────────────────────────────
 

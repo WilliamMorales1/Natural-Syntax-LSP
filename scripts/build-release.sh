@@ -11,7 +11,7 @@ EXT=""
 PLATFORM="$(go env GOOS)-$(go env GOARCH)"
 
 mkdir -p dist
-cp -r lang dist/
+cp -r lang models.json dist/
 for variant in full english; do
     tags=""
     [ "$variant" = "english" ] && tags="english"

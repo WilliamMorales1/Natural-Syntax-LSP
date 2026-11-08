@@ -57,10 +57,10 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 
 1. Write `<code>.lua`. A language with no special rules is only `code`, `model_prefixes` and `wiktionary.code`/`sections` (see `spanish.lua`).
 2. To ship it built in, put it in `lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
-3. Not Lua, one line each:
-   - `scripts/export_model.py`: entry in `POS_MODELS` (and a diaparser name for dependency).
-   - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list.
-   - `vscode-extension/package.json`: `naturalSyntaxLs.model` enum and description.
+3. Model catalog: add an entry to `models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). It is read by the server (default model search, from `<exe dir>` then the config dir) and by `scripts/export_model.py`; setup copies it to the config dir without overwriting. Nothing else in Go or Python names models.
+4. Not catalog, one line each:
+   - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list (still hardcoded).
+   - `vscode-extension/package.json`: `naturalSyntaxLs.model` enum and description (static JSON, still hardcoded).
    - `docs/models.md`: model, license, accuracy.
 
 ## Worked example: French

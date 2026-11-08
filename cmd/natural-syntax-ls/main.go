@@ -55,13 +55,14 @@ func run() error {
 	dirs := []string{dataDir, exeDir}
 
 	if *modelPath == "" {
-		// English POS models first, then the embedding models.
+		catalog, err := models.Load(exeDir, dataDir)
+		if err != nil {
+			return fmt.Errorf("read model catalog: %w", err)
+		}
 		var candidates []string
-		for _, names := range models.DefaultStems {
+		for _, stem := range catalog.DefaultStems(string(mode)) {
 			for _, dir := range dirs {
-				for _, name := range names {
-					candidates = append(candidates, filepath.Join(dir, name+".onnx"))
-				}
+				candidates = append(candidates, filepath.Join(dir, stem+".onnx"))
 			}
 		}
 		*modelPath = findFile(candidates...)
