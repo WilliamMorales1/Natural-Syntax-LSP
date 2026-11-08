@@ -23,6 +23,22 @@ One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is acti
 
 Export commands: [install.md](install.md#exporting-models).
 
+## Licenses and tag inventories
+
+Checked against the Hugging Face model cards and the UD treebank READMEs. The server itself is under the repository `LICENSE`; the exported weights keep the license of their source.
+
+| Model | Source license | Tag inventory |
+| ----- | -------------- | ------------- |
+| `bert-base` | CC BY-NC 3.0 (**non-commercial**) | Penn Treebank, 46 labels including punctuation |
+| `mobilebert` | MIT | Penn Treebank, 34 labels |
+| `xlmr-es`, `xlmr-fr`, `xlmr-ru`, `xlmr-ja` | Apache-2.0 | Universal POS, 17 tags |
+| `chinese-roberta-upos` | Apache-2.0 | Universal POS with `B-`/`I-` word pieces, 45 labels |
+| `multilingual-minilm` | Apache-2.0 | none (embeddings) |
+| diaparser parsers (`en_ewt`, `es_ancora`, `fr_sequoia`, `ru_syntagrus`, `ja_gsd`) | diaparser is MIT; weights follow the training treebank: EWT CC BY-SA 4.0, AnCora CC BY 4.0, Sequoia LGPL-LR, SynTagRus **CC BY-NC-SA 4.0**, Japanese-GSD CC BY-SA 4.0 | UD relations, see [tags.md](tags.md) |
+| `zh_ud.mbert` | CC BY-SA 4.0 (trained on Chinese-GSD, CC BY-SA 4.0) | UD relations |
+
+Other tag sets: label files may also use EAGLES (`NCMS000`) or CKIP (`Na`, `VC`) names, which decode to the Universal classes (`internal/postag/tagsets.go`). The CKIP transformers models are GPL-3.0 and are not in the catalog. A label that fits no inventory decodes as `O` and is logged when the model loads.
+
 ## Cost on a ThinkPad X280
 
 Measured through Neovim (`internal/e2e`, `NSLS_NVIM_BENCH=1`): time to first result including model load, median one-character edit in a 32-line document, and server RSS.
