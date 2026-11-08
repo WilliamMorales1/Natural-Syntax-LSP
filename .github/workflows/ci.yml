@@ -3,6 +3,7 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -24,3 +25,85 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
+  e2e:
+    name: e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            e2e:
+              - 'scripts/**'
+              - 'data/**'
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - '.github/workflows/ci.yml'
+      - name: Decide
+        id: run
+        shell: bash
+        run: echo "go=${{ steps.changed.outputs.e2e == 'true' || github.event_name == 'workflow_dispatch' }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        if: steps.run.outputs.go == 'true'
+        with:
+          go-version-file: go.mod
+
+      - name: Parse setup.ps1 (Windows PowerShell 5.1 and pwsh)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: |
+          foreach ($sh in "powershell", "pwsh") {
+            & $sh -NoProfile -Command "`$e = `$null; [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/setup.ps1', [ref]`$null, [ref]`$e); if (`$e) { `$e | Out-String | Write-Host; exit 1 }"
+            if ($LASTEXITCODE -ne 0) { throw "parse failed in $sh" }
+          }
+      - name: List catalog (Windows)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: |
+          $out = .\scripts\setup.ps1 -List | Out-String
+          Write-Host $out
+          if ($out -notmatch "bert-base") { throw "catalog list missing bert-base" }
+      - name: Install bert-base (Windows)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: .\scripts\setup.ps1 -Model bert-base
+      - name: Check layout (Windows)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: |
+          $d = Join-Path $env:APPDATA "natural-syntax-ls"
+          foreach ($f in "models\bert_base\bert_base.onnx", "models\bert_base\bert_base_labels.json", "models\bert_base\bert_base_vocab.txt", "lib\onnxruntime.dll", "lang\english.lua") {
+            if (-not (Test-Path (Join-Path $d $f))) { throw "missing $f" }
+          }
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA "Programs\natural-syntax-ls\natural-syntax-ls.exe"))) { throw "binary not installed" }
+      - name: Second run skips export (Windows)
+        if: steps.run.outputs.go == 'true' && runner.os == 'Windows'
+        run: |
+          $out = .\scripts\setup.ps1 -Model bert-base | Out-String
+          Write-Host $out
+          if ($out -notmatch "already exists, skipping export") { throw "export was not skipped" }
+
+      - name: Install bert-base (Unix)
+        if: steps.run.outputs.go == 'true' && runner.os != 'Windows'
+        run: bash scripts/setup.sh --model bert-base
+      - name: Check layout (Unix)
+        if: steps.run.outputs.go == 'true' && runner.os != 'Windows'
+        run: |
+          d="${XDG_CONFIG_HOME:-$HOME/.config}/natural-syntax-ls"
+          for f in models/bert_base/bert_base.onnx models/bert_base/bert_base_labels.json models/bert_base/bert_base_vocab.txt lang/english.lua; do
+            [[ -f "$d/$f" ]] || { echo "missing $f"; exit 1; }
+          done
+          ls "$d"/lib/libonnxruntime.* >/dev/null
+      - name: Second run skips export (Unix)
+        if: steps.run.outputs.go == 'true' && runner.os != 'Windows'
+        run: bash scripts/setup.sh --model bert-base | tee out.txt && grep -q "already exists, skipping export" out.txt
+
+      - name: Server e2e
+        if: steps.run.outputs.go == 'true'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then d="$APPDATA/natural-syntax-ls"; else d="${XDG_CONFIG_HOME:-$HOME/.config}/natural-syntax-ls"; fi
+          NSLS_SMOKE_MODEL="$d/models/bert_base/bert_base.onnx" go test -count=1 -v ./internal/e2e -run TestSmoke
