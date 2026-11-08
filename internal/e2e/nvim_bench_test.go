@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -19,8 +20,10 @@ import (
 //	NSLS_BENCH_SERVER   prebuilt server binary (default: built from this checkout)
 //	NSLS_BENCH_OUT      also write the result table here as markdown
 //	NSLS_BENCH_TIMEOUT  per-request timeout (default 120s)
+//	NSLS_BENCH_WIKT=0   hover without Wiktionary definitions (default: on, needs network)
 //
 // English baselines come from the default model dir (~/.config/natural-syntax-ls). Each case runs in a fresh Neovim and server, so peak RSS is per model.
+// Runs on Linux, macOS and Windows; macOS has no peak RSS counter, so peak there is the largest sample taken between steps.
 // Wrap the run in oomguard: the French parser alone is 1.4 GB on disk.
 
 type benchCase struct {
@@ -88,7 +91,9 @@ type benchResult struct {
 	TokensLong  float64 `json:"tokens_long"`
 	Edit        spread  `json:"edit_ms"`
 	Hover       spread  `json:"hover_ms"`
+	HoverWarm   spread  `json:"hover_warm_ms"`
 	HoverHits   int     `json:"hover_hits"`
+	HoverDefs   int     `json:"hover_defs"`
 	RSSReadyMB  float64 `json:"rss_ready_mb"`
 	RSSEndMB    float64 `json:"rss_end_mb"`
 	PeakMB      float64 `json:"peak_mb"`
@@ -96,10 +101,22 @@ type benchResult struct {
 
 type spread struct{ Min, Median, Max float64 }
 
+// configDir matches the server's: XDG on macOS too, not ~/Library.
+func configDir() string {
+	if runtime.GOOS == "windows" {
+		d, _ := os.UserConfigDir()
+		return d
+	}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return xdg
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config")
+}
+
 func benchCases(t *testing.T) []benchCase {
 	var cases []benchCase
-	cfg, _ := os.UserConfigDir()
-	en := filepath.Join(cfg, "natural-syntax-ls")
+	en := filepath.Join(configDir(), "natural-syntax-ls")
 	cases = append(
 		cases,
 		benchCase{"pos/en/bert_base", "pos", "en", "bert_base", en},
@@ -150,10 +167,14 @@ func TestNvimBench(t *testing.T) {
 	server := os.Getenv("NSLS_BENCH_SERVER")
 	if server == "" {
 		server = filepath.Join(work, "natural-syntax-ls")
+		if runtime.GOOS == "windows" {
+			server += ".exe"
+		}
 		if out, err := exec.Command("go", "build", "-o", server, "../../cmd/natural-syntax-ls").CombinedOutput(); err != nil {
 			t.Fatalf("build: %v\n%s", err, out)
 		}
 	}
+	wikt := os.Getenv("NSLS_BENCH_WIKT") != "0"
 	driver, err := filepath.Abs("bench.lua")
 	if err != nil {
 		t.Fatal(err)
@@ -187,6 +208,7 @@ func TestNvimBench(t *testing.T) {
 			"long":       long,
 			"edits":      10,
 			"hovers":     20,
+			"wiktionary": wikt,
 			"timeout_ms": timeout.Milliseconds(),
 			"out":        out,
 		})
@@ -213,17 +235,19 @@ func TestNvimBench(t *testing.T) {
 			continue
 		}
 		rows = append(rows, row{c, r})
-		t.Logf("%-22s ready %6.0f ms  open-long %6.0f ms  edit %5.0f ms  hover %4.2f ms (%d/20 hits)  rss %5.0f MB  peak %5.0f MB",
-			c.name, r.ReadyMS, r.OpenLongMS, r.Edit.Median, r.Hover.Median, r.HoverHits, r.RSSReadyMB, r.PeakMB)
+		t.Logf("%-22s ready %6.0f ms  open-long %6.0f ms  edit %5.0f ms  hover %4.0f / %4.0f ms, warm %4.2f ms (%d/20 hits, %d defs)  rss %5.0f MB  peak %5.0f MB",
+			c.name, r.ReadyMS, r.OpenLongMS, r.Edit.Median, r.Hover.Median, r.Hover.Max, r.HoverWarm.Median, r.HoverHits, r.HoverDefs, r.RSSReadyMB, r.PeakMB)
 	}
 
 	if path := os.Getenv("NSLS_BENCH_OUT"); path != "" && len(rows) > 0 {
 		var b strings.Builder
-		b.WriteString("| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median (ms) | RSS ready (MB) | Peak RSS (MB) |\n")
-		b.WriteString("| ---- | ---------- | -------------- | ---------------------- | ----------------- | -------------- | ------------- |\n")
+		fmt.Fprintf(&b, "%s/%s, %d CPUs, Wiktionary %v\n\n", runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), wikt)
+		b.WriteString("| Case | Ready (ms) | Open long (ms) | Edit median / max (ms) | Hover median / max (ms) | Hover cached (ms) | Definitions | RSS ready (MB) | Peak RSS (MB) |\n")
+		b.WriteString("| ---- | ---------- | -------------- | ---------------------- | ----------------------- | ----------------- | ----------- | -------------- | ------------- |\n")
 		for _, x := range rows {
-			fmt.Fprintf(&b, "| %s | %.0f | %.0f | %.0f / %.0f | %.0f | %.0f | %.0f |\n",
-				x.c.name, x.r.ReadyMS, x.r.OpenLongMS, x.r.Edit.Median, x.r.Edit.Max, x.r.Hover.Median, x.r.RSSReadyMB, x.r.PeakMB)
+			fmt.Fprintf(&b, "| %s | %.0f | %.0f | %.0f / %.0f | %.0f / %.0f | %.1f | %d/%d | %.0f | %.0f |\n",
+				x.c.name, x.r.ReadyMS, x.r.OpenLongMS, x.r.Edit.Median, x.r.Edit.Max, x.r.Hover.Median, x.r.Hover.Max,
+				x.r.HoverWarm.Median, x.r.HoverDefs, x.r.HoverHits, x.r.RSSReadyMB, x.r.PeakMB)
 		}
 		if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 			t.Error(err)

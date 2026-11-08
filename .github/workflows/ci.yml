@@ -126,3 +126,14 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == Windows ]]; then d="$APPDATA/natural-syntax-ls"; else d="${XDG_CONFIG_HOME:-$HOME/.config}/natural-syntax-ls"; fi
           NSLS_SMOKE_MODEL="$d/models/bert_base/bert_base.onnx" go test -count=1 -v ./internal/e2e -run TestSmoke
+      - uses: rhysd/action-setup-vim@v1
+        if: steps.run.outputs.go == 'true'
+        with:
+          neovim: true
+          version: stable
+      - name: Neovim benchmark, Wiktionary hover on
+        if: steps.run.outputs.go == 'true'
+        shell: bash
+        run: |
+          NSLS_NVIM_BENCH=1 NSLS_BENCH_ONLY=pos/en NSLS_BENCH_OUT="$PWD/bench.md" go test -count=1 -v ./internal/e2e -run TestNvimBench
+          { echo "### Neovim benchmark (${{ matrix.os }})"; cat bench.md; } >> "$GITHUB_STEP_SUMMARY"

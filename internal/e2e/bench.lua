@@ -7,13 +7,37 @@ local function now()
 	return uv.hrtime() / 1e6
 end
 
-local function proc_mb(pid, key)
-	for l in io.lines("/proc/" .. pid .. "/status") do
-		local v = l:match("^" .. key .. ":%s+(%d+) kB")
-		if v then
-			return tonumber(v) / 1024
+local sys = uv.os_uname().sysname
+
+-- Returns current and peak resident MB; peak is nil where the OS keeps no high-water mark (macOS).
+local function mem_mb(pid)
+	if sys == "Linux" then
+		local cur, peak
+		for l in io.lines("/proc/" .. pid .. "/status") do
+			cur = cur or tonumber(l:match("^VmRSS:%s+(%d+) kB"))
+			peak = peak or tonumber(l:match("^VmHWM:%s+(%d+) kB"))
 		end
+		return cur / 1024, peak / 1024
+	elseif sys:match("Windows") then
+		local out = vim.system({
+			"powershell",
+			"-NoProfile",
+			"-Command",
+			"$p = Get-Process -Id " .. pid .. "; \"$($p.WorkingSet64) $($p.PeakWorkingSet64)\"",
+		}):wait().stdout
+		local cur, peak = out:match("(%d+)%s+(%d+)")
+		return tonumber(cur) / 2 ^ 20, tonumber(peak) / 2 ^ 20
 	end
+	local out = vim.system({ "ps", "-o", "rss=", "-p", tostring(pid) }):wait().stdout
+	return tonumber(out:match("%d+")) / 1024, nil
+end
+
+local sampled_peak = 0
+
+local function sample(pid)
+	local cur, peak = mem_mb(pid)
+	sampled_peak = math.max(sampled_peak, cur, peak or 0)
+	return cur
 end
 
 local function stats(xs)
@@ -37,7 +61,7 @@ local function run()
 		name = "nsls_bench",
 		cmd = cfg.cmd,
 		root_dir = vim.fn.getcwd(),
-		init_options = { wiktionary_definitions = false },
+		init_options = { wiktionary_definitions = cfg.wiktionary },
 		flags = { debounce_text_changes = 0 },
 		handlers = {
 			["$/nls/semanticColors"] = function(_, r)
@@ -102,7 +126,7 @@ local function run()
 	res.ready_ms = now() - t0
 	res.init_ms = init_ms
 	res.tokens_short = n
-	res.rss_ready_mb = proc_mb(pid, "VmRSS")
+	res.rss_ready_mb = sample(pid)
 
 	local long = vim.api.nvim_create_buf(true, false)
 	vim.bo[long].filetype = "text"
@@ -127,31 +151,42 @@ local function run()
 		vim.api.nvim_buf_set_text(long, row, 10, row, 10, { tostring(i % 10) })
 		analysed(long, before)
 		edits[i] = now() - t
+		sample(pid)
 	end
 	res.edit_ms = stats(edits)
 
-	local hovers, hits = {}, 0
 	local cand = {}
 	for i, l in ipairs(cfg.long) do
 		if #l > 12 then
 			cand[#cand + 1] = i - 1
 		end
 	end
-	for i = 1, cfg.hovers do
-		local ms, h = req("textDocument/hover", {
-			textDocument = { uri = long_uri },
-			position = { line = cand[(i * 7) % #cand + 1], character = 5 },
-		}, long)
-		hovers[i] = ms
-		if h then
-			hits = hits + 1
+	-- First pass may fetch from Wiktionary; the second repeats the same words from the server's cache.
+	local function hover_pass()
+		local hovers, hits, defs = {}, 0, 0
+		for i = 1, cfg.hovers do
+			local row = cand[(i * 7) % #cand + 1]
+			-- Spread over the line so most hovers land on a word not yet looked up.
+			local width = vim.str_utfindex(cfg.long[row + 1], "utf-16")
+			local ms, h = req("textDocument/hover", {
+				textDocument = { uri = long_uri },
+				position = { line = row, character = (i * 11 + 5) % width },
+			}, long)
+			hovers[i] = ms
+			if h then
+				hits = hits + 1
+				if h.contents.value:find("[Wiktionary](", 1, true) then
+					defs = defs + 1
+				end
+			end
 		end
+		return stats(hovers), hits, defs
 	end
-	res.hover_ms = stats(hovers)
-	res.hover_hits = hits
+	res.hover_ms, res.hover_hits, res.hover_defs = hover_pass()
+	res.hover_warm_ms = hover_pass()
 
-	res.rss_end_mb = proc_mb(pid, "VmRSS")
-	res.peak_mb = proc_mb(pid, "VmHWM")
+	res.rss_end_mb = sample(pid)
+	res.peak_mb = sampled_peak
 	client:stop(true)
 	vim.wait(3000, function()
 		return client:is_stopped()
