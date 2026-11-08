@@ -11,7 +11,7 @@ Blocked-looking items are not blocked: Windows is checked by the GitHub Actions 
 1. Auto-detect never switches the model (German file gets English tags).
 2. Wiktionary lemma lookup for ru and ar inflected forms.
 3. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-4. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+4. New-language workflow: de and it dependency parsers (diaparser), pt parser search.
 5. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
 6. Benchmark on another platform, with hover on.
 7. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
@@ -57,7 +57,6 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 ## Lua-defined languages and models
 
 - Model metadata in Lua: labels, UPOS mapping, hidden size, normalization. `export_model.py` should emit `<model>.lua` next to the ONNX file.
-- Per-language startup timing (target under 5 ms).
 - `Reload` on script file change (optional).
 
 ## New-language workflow (de, it, pt)

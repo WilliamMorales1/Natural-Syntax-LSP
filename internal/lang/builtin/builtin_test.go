@@ -181,3 +181,10 @@ func TestElisionsOnlyInDetectedFrench(t *testing.T) {
 		t.Errorf("tokens = %q", got)
 	}
 }
+
+// BenchmarkLanguages measures loading every shipped script; startup budget is 5 ms per language.
+func BenchmarkLanguages(b *testing.B) {
+	for b.Loop() {
+		Languages(repoLang)
+	}
+}
