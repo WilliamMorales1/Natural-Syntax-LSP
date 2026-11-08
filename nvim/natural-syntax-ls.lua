@@ -1,4 +1,5 @@
---- natural_syntax_ls is the Neovim client for natural-syntax-ls: server config, semantic colors, :NSMode and :NSLang.
+-- natural-syntax-ls client for lazy.nvim: server config, semantic colors, :NSMode and :NSLang.
+-- Edit opts in the spec at the bottom. Additions such as the linguistic palette (docs/neovim.md) go above the final return.
 local M = {}
 
 local name = "natural_syntax_ls"
@@ -171,6 +172,19 @@ function M.setup(opts)
 			return vim.list_extend({ "auto" }, M.languages())
 		end,
 	})
+	vim.api.nvim_exec_autocmds("User", { pattern = "NaturalSyntaxLsMode", data = { mode = state.mode } })
 end
 
-return M
+-- Lets keymaps elsewhere call require("natural_syntax_ls").set_mode(...).
+package.loaded["natural_syntax_ls"] = M
+
+-- Paste additions here, above the return.
+
+return {
+	"natural-syntax-ls",
+	virtual = true,
+	opts = {},
+	config = function(_, opts)
+		M.setup(opts)
+	end,
+}

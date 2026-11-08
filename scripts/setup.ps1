@@ -223,9 +223,16 @@ Write-Host
 Write-Host "VS Code: the extension finds the model files itself. To use this binary"
 Write-Host "  instead of the bundled one, set naturalSyntaxLs.serverPath to it."
 if (Get-Command nvim -ErrorAction SilentlyContinue) {
-    $luaRoot = $ROOT -replace "\\", "/"
+    $nvimConfig = (& nvim --clean --headless "+lua io.write(vim.fn.stdpath('config'))" +q 2>$null) -join ""
+    if (-not $nvimConfig) { Fail "Could not read the Neovim config path from nvim." }
+    $nvimSpec = Join-Path $nvimConfig "lua/plugins/natural-syntax-ls.lua"
     Write-Host
-    Write-Host "Neovim 0.11+: load the plugin from this checkout (docs/neovim.md)."
-    Write-Host "  lazy.nvim:   { dir = `"$luaRoot`", main = `"natural_syntax_ls`", opts = {} }"
-    Write-Host "  no manager:  vim.opt.rtp:append(`"$luaRoot`"); require(`"natural_syntax_ls`").setup()"
+    # The spec holds the user's opts and pasted additions, so a re-run never overwrites it.
+    if (Test-Path $nvimSpec) {
+        Write-Host "Neovim: kept $nvimSpec (delete it and re-run to update)."
+    } else {
+        New-Item -ItemType Directory -Force -Path (Split-Path $nvimSpec) | Out-Null
+        Copy-Item (Join-Path $ROOT "nvim/natural-syntax-ls.lua") $nvimSpec
+        Write-Host "Neovim 0.11+: installed $nvimSpec (docs/neovim.md)."
+    }
 }

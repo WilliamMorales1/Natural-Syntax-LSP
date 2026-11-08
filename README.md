@@ -25,7 +25,7 @@ Works in VS Code and Neovim. Supports English, Spanish, French, German, Italian,
 
 2. Install the editor client:
    - **VS Code**: install the `.vsix` for your platform from the [latest release](../../releases/latest) with `code --install-extension natural-syntax-ls-*.vsix`.
-   - **Neovim 0.11+**: put the release binary on `PATH`, then add the plugin: `{ "WilliamMorales1/Natural-Syntax-LSP", main = "natural_syntax_ls", opts = {} }` for lazy.nvim. See [docs/neovim.md](docs/neovim.md).
+   - **Neovim 0.11+**: put the release binary on `PATH`, then copy `nvim/natural-syntax-ls.lua` into your config's `lua/plugins/` (lazy.nvim). See [docs/neovim.md](docs/neovim.md).
 
 3. Open [docs/examples/test.txt](docs/examples/test.txt).
 

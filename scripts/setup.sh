@@ -316,8 +316,17 @@ echo
 echo "VS Code: the extension finds the model files itself. To use this binary"
 echo "  instead of the bundled one, set naturalSyntaxLs.serverPath to it."
 if command -v nvim &>/dev/null; then
+    # stdpath honors NVIM_APPNAME and XDG_CONFIG_HOME, which a hardcoded ~/.config/nvim would miss.
+    NVIM_CONFIG="$(nvim --clean --headless +'lua io.write(vim.fn.stdpath("config"))' +q 2>/dev/null)"
+    [[ -n "$NVIM_CONFIG" ]] || fail "Could not read the Neovim config path from nvim."
+    NVIM_SPEC="$NVIM_CONFIG/lua/plugins/natural-syntax-ls.lua"
     echo
-    echo "Neovim 0.11+: load the plugin from this checkout (docs/neovim.md)."
-    echo "  lazy.nvim:   { dir = \"$ROOT\", main = \"natural_syntax_ls\", opts = {} }"
-    echo "  no manager:  vim.opt.rtp:append(\"$ROOT\"); require(\"natural_syntax_ls\").setup()"
+    # The spec holds the user's opts and pasted additions, so a re-run never overwrites it.
+    if [[ -f "$NVIM_SPEC" ]]; then
+        echo "Neovim: kept $NVIM_SPEC (delete it and re-run to update)."
+    else
+        mkdir -p "$(dirname "$NVIM_SPEC")"
+        cp "$ROOT/nvim/natural-syntax-ls.lua" "$NVIM_SPEC"
+        echo "Neovim 0.11+: installed $NVIM_SPEC (docs/neovim.md)."
+    fi
 fi
