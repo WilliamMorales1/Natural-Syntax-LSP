@@ -10,16 +10,15 @@ Blocked-looking items are not blocked: Windows checks run in the GitHub Actions 
 
 1. Test `setup.ps1` and the Lua script loading on Windows.
 2. Auto-detect never switches the model (German file gets English tags).
-3. Arabic hover: strip `ال` and tashkeel.
-4. Wiktionary lemma lookup for ru and ar inflected forms.
-5. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
-6. Evaluate ja int8 POS with kagome words.
-7. Katakana pieces in semantic mode show one color per piece.
-8. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
-9. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
-10. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
-11. Benchmark on another platform, with hover on.
-12. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
+3. Wiktionary lemma lookup for ru and ar inflected forms.
+4. zh dependency int8 loses 5 UAS points: quantize encoder only or per-channel.
+5. Evaluate ja int8 POS with kagome words.
+6. Katakana pieces in semantic mode show one color per piece.
+7. Lua model metadata: `export_model.py` emits `<model>.lua`; per-language startup timing; `Reload`.
+8. New-language workflow: de/it/pt catalog and exports, ar POS row, static `:NSLang` list, docstring model names, untested ar export and diaparser parsers.
+9. Language identification: previous-line smoothing, docs ranges, short-text accuracy, training data.
+10. Benchmark on another platform, with hover on.
+11. Semantic homographs without POS; `deberta-luw-upos` test; Arabic clitic segmentation (revisit only if a segmenter fits).
 
 ## Multilingual
 
@@ -74,7 +73,7 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 - `export_model.py` docstring lists model names by hand, against the "no model name in Python" rule.
 - `:NSLang` completion is a static list.
 - Auto-detect never switches the model, so a German file under the default setup gets English POS tags. Only `:NSLang` changes models.
-- Arabic hover misses the definite article (`المدرسة`) and tashkeel forms (`كَلْب`). Nothing strips `ال` or tashkeel now that `lang/arabic.lua` is removed.
+- Arabic hover now strips tashkeel, the article and one-letter proclitics (`data/lang/arabic.lua`); inflected forms and other clitics still miss.
 - Semantic mode has no POS, so homographs pick the wrong sense (`amico`, `faulen`, `كلب`).
 - `xlm-roberta-base-ft-udpos28-ar` ships only `pytorch_model.bin`; recent torch refuses `torch.load` on it, so the export may fail. Not run.
 - Untested diaparser parsers: `de_hdt.dbmdz-bert-base`, `it_isdt.dbmdz-*`. No pt parser found.

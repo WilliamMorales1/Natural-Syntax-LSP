@@ -31,7 +31,7 @@ func TestScriptedLanguagesLoad(t *testing.T) {
 	for _, l := range Languages(repoLang) {
 		codes = append(codes, l.Code)
 	}
-	for _, want := range []string{"en", "fr", "es", "ru"} {
+	for _, want := range []string{"en", "fr", "es", "ru", "ar"} {
 		if !slices.Contains(codes, want) {
 			t.Errorf("missing %q in %q", want, codes)
 		}
@@ -63,6 +63,23 @@ func TestRussianForms(t *testing.T) {
 	}
 	if got := forms("дом"); len(got) != 0 {
 		t.Errorf("Forms(дом) = %q, want none", got)
+	}
+}
+
+func TestArabicForms(t *testing.T) {
+	forms := byCode(t, "ar").Wiktionary.Forms
+	for in, want := range map[string]string{
+		"المدرسة": "مدرسة", "كَلْب": "كلب", "للعدل": "عدل", "بالمدرسة": "مدرسة", "والكلب": "كلب", "الكَلْب": "كلب",
+	} {
+		if got := forms(in); !slices.Contains(got, want) {
+			t.Errorf("Forms(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+	if got := forms("كلب"); len(got) != 0 {
+		t.Errorf("Forms(كلب) = %q, want none", got)
+	}
+	if got := forms("ال"); len(got) != 0 {
+		t.Errorf("Forms(ال) = %q, want none", got)
 	}
 }
 
