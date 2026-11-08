@@ -14,9 +14,9 @@ Copy this into `init.lua` (or `require` it from a file in your config). Needs Ne
 local ns = vim.api.nvim_create_namespace("natural_syntax_ls_colors")
 local dir = vim.fs.joinpath(vim.env.XDG_CONFIG_HOME or vim.fs.joinpath(vim.env.HOME, ".config"), "natural-syntax-ls")
 local models = {
-  pos = "bert_base.onnx",
-  semantic = "multilingual_minilm.onnx",
-  dependency = "en_ewt_electra_base_dependency.onnx",
+  pos = "bert_base/bert_base.onnx",
+  semantic = "multilingual_minilm/multilingual_minilm.onnx",
+  dependency = "en_ewt_electra_base_dependency/en_ewt_electra_base_dependency.onnx",
 }
 
 vim.lsp.config("natural_syntax_ls", {
@@ -71,7 +71,7 @@ local function restart(mode, language)
     vim.list_extend(cmd, { "-lang", language })
     wikt = language .. ",en"
   else
-    vim.list_extend(cmd, { "-model", vim.fs.joinpath(dir, models[mode]) })
+    vim.list_extend(cmd, { "-model", vim.fs.joinpath(dir, "models", models[mode]) })
   end
   vim.lsp.config("natural_syntax_ls", { cmd = cmd, init_options = { wiktionary_language = wikt } })
   vim.lsp.enable("natural_syntax_ls")
@@ -98,10 +98,10 @@ Mode and model are fixed when the server starts, picked by the `-mode`, `-model`
 | Mode         | `cmd`                                                                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `pos`        | `{ "natural-syntax-ls" }`                                                                                                              |
-| `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/multilingual_minilm.onnx") }` |
-| `dependency` | `{ "natural-syntax-ls", "-mode", "dependency", "-model", vim.fn.expand("~/.config/natural-syntax-ls/en_ewt_electra_base_dependency.onnx") }` |
+| `semantic`   | `{ "natural-syntax-ls", "-mode", "semantic", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/multilingual_minilm/multilingual_minilm.onnx") }` |
+| `dependency` | `{ "natural-syntax-ls", "-mode", "dependency", "-model", vim.fn.expand("~/.config/natural-syntax-ls/models/en_ewt_electra_base_dependency/en_ewt_electra_base_dependency.onnx") }` |
 
-Swap `bert_base.onnx` for `mobilebert.onnx`, `xlmr_es.onnx`, or `xlmr_fr.onnx` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency.onnx` or `fr_sequoia_camembert_large_dependency.onnx`, to use other models.
+Swap `bert_base` for `mobilebert`, `xlmr_es`, or `xlmr_fr` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency` or `fr_sequoia_camembert_large_dependency`, to use other models.
 
 To switch at runtime, use `:NSMode pos|semantic|dependency` (defined above).
 

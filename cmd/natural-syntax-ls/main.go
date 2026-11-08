@@ -65,7 +65,7 @@ func run() error {
 		var candidates []string
 		for _, stem := range catalog.StemsFor(string(mode), *forced) {
 			for _, dir := range dirs {
-				candidates = append(candidates, filepath.Join(dir, stem+".onnx"))
+				candidates = append(candidates, filepath.Join(dir, "models", stem, stem+".onnx"), filepath.Join(dir, stem+".onnx"))
 			}
 		}
 		*modelPath = findFile(candidates...)
@@ -91,7 +91,7 @@ func run() error {
 	ortCandidates := []string{os.Getenv("ORT_LIB_PATH")}
 	for _, dir := range dirs {
 		for _, lib := range []string{"onnxruntime.dll", "libonnxruntime.so", "libonnxruntime.dylib"} {
-			ortCandidates = append(ortCandidates, filepath.Join(dir, lib))
+			ortCandidates = append(ortCandidates, filepath.Join(dir, "lib", lib), filepath.Join(dir, lib))
 		}
 	}
 	ortCandidates = append(ortCandidates, "/usr/lib/libonnxruntime.so", "/usr/local/lib/libonnxruntime.so")

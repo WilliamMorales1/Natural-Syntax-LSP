@@ -20,7 +20,7 @@ scripts/setup.sh --model all         # all models
 
 (`scripts/setup.ps1 -Model <...>` on Windows, same values.)
 
-Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `$XDG_CONFIG_HOME/natural-syntax-ls/`, default `~/.config/natural-syntax-ls/` (Linux and macOS). Model details: [models.md](models.md).
+Model files go to `%APPDATA%\natural-syntax-ls\` (Windows) or `$XDG_CONFIG_HOME/natural-syntax-ls/`, default `~/.config/natural-syntax-ls/` (Linux and macOS). Layout: `models/<slug>/` per model, `lib/` for the ONNX Runtime library, `lang/` for language scripts, `models.json` for the catalog. A flat layout from older installs is still read. Model details: [models.md](models.md).
 
 ## Building from source
 

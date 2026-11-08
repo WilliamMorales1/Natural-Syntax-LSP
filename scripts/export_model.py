@@ -104,7 +104,10 @@ DEFAULT_DEPENDENCY_MODEL = next(
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "out_dir", nargs="?", default=os.path.dirname(os.path.abspath(__file__))
+    "out_dir",
+    nargs="?",
+    default=os.path.dirname(os.path.abspath(__file__)),
+    help="Models root; each model is written to <out_dir>/<slug>/.",
 )
 parser.add_argument(
     "--model",
@@ -341,6 +344,8 @@ def _export_dependency(model_name, out_dir):
     )
 
     slug = model_name.replace("-", "_").replace("/", "_").replace(".", "_")
+    out_dir = os.path.join(out_dir, f"{slug}_dependency")
+    os.makedirs(out_dir, exist_ok=True)
     onnx_path = os.path.join(out_dir, f"{slug}_dependency.onnx")
     print(f"Exporting ONNX to {onnx_path}...")
     # The new dynamo-based exporter (torch.onnx.export's default) silently
@@ -398,6 +403,8 @@ if args.model is None:
     args.model = "bert-base"
 model_id = MODELS.get(args.model, args.model)
 slug = args.model.replace("-", "_").replace("/", "_")
+out_dir = os.path.join(out_dir, slug)
+os.makedirs(out_dir, exist_ok=True)
 
 print(f"Loading {model_id}...")
 tokenizer = AutoTokenizer.from_pretrained(model_id)

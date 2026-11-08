@@ -83,7 +83,9 @@ else:
     base = os.environ.get('XDG_CONFIG_HOME', os.path.join(os.path.expanduser('~'), '.config'))
 print(os.path.join(base, 'natural-syntax-ls'))
 ")"
-mkdir -p "$DATA_DIR"
+MODELS_DIR="$DATA_DIR/models"
+LIB_DIR="$DATA_DIR/lib"
+mkdir -p "$DATA_DIR" "$MODELS_DIR" "$LIB_DIR"
 ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ─────────────────────────────────────────────────────────
@@ -149,7 +151,7 @@ slugify() { printf '%s' "$1" | tr './-' '___'; }
 
 # has_tokenizer SLUG: WordPiece models ship _vocab.txt, SentencePiece ones only _tokenizer.json.
 has_tokenizer() {
-    [[ -f "$DATA_DIR/${1}_vocab.txt" || -f "$DATA_DIR/${1}_tokenizer.json" ]]
+    [[ -f "$MODELS_DIR/${1}/${1}_vocab.txt" || -f "$MODELS_DIR/${1}/${1}_tokenizer.json" ]]
 }
 
 # export_model NAME MODE INT8 DESC: skips the export when the files for NAME already exist.
@@ -158,11 +160,11 @@ export_model() {
     slug="$(slugify "$name")"
     [[ "$int8" == 1 ]] && extra=(--int8)
     case "$mode" in
-    pos) done_check=$([[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_labels.json" ]] && has_tokenizer "$slug" && echo y) ;;
-    semantic) done_check=$([[ -f "$DATA_DIR/${slug}.onnx" ]] && has_tokenizer "$slug" && echo y) ;;
+    pos) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_labels.json" ]] && has_tokenizer "$slug" && echo y) ;;
+    semantic) done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" ]] && has_tokenizer "$slug" && echo y) ;;
     dependency)
         slug="${slug}_dependency"
-        done_check=$([[ -f "$DATA_DIR/${slug}.onnx" && -f "$DATA_DIR/${slug}_rels.json" ]] && has_tokenizer "$slug" && echo y)
+        done_check=$([[ -f "$MODELS_DIR/${slug}/${slug}.onnx" && -f "$MODELS_DIR/${slug}/${slug}_rels.json" ]] && has_tokenizer "$slug" && echo y)
         ;;
     *) fail "Unknown mode '$mode' for $name in models.json" ;;
     esac
@@ -170,7 +172,7 @@ export_model() {
         ok "${slug}.onnx already exists, skipping export."
     else
         step "Exporting $name ($mode: $desc) to ONNX"
-        "$PYTHON" "$ROOT/scripts/export_model.py" "$DATA_DIR" --model "$name" ${extra[@]+"${extra[@]}"}
+        "$PYTHON" "$ROOT/scripts/export_model.py" "$MODELS_DIR" --model "$name" ${extra[@]+"${extra[@]}"}
         ok "$name exported."
     fi
 }
@@ -192,12 +194,12 @@ GOPATH="$(go env GOPATH)"
 ARCH="$(uname -m)"
 
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" || -n "${WINDIR:-}" ]]; then
-    ORT_DEST="$DATA_DIR/onnxruntime.dll"
+    ORT_DEST="$LIB_DIR/onnxruntime.dll"
     ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime.dll"
     ORT_NAME="onnxruntime.dll"
     ORT_RELEASE_ARCHIVE=""
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    ORT_DEST="$DATA_DIR/libonnxruntime.dylib"
+    ORT_DEST="$LIB_DIR/libonnxruntime.dylib"
     ORT_NAME="libonnxruntime.dylib"
     if [[ "$ARCH" == "arm64" ]]; then
         ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime_arm64.dylib"
@@ -207,7 +209,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
         ORT_RELEASE_ARCHIVE="onnxruntime-osx-x86_64-1.26.0.tgz"
     fi
 else
-    ORT_DEST="$DATA_DIR/libonnxruntime.so"
+    ORT_DEST="$LIB_DIR/libonnxruntime.so"
     ORT_NAME="libonnxruntime.so"
     if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
         ORT_GLOB="$GOPATH/pkg/mod/github.com/yalue/onnxruntime_go@*/test_data/onnxruntime_arm64.so"

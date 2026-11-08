@@ -15,7 +15,7 @@
 
 The former `all-mpnet-base-v2` and `all-MiniLM-L6-v2` semantic models were replaced by the multilingual one: about half the memory of mpnet and 2-3x faster per edit.
 
-One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active. Its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model file names on disk (`{slug}.onnx` and `{slug}_vocab.txt` or `{slug}_tokenizer.json`, or `{slug}_dependency.onnx` and its tokenizer file) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported. `export_model.py --int8` quantizes in place.
+One setting, `naturalSyntaxLs.model`, picks the model for whichever mode is active. Its meaning depends on `naturalSyntaxLs.mode`: a POS model name for `pos`, an embedding model name for `semantic`, or a diaparser catalog name for `dependency`. Model files on disk (`models/{slug}/{slug}.onnx` and `{slug}_vocab.txt` or `{slug}_tokenizer.json`, or `models/{slug}_dependency/{slug}_dependency.onnx` and its tokenizer file) are derived from this value using the same slug rule as `export_model.py` (`-`, `.`, `/` → `_`), so it must match what you exported. `export_model.py --int8` quantizes in place.
 
 Export commands: [install.md](install.md#exporting-models).
 

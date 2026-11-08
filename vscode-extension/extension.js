@@ -139,10 +139,12 @@ async function activate(context) {
     // for dependency mode (slug = modelName with -, ., / turned into _).
     const slug = slugify(modelName);
     const suffix = mode === 'dependency' ? '_dependency' : '';
-    const modelFile = path.join(dataDir, `${slug}${suffix}.onnx`);
+    const stem = `${slug}${suffix}`;
+    const modelDir = path.join(dataDir, 'models', stem);
+    const modelFile = path.join(modelDir, `${stem}.onnx`);
     // SentencePiece models ship a tokenizer.json instead of a vocab.txt.
-    const vocabTxt = path.join(dataDir, `${slug}${suffix}_vocab.txt`);
-    const vocabFile = fs.existsSync(vocabTxt) ? vocabTxt : path.join(dataDir, `${slug}${suffix}_tokenizer.json`);
+    const vocabTxt = path.join(modelDir, `${stem}_vocab.txt`);
+    const vocabFile = fs.existsSync(vocabTxt) ? vocabTxt : path.join(modelDir, `${stem}_tokenizer.json`);
     console.log('[nls] model =', modelFile);
 
     const serverArgs = ['--mode', mode, '--model', modelFile, '--vocab', vocabFile];

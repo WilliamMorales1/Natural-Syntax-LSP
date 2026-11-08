@@ -49,7 +49,9 @@ Ok "Go: $(go version)"
 
 $base = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME "AppData\Roaming" }
 $DATA_DIR = Join-Path $base "natural-syntax-ls"
-New-Item -ItemType Directory -Force $DATA_DIR | Out-Null
+$MODELS_DIR = Join-Path $DATA_DIR "models"
+$LIB_DIR = Join-Path $DATA_DIR "lib"
+New-Item -ItemType Directory -Force $DATA_DIR, $MODELS_DIR, $LIB_DIR | Out-Null
 Ok "Data directory: $DATA_DIR"
 
 # ── 3. Python deps ────────────────────────────────────────────────────────────
@@ -120,12 +122,12 @@ function Get-Slug($name) { return ($name -replace "[-./]", "_") }
 
 # SentencePiece models ship _tokenizer.json instead of _vocab.txt.
 function Test-Tokenizer($slug) {
-    return (Test-Path (Join-Path $DATA_DIR "${slug}_vocab.txt")) -or (Test-Path (Join-Path $DATA_DIR "${slug}_tokenizer.json"))
+    return (Test-Path (Join-Path $MODELS_DIR "${slug}\${slug}_vocab.txt")) -or (Test-Path (Join-Path $MODELS_DIR "${slug}\${slug}_tokenizer.json"))
 }
 
 function Invoke-Export($modelName, $label, $extra) {
     Step "Exporting $label to ONNX"
-    & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $DATA_DIR --model $modelName @extra
+    & $PYTHON (Join-Path $ROOT "scripts\export_model.py") $MODELS_DIR --model $modelName @extra
     if ($LASTEXITCODE -ne 0) { Fail "Export failed for $label." }
     Ok "$label exported."
 }
@@ -134,9 +136,9 @@ function Invoke-Export($modelName, $label, $extra) {
 function Export-Model($m) {
     $slug = Get-Slug $m.name
     $hasFiles = switch ($m.mode) {
-        "pos"        { (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_labels.json")) -and (Test-Tokenizer $slug) }
-        "semantic"   { (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Tokenizer $slug) }
-        "dependency" { $slug = "${slug}_dependency"; (Test-Path (Join-Path $DATA_DIR "$slug.onnx")) -and (Test-Path (Join-Path $DATA_DIR "${slug}_rels.json")) -and (Test-Tokenizer $slug) }
+        "pos"        { (Test-Path (Join-Path $MODELS_DIR "$slug\$slug.onnx")) -and (Test-Path (Join-Path $MODELS_DIR "${slug}\${slug}_labels.json")) -and (Test-Tokenizer $slug) }
+        "semantic"   { (Test-Path (Join-Path $MODELS_DIR "$slug\$slug.onnx")) -and (Test-Tokenizer $slug) }
+        "dependency" { $slug = "${slug}_dependency"; (Test-Path (Join-Path $MODELS_DIR "$slug\$slug.onnx")) -and (Test-Path (Join-Path $MODELS_DIR "${slug}\${slug}_rels.json")) -and (Test-Tokenizer $slug) }
         default      { Fail "Unknown mode '$($m.mode)' for $($m.name) in models.json" }
     }
     if ($hasFiles) { Ok "$slug.onnx already exists, skipping export."; return }
@@ -148,7 +150,7 @@ foreach ($m in $SELECTED) { Export-Model $m }
 
 # ── 5. Copy onnxruntime.dll ───────────────────────────────────────────────────
 
-$ORT_DEST = Join-Path $DATA_DIR "onnxruntime.dll"
+$ORT_DEST = Join-Path $LIB_DIR "onnxruntime.dll"
 if (Test-Path $ORT_DEST) {
     Ok "onnxruntime.dll already present in data directory."
 } else {
