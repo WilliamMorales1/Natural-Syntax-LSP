@@ -8,6 +8,15 @@ After finishing each item: run `go test ./...`, commit it, then start the next o
 
 Blocked-looking items are not blocked: Windows is checked by the GitHub Actions workflow (`.github/workflows/ci.yml`: `setup.ps1`, language scripts, models, tokenizer, server smoke test; green on the `multilingual` branch), heavy exports run on Colab, VS Code is installed.
 
+Ranked by value per effort. Fixes first, experiments next; items that only state a lasting limit move to the docs that describe the behavior.
+
+1. Arabic hover: hamza seat before a suffix (`دمائها` to `دماء`) (Russian and Arabic).
+2. Russian hover: noun and verb lemma forms in `data/lang/russian.lua`, measured with `NSLS_WIKT_EVAL` (Russian and Arabic).
+3. Run the opt-in tests not yet run: langid held-out, Unigram reference, `NSLS_EVAL` for exported models; export ja, zh, ru dependency (Validation).
+4. zh dependency int8 on feed-forward layers only, then static calibration if that fails (Quality gaps).
+5. Portuguese dependency parser trained on UD Portuguese-Bosque with `scripts/train_zh_dependency.py`'s recipe, on Colab (New-language workflow).
+6. Move lasting limits into docs and drop them here: katakana compounds, zh lemmatizer and particle hover, semantic decorations unreadable from the VS Code API, one model per document, semantic homographs, German compounds, Arabic false splits, langid notes; check the Acceptance list against docs and drop it.
+
 ## Multilingual
 
 Constraints that still apply: tokenization follows the model's own tokenizer; SentencePiece BPE (mmBERT, Llama-style) is unsupported; `naturalSyntaxLs.model` is the only selector.
@@ -21,13 +30,9 @@ Constraints that still apply: tokenization follows the model's own tokenizer; Se
 
 - Hover in Neovim resolves ja and zh words; kagome and the zh model already split `私は` and `学生们的`, so the ja lemma fallback and zh prefix trimming only cover pieces that still carry a particle or suffix (unit-tested, not seen in an editor). zh has no lemmatizer; `-tags nojaseg` builds have no ja lemmas.
 
-### Export and setup
-
-
 ### Validation
 
 - VS Code (1.138, extension host) passes for ja and zh in pos and dependency modes (semantic tokens, hover with Wiktionary, edits) and for hover in semantic mode. Not observed: semantic-mode color decorations, which the extension draws from a server notification and the API cannot read.
-- The extension only attaches to `file` scheme documents, so untitled buffers get no highlighting.
 - Opt-in tests (`NSLS_ML_DIR=~/.config/natural-syntax-ls/models`) pass for es, fr, ja POS, semantic and es/fr dependency. Not run: ja, zh and ru dependency (models not exported locally), the `NSLS_EVAL` treebank evals, langid and Unigram reference tests.
 
 ### Acceptance

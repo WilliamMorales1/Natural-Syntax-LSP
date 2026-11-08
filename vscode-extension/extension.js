@@ -157,7 +157,10 @@ async function activate(context) {
         transport: TransportKind.stdio,
     };
 
-    const documentSelector = filetypes.map(lang => ({ scheme: 'file', language: lang }));
+    const documentSelector = filetypes.flatMap(lang => [
+        { scheme: 'file', language: lang },
+        { scheme: 'untitled', language: lang },
+    ]);
 
     const initializationOptions = (() => {
         const opts = {};
