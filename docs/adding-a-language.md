@@ -8,27 +8,9 @@ Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no l
 
 ## Schema
 
-```lua
-return {
-  code = "fr",                              -- required, Wiktionary language code
-  model_prefixes = { "xlmr_fr", "fr_sequoia" }, -- lowercase model file-name prefixes
-  tokenizer = {                             -- closed set of named flags, implemented in Go
-    elisions = {
-      clitics = { "l", "d", "qu" },         -- glued to a following apostrophe: l'  d'  qu'
-      words = { "aujourd'hui" },            -- apostrophe words kept whole
-    },
-  },
-  wiktionary = {
-    code = "fr",
-    sections = { "French" },                -- English Wiktionary L2 headings
-    -- optional: wikitext = true, script = "Han" reads wikitext for words in that Unicode script
-    rewrite = function(word, pos, deprel) end, -- Penn tag and UD relation as strings; return a headword or nil
-    forms = function(word) return {} end,   -- extra headwords to try
-  },
-}
-```
+A script returns one table with the fields under Hooks below. `data/lang/french.lua` is a real one; `ExampleParse_schema` in `internal/lang/luaload/example_test.go` uses every field and prints what each becomes.
 
-Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running. `go doc -all ./internal/lang/luaload` shows `ExampleParse` (a parsed script and a field error) and `go doc -all ./internal/tokenizer` shows `ExampleParseUnigram` (`elisions` and `arabic_clitics` on a tiny vocabulary); `go test ./...` checks both.
+Unknown fields, wrong types and unknown script names fail that script only, with an error naming file and field; the server logs it and keeps running. `ExampleParse` there shows a minimal script and a field error; `ExampleParseUnigram` in `internal/tokenizer` shows `elisions` and `arabic_clitics` on a tiny vocabulary. `go test ./...` checks all three.
 
 ## Sandbox
 
@@ -47,10 +29,10 @@ Every field but `code` is optional.
 | `model_prefixes` | Models whose file name starts with the prefix are this language's (drives `wiktionaryLanguage: "model"` and `auto`). |
 | `tokenizer.elisions` | The generic split cuts clitics wrongly (French `l'ami`). Unigram tokenizers only. |
 | `tokenizer.arabic_clitics` | `true` splits Arabic conjunction, preposition, future and pronoun clitics off written words, guided by the model's vocabulary (`docs/models.md`). Unigram tokenizers only. |
-| `wiktionary.rewrite` | A token's headword differs from its text (English `'s` to `-'s`). |
+| `wiktionary.rewrite` | A token's headword differs from its text (English `'s` to `-'s`). Called as `rewrite(word, pos, deprel)` with the Penn tag and UD relation as strings; returns a headword or nil. |
 | `wiktionary.forms` | Extra headwords to try (stripped diacritics, `ё` variants). |
 | `wiktionary.sections` | Always: the English Wiktionary L2 headings (`"Spanish"`) that map to the language code. |
-| `wiktionary.wikitext`, `script` | The REST endpoint cannot parse the language's entries, so read wikitext for words in `script`. |
+| `wiktionary.wikitext`, `script` | The REST endpoint cannot parse the language's entries, so read wikitext for words in `script` (a Unicode script name such as `"Han"`). |
 
 Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a native library needs Go: add a named flag in `luaload/options.go`, or a package under `internal/lang/<name>` exporting `Language()` and list it in `internal/lang/builtin/native.go`.
 
@@ -72,7 +54,7 @@ Spanish needed only prefixes and a Wiktionary section. Russian needed `forms` (s
 
 ## Decide what the language needs
 
-Answer these in order; stop adding hooks as soon as the answer is no. Names below are the Go side (`lang.Language`, see `ExampleLanguage` in `internal/lang`); in Lua they are the `tokenizer` flags and the `wiktionary` fields above.
+Answer these in order; stop adding hooks as soon as the answer is no. Names below are the Go side, shown in `ExampleLanguage` in `internal/lang`: `WordMerger` and `Segmenter` are `tokenizer.WithWordMerger` and `tokenizer.WithSegmenter` options in `Language.Tokenizer`, the rest are `Language.Wiktionary` fields. In Lua they are the `tokenizer` flags and the `wiktionary` fields above.
 
 1. Does the model's own tokenizer already produce the words the model was trained on? If not, add a `WordMerger` (clitics, elision) or `Segmenter` (no spaces).
 2. Does Wiktionary file the word under something other than its surface text or lowercase? Add `Forms` (variants, lemmas, stripped diacritics) or `Rewrite` (a fixed suffix page).

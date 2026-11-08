@@ -275,3 +275,10 @@ func TestVocabWordMergerScoresWholeWordPieces(t *testing.T) {
 		t.Errorf("merger not applied: %v", words)
 	}
 }
+
+func TestParseUnigramWithoutPostProcessorFails(t *testing.T) {
+	_, err := ParseUnigram([]byte(`{"model": {"type": "Unigram", "unk_id": 0, "vocab": [["<unk>", 0]]}}`))
+	if err == nil {
+		t.Fatal("want error for missing special tokens")
+	}
+}

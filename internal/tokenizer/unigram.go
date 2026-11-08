@@ -168,7 +168,7 @@ func parseUnigram(data []byte, opts ...Option) (*UnigramTokenizer, error) {
 	// SentencePiece scores unknown characters ten below the worst real piece so they only win as a last resort.
 	t.unkScore = minScore - 10
 	special := func(i int) int {
-		if i < len(f.PostProcessor.Single) && f.PostProcessor.Single[i].SpecialToken != nil {
+		if i >= 0 && i < len(f.PostProcessor.Single) && f.PostProcessor.Single[i].SpecialToken != nil {
 			if id, ok := t.ids[f.PostProcessor.Single[i].SpecialToken.ID]; ok {
 				return int(id)
 			}
