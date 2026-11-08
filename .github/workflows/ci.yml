@@ -116,6 +116,10 @@ jobs:
         if: steps.run.outputs.go == 'true' && runner.os != 'Windows'
         run: bash scripts/setup.sh --model bert-base | tee out.txt && grep -q "already exists, skipping export" out.txt
 
+      - name: Language scripts and paths (all OS)
+        if: steps.run.outputs.go == 'true'
+        run: go test -count=1 ./internal/lang/... ./internal/models ./internal/tokenizer
+
       - name: Server e2e
         if: steps.run.outputs.go == 'true'
         shell: bash
