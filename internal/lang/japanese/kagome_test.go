@@ -26,7 +26,7 @@ func TestSegmentUniDicWords(t *testing.T) {
 }
 
 func TestLemmas(t *testing.T) {
-	for in, want := range map[string]string{"いただい": "いただく", "持ち込ん": "持ち込む", "素晴らしく": "素晴らしい"} {
+	for in, want := range map[string]string{"いただい": "いただく", "持ち込ん": "持ち込む", "素晴らしく": "素晴らしい", "私は": "私", "食べました": "食べる", "猫が": "猫"} {
 		if got := lemmas(in); len(got) == 0 || got[0] != want {
 			t.Errorf("lemmas(%q) = %q, want %q", in, got, want)
 		}

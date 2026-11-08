@@ -15,7 +15,19 @@ func Language() lang.Language {
 }
 
 // forms lists the other script's spellings, since Wiktionary keeps full entries under the Traditional one and the Simplified page may be missing or a stub.
+// Model pieces are unsegmented, so "学生们" has no page but its prefix does; two trims bound the extra lookups.
 func forms(word string) []string {
+	out := variants(word)
+	runes := []rune(word)
+	for n := len(runes) - 1; n >= 2 && n >= len(runes)-2; n-- {
+		prefix := string(runes[:n])
+		out = append(out, prefix)
+		out = append(out, variants(prefix)...)
+	}
+	return out
+}
+
+func variants(word string) []string {
 	var out []string
 	if trad := Traditional(word); trad != word {
 		out = append(out, trad)

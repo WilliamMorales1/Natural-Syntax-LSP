@@ -3,6 +3,7 @@
 package japanese
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/ikawaha/kagome-dict/uni"
@@ -22,7 +23,7 @@ var kagome = sync.OnceValue(func() *tokenizer.Tokenizer {
 
 const hasDictionary = true
 
-// lemmas returns candidate dictionary forms for an inflected Japanese word, nil if there are none.
+// lemmas returns headword candidates for a word or model piece: the first content token's dictionary form, then its surface when the piece carries trailing particles ("私は" gives 私).
 func lemmas(word string) []string {
 	tk := kagome()
 	if tk == nil {
@@ -31,17 +32,24 @@ func lemmas(word string) []string {
 	mu.Lock()
 	toks := tk.Tokenize(word)
 	mu.Unlock()
-	var out []string
 	for _, t := range toks {
-		if b, ok := t.BaseForm(); ok && b != "*" && b != t.Surface {
+		if pos := t.POS(); len(pos) > 0 && functionPOS[pos[0]] && len(toks) > 1 {
+			continue
+		}
+		var out []string
+		if b, ok := t.BaseForm(); ok && b != "*" && b != word {
 			out = append(out, b)
 		}
-		if len(out) > 0 {
-			break
+		if t.Surface != word && !slices.Contains(out, t.Surface) {
+			out = append(out, t.Surface)
 		}
+		return out
 	}
-	return out
+	return nil
 }
+
+// functionPOS are UniDic top-level classes that never head a dictionary lookup.
+var functionPOS = map[string]bool{"助詞": true, "助動詞": true, "補助記号": true, "接頭辞": true}
 
 // segment returns the rune ranges of the words in run, which must be a Han/kana run; nil if the dictionary cannot be loaded.
 func segment(run string) [][2]int {
