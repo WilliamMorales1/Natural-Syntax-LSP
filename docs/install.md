@@ -39,7 +39,7 @@ code --install-extension natural-syntax-ls-*.vsix
 
 Every build includes the kagome Japanese dictionary (about 48 MB binary instead of 11 MB, loaded only when Japanese text appears; see [models.md](models.md#other-languages-experimental)). To leave it out, build with `go build -tags nojaseg ./cmd/natural-syntax-ls/`; Japanese then falls back to tokenizer pieces (74% instead of 97% POS accuracy).
 
-For an English-only server, build with `-tags english` (about 7 MB): no kagome dictionary, no Japanese lemmas, no Chinese script conversion. Release archives named `*_english.*` are built this way; `scripts/build-release.sh [version]` builds both variants into `dist/`. Semantic mode still works because the multilingual embedding model needs the Unigram tokenizer, which stays in.
+For an English-only server, build with `-tags english` (about 7 MB): no kagome dictionary, no Japanese lemmas, no Chinese script conversion. Releases are not built this way: every release binary has all languages. `scripts/build-release.sh [version]` builds the full binary into `dist/`. Semantic mode still works because the multilingual embedding model needs the Unigram tokenizer, which stays in.
 
 To use your own binary instead of the bundled one, set in VS Code settings:
 
