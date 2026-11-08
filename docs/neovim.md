@@ -1,6 +1,6 @@
 # Neovim
 
-The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client. POS and dependency coloring use standard semantic tokens and hover works in all three modes. Semantic-mode colors use a custom `$/nls/semanticColors` notification that Neovim ignores unless you add the handler under [Semantic mode colors in Neovim](#semantic-mode-colors-in-neovim).
+The server is a standard stdio LSP (`textDocument/semanticTokens/full` + `textDocument/hover`), so it works with any LSP client. POS and dependency coloring use standard semantic tokens and hover works in all three modes. Semantic-mode colors use a custom `$/nls/semanticColors` notification, handled by the config below.
 
 ## Setup
 
@@ -8,68 +8,88 @@ Export the models and install the binary first (see [Installation](../README.md#
 
 `scripts/setup.sh` installs the binary to `~/.local/bin` (`$XDG_BIN_HOME` if set); `scripts/setup.ps1` installs it to `%LOCALAPPDATA%\Programs\natural-syntax-ls` and adds that to your user `PATH`. With it on `PATH`, `cmd = { "natural-syntax-ls" }` is enough.
 
-**As a plugin (Neovim 0.11+, recommended).** This repo ships `lsp/natural_syntax_ls.lua` (default config plus the semantic-mode color handler) and `plugin/natural_syntax_ls.lua` (`:NlsMode`). Add it with any plugin manager, then enable the server:
+Copy this into `init.lua` (or `require` it from a file in your config). Needs Neovim 0.11+. It defines the server config, the semantic-mode color handler, `:NSMode`, and `:NSLang`.
 
 ```lua
--- lazy.nvim
-{ "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
-```
+local ns = vim.api.nvim_create_namespace("natural_syntax_ls_colors")
+local dir = vim.fs.joinpath(vim.env.XDG_CONFIG_HOME or vim.fs.joinpath(vim.env.HOME, ".config"), "natural-syntax-ls")
+local models = {
+  pos = "bert_base.onnx",
+  semantic = "multilingual_minilm.onnx",
+  dependency = "en_ewt_electra_base_dependency.onnx",
+}
 
-Override any field with `vim.lsp.config("natural_syntax_ls", { ... })`.
-
-The manual setups below are only needed without the plugin.
-
-**Plain Neovim 0.11+** (built-in `vim.lsp.config`, no plugins required), e.g. in `init.lua`:
-
-```lua
 vim.lsp.config("natural_syntax_ls", {
   cmd = { "natural-syntax-ls" },
   filetypes = { "text", "markdown" },
-  root_dir = function(bufnr, on_dir)
+  init_options = { wiktionary_language = vim.g.natural_syntax_ls_wiktionary_language },
+  root_dir = function(_, on_dir)
     on_dir(vim.fn.getcwd())
   end,
+  handlers = {
+    -- Semantic mode sends hex colors in a custom notification instead of semantic tokens.
+    ["$/nls/semanticColors"] = function(_, result)
+      local bufnr = vim.uri_to_bufnr(result.uri)
+      if not vim.api.nvim_buf_is_loaded(bufnr) then
+        return
+      end
+      vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      for _, tok in ipairs(result.tokens) do
+        local text = lines[tok.line + 1]
+        if text then
+          local group = "NlsColor" .. tok.color:sub(2)
+          vim.api.nvim_set_hl(0, group, { fg = tok.color })
+          vim.api.nvim_buf_set_extmark(bufnr, ns, tok.line, vim.str_byteindex(text, "utf-32", tok.character, false), {
+            end_col = vim.str_byteindex(text, "utf-32", tok.character + tok.length, false),
+            hl_group = group,
+            strict = false, -- buffer may have changed since the push
+          })
+        end
+      end
+    end,
+  },
 })
 vim.lsp.enable("natural_syntax_ls")
-```
 
-If you use `mason-lspconfig`, you still need the `vim.lsp.enable` call — its `automatic_enable` only covers servers Mason installed.
-
-**Neovim 0.10 with `nvim-lspconfig`:**
-
-```lua
-local configs = require("lspconfig.configs")
-if not configs.natural_syntax_ls then
-  configs.natural_syntax_ls = {
-    default_config = {
-      cmd = { "natural-syntax-ls" },
-      filetypes = { "text", "markdown" },
-      root_dir = function() return vim.fn.getcwd() end,
-    },
-  }
+-- Restarts the server for a mode and an optional forced language ("" detects per line).
+local function restart(mode, language)
+  vim.g.natural_syntax_ls_mode = mode
+  vim.g.natural_syntax_ls_language = language
+  vim.lsp.enable("natural_syntax_ls", false)
+  -- Stopping is async; enabling before exit lets the dying client claim the buffers.
+  vim.wait(5000, function()
+    return #vim.lsp.get_clients({ name = "natural_syntax_ls" }) == 0
+  end, 50)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  end
+  local cmd = { "natural-syntax-ls", "-mode", mode }
+  local wikt = vim.g.natural_syntax_ls_wiktionary_language
+  if language ~= "" then
+    -- The server picks that language's model from models.json.
+    vim.list_extend(cmd, { "-lang", language })
+    wikt = language .. ",en"
+  else
+    vim.list_extend(cmd, { "-model", vim.fs.joinpath(dir, models[mode]) })
+  end
+  vim.lsp.config("natural_syntax_ls", { cmd = cmd, init_options = { wiktionary_language = wikt } })
+  vim.lsp.enable("natural_syntax_ls")
 end
-require("lspconfig").natural_syntax_ls.setup({})
+
+vim.api.nvim_create_user_command("NSMode", function(opts)
+  restart(opts.args, vim.g.natural_syntax_ls_language or "")
+end, { nargs = 1, complete = function() return vim.tbl_keys(models) end })
+
+vim.api.nvim_create_user_command("NSLang", function(opts)
+  local code = opts.args:lower()
+  restart(vim.g.natural_syntax_ls_mode or "pos", code == "auto" and "" or code)
+end, { nargs = 1, complete = function() return { "auto", "en", "fr", "es", "de", "it", "pt", "ru", "ja", "zh", "ar" } end })
 ```
 
-**LazyVim:**
+If you use `mason-lspconfig`, the `vim.lsp.enable` call is still needed: its `automatic_enable` only covers servers Mason installed. With LazyVim, put the snippet in `lua/config/options.lua` or any file under `lua/plugins/` inside a `config` function.
 
-```lua
--- lua/plugins/natural-syntax-ls.lua
-return {
-  "neovim/nvim-lspconfig",
-  opts = {
-    servers = {
-      natural_syntax_ls = {
-        mason = false,
-        cmd = { "natural-syntax-ls" },
-        filetypes = { "text", "markdown" },
-        root_dir = function(bufnr, on_dir)
-          on_dir(vim.fn.getcwd())
-        end,
-      },
-    },
-  },
-}
-```
+On Neovim 0.10, `vim.lsp.config` does not exist. Register the server through `nvim-lspconfig` (`require("lspconfig.configs")`, `default_config = { cmd, filetypes, root_dir }`, then `require("lspconfig").natural_syntax_ls.setup({})`) and attach the `$/nls/semanticColors` handler in `setup({ handlers = ... })`. `:NSMode` and `:NSLang` are not supported there; change `cmd` and run `:LspRestart`.
 
 ## Switching modes
 
@@ -83,68 +103,11 @@ Mode and model are fixed when the server starts, picked by the `-mode`, `-model`
 
 Swap `bert_base.onnx` for `mobilebert.onnx`, `xlmr_es.onnx`, or `xlmr_fr.onnx` (`-model` also works in `pos` mode), and the dependency model for `es_ancora_mbert_dependency.onnx` or `fr_sequoia_camembert_large_dependency.onnx`, to use other models.
 
-To switch at runtime, restart the server with a new `cmd`. On Neovim 0.11+, this adds `:NlsMode pos|semantic|dependency` (put it after the `vim.lsp.config` block above):
-
-```lua
-local nls_dir = vim.fn.expand("~/.config/natural-syntax-ls/")
-local nls_models = {
-  pos = "bert_base.onnx",
-  semantic = "multilingual_minilm.onnx",
-  dependency = "en_ewt_electra_base_dependency.onnx",
-}
-
-vim.api.nvim_create_user_command("NlsMode", function(opts)
-  for _, client in ipairs(vim.lsp.get_clients({ name = "natural_syntax_ls" })) do
-    client:stop()
-  end
-  local ns = vim.api.nvim_create_namespace("natural_syntax_ls_colors") -- semantic-mode colors, see below
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  end
-  vim.lsp.config("natural_syntax_ls", {
-    cmd = { "natural-syntax-ls", "-mode", opts.args, "-model", nls_dir .. nls_models[opts.args] },
-  })
-  vim.lsp.enable("natural_syntax_ls") -- re-attaches to open buffers
-end, {
-  nargs = 1,
-  complete = function() return vim.tbl_keys(nls_models) end,
-})
-```
-
-On Neovim 0.10 with `nvim-lspconfig`, call `require("lspconfig").natural_syntax_ls.setup({ cmd = { ... } })` again with the new `cmd`, then `:LspRestart`.
+To switch at runtime, use `:NSMode pos|semantic|dependency` (defined above).
 
 ## Semantic mode colors in Neovim
 
-Semantic mode emits no semantic tokens. The server pushes each word's hex color in a custom `$/nls/semanticColors` notification instead (`{ uri, tokens = { { line, character, length, color } } }`, columns in codepoints). Neovim drops unknown notifications, so add a handler that paints them as extmarks (Neovim 0.11+; `:NlsMode` above clears them on switch):
-
-```lua
-local nls_ns = vim.api.nvim_create_namespace("natural_syntax_ls_colors")
-
-vim.lsp.config("natural_syntax_ls", {
-  handlers = {
-    ["$/nls/semanticColors"] = function(_, result)
-      local bufnr = vim.uri_to_bufnr(result.uri)
-      if not vim.api.nvim_buf_is_loaded(bufnr) then
-        return
-      end
-      vim.api.nvim_buf_clear_namespace(bufnr, nls_ns, 0, -1)
-      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      for _, tok in ipairs(result.tokens) do
-        local text = lines[tok.line + 1]
-        if text then
-          local group = "NlsColor" .. tok.color:sub(2)
-          vim.api.nvim_set_hl(0, group, { fg = tok.color })
-          vim.api.nvim_buf_set_extmark(bufnr, nls_ns, tok.line, vim.str_byteindex(text, "utf-32", tok.character, false), {
-            end_col = vim.str_byteindex(text, "utf-32", tok.character + tok.length, false),
-            hl_group = group,
-            strict = false, -- buffer may have changed since the push
-          })
-        end
-      end
-    end,
-  },
-})
-```
+Semantic mode emits no semantic tokens. The server pushes each word's hex color in a custom `$/nls/semanticColors` notification instead (`{ uri, tokens = { { line, character, length, color } } }`, columns in codepoints). Neovim drops unknown notifications, so the config above includes a handler that paints them as extmarks.
 
 The server re-pushes after every edit, so colors catch up once inference finishes. Tune them with `initializationOptions = { semantic_lightness = 0.6, semantic_chroma = 0.14 }` (lower lightness for light colorschemes).
 
@@ -154,4 +117,16 @@ POS tags map to standard semantic token types, so colors come from your colorsch
 
 ## Hover definition language
 
-Pass `init_options = { wiktionary_language = "es" }` in the LSP config. Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's language, else `en`), or `auto` (best across languages). Read at server start.
+The default is `detect,en`: the language detected in the hovered line, then English. Set `vim.g.natural_syntax_ls_wiktionary_language = "es,en"` before the server starts, or pass `init_options = { wiktionary_language = "es,en" }` in the LSP config. `:NSLang CODE` restarts the server on one language (defined above).
+
+Values: a code (`en` default, `es`, `fr`, `ja`, `zh`, ...), `model` (the model's language, else `en`), `auto` (best across languages), or a comma-separated priority list (`es,en`: first language with a definition wins).
+
+## Forcing a language
+
+`:NSLang es` (also `fr`, `de`, `ja`, ...) restarts the server for one language, keeping the current mode:
+
+- the model becomes that language's entry in `models.json` for the mode (for example `xlmr-es` in `pos`), else a language-neutral model, else the default;
+- detection is switched off, so the tokenizer rules in `lang/es.lua`-style scripts and the hover lookup treat all text as that language;
+- hover definitions use `es,en`.
+
+`:NSLang auto` returns to per-line detection and the default models. `:NSMode` keeps the forced language. The server flag is `-lang CODE`.

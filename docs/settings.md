@@ -11,10 +11,25 @@
 | `naturalSyntaxLs.scoreThreshold`        | `null` (0.333)              | Minimum confidence to highlight (POS mode) |
 | `naturalSyntaxLs.tokenMapUpdate`        | `{}`                        | Override POS → token type mappings |
 | `naturalSyntaxLs.wiktionaryDefinitions` | `true`                      | Show Wiktionary definitions in hover |
-| `naturalSyntaxLs.wiktionaryLanguage`    | `"en"`                      | Hover definition language: a code (`en`, `es`, `fr`, `ja`, `zh`, ...), `model` (model's language, else `en`), or `auto` (best across languages). Read at server start |
+| `naturalSyntaxLs.wiktionaryLanguage`    | `"detect,en"`               | Hover definition language: `detect` (language of the hovered line, found by the built-in detector), a code (`en`, `es`, `fr`, `ja`, `zh`, ...), `model` (model's language, else `en`), `auto` (best across languages), or a priority list like `detect,en` (first language with a definition wins). Applies immediately; Neovim: `:NSLang es` |
 | `naturalSyntaxLs.langDir`               | `""`                        | Extra directory of language `*.lua` scripts (see `docs/adding-a-language.md`). Read at server start |
 | `naturalSyntaxLs.semanticLightness`     | `0.75`                      | OKLCH lightness for semantic colors (0–1); increase for light themes |
 | `naturalSyntaxLs.semanticChroma`        | `0.14`                      | OKLCH chroma of the most vivid semantic colors |
+
+## Language detection
+
+The server embeds a small language detector (a linear model over hashed character n-grams and words, 1.7 MB, about 11 microseconds per line; en, fr, es, de, it, pt, ru, ja, zh, ar, ca, uk, ko). Nothing needs configuring:
+
+- Hover looks the word up in the language of its line (`detect`), falling back to the whole document's language, then English.
+- Language-specific tokenizer rules (French elisions such as `l'ami`) apply only to lines detected as that language. When the language cannot be told, as with very short text, every rule applies.
+
+Retrain on Tatoeba per-language dumps (`<iso3>_sentences.tsv.bz2` from `downloads.tatoeba.org/exports/per_language/<iso3>/`) plus optional extra text, one sentence per line in `<code>.txt` (for example the `# text =` lines of UD treebank train files):
+
+```
+go run ./internal/langid/train -data TATOEBA_DIR -extra EXTRA_DIR -out internal/langid/linear.bin -epochs 6 -n 150000 -crop 0.6
+```
+
+`NSLS_LANGID_DIR=TATOEBA_DIR go test ./internal/langid -run HeldOut -v` reports held-out accuracy by text length and a confusion matrix (99-100% on whole sentences, 85-99% on texts of 6-12 characters); `NSLS_LANGID_UD=DIR` with `<code>.test.txt` files scores out-of-domain text. Add `NSLS_LANGID_LINEAR=FILE` to score a candidate model without installing it. To add a language, add its row to `langs` in `internal/langid/train/main.go` and to the test tables, then retrain.
 
 ## POS mode colors
 
@@ -58,7 +73,7 @@ Words color within ~10 seconds (POS), ~5 seconds (semantic) or ~15 seconds (depe
 | --- | ---- | -------------- |
 | `NSLS_ML_DIR` | `internal/inference` multilingual tests | Sample sentences per language through the exported models |
 | `NSLS_EVAL=1`, `NSLS_ML_DIR`, `NSLS_ML_QDIR` | `TestEval` | POS accuracy and dependency UAS/LAS on UD test treebanks (downloaded on first run) |
-| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across en, es, fr, ja, zh, ru, ar |
+| `NSLS_SEMANTIC_EVAL=1`, `NSLS_ML_DIR` | `TestSemanticQualityAcrossLanguages` | Word-group separation within and across en, es, fr, ja, zh, ru |
 | `NSLS_NVIM_BENCH=1`, `NSLS_ML_DIR` | `internal/e2e` `TestNvimBench` | Startup, open, edit and hover latency and server memory, through a real headless Neovim; `NSLS_BENCH_ONLY` filters cases |
 
 `go test -short -race ./...` is the CI check (`.github/workflows/ci.yml`). Fuzz targets run with `go test ./internal/lspserver -run xxx -fuzz FuzzApplyContentChange`; others are `FuzzParseCPUList` (`internal/inference`) and `FuzzStripHTML` (`internal/wiktionary`).

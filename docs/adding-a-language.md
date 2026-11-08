@@ -2,7 +2,7 @@
 
 A language is a Lua script. The server loads every `*.lua` from these directories, in order, and a later file replaces an earlier one with the same `code`: `<exe dir>/lang/`, `<model dir>/lang/`, `~/.config/natural-syntax-ls/lang/`, then `naturalSyntaxLs.langDir` (`--lang-dir`). No Go build needed; restart the server after an edit.
 
-The shipped scripts are in `lang/` in the repo (English, French, Spanish, Russian, Arabic). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags nojaseg` drops the kagome dictionary.
+The shipped scripts are in `data/lang/` in the repo (English, French, Spanish, Russian). `scripts/setup.sh` and `setup.ps1` copy them into the config dir without overwriting edited files; release archives and the extension carry them in `<exe dir>/lang/`. The binary embeds none: without scripts it has only the Go languages. Japanese (kagome dictionary) and Chinese (conversion tables) stay Go packages because they need native assets; `-tags nojaseg` drops the kagome dictionary.
 
 Generic packages (`tokenizer`, `wiktionary`, `inference`, `lspserver`) hold no language names; they take hooks from a `lang.Language` value, which `internal/lang/luaload` builds from the script.
 
@@ -21,7 +21,7 @@ return {
   wiktionary = {
     code = "fr",
     sections = { "French" },                -- English Wiktionary L2 headings
-    wikitext = false, script = "Han",       -- read wikitext for words in this Unicode script
+    -- optional: wikitext = true, script = "Han" reads wikitext for words in that Unicode script
     rewrite = function(word, pos, deprel) end, -- Penn tag and UD relation as strings; return a headword or nil
     forms = function(word) return {} end,   -- extra headwords to try
   },
@@ -57,7 +57,7 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 
 1. Write `<code>.lua`. A language with no special rules is only `code`, `model_prefixes` and `wiktionary.code`/`sections` (see `spanish.lua`).
 2. To ship it built in, put it in `lang/` and add tests to `internal/lang/builtin/builtin_test.go`.
-3. Model catalog: add an entry to `models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). It is read by the server (default model search, from `<exe dir>` then the config dir) and by `scripts/export_model.py`; setup copies it to the config dir without overwriting. Nothing else in Go or Python names models.
+3. Model catalog: add an entry to `data/models.json` (`name`, `mode`, `source`, `language`, `description`, optional `default` and `int8`). It is read by the server (default model search, from `<exe dir>` then the config dir) and by `scripts/export_model.py`; setup copies it to the config dir without overwriting. Nothing else in Go or Python names models.
 4. Not catalog, one line each:
    - `scripts/setup.sh`, `scripts/setup.ps1`: `export_*` function, `--model` case, `all` list (still hardcoded).
    - `vscode-extension/package.json`: `naturalSyntaxLs.model` enum and description (static JSON, still hardcoded).
@@ -65,9 +65,9 @@ Tokenizer behavior that needs a new flag, an unspaced-script segmenter or a nati
 
 ## Worked example: French
 
-French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `lang/french.lua`.
+French needed a word merger beyond a model: the generic split cuts `l'ami` into `l`, `'`, `ami`; `elisions` rejoins it as `l'`, `ami` (UD's words) and keeps `aujourd'hui` whole. See `data/lang/french.lua`.
 
-Spanish needed only prefixes and a Wiktionary section. Russian and Arabic needed `forms` (stress marks and `ё`; tashkeel and tatweel). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
+Spanish needed only prefixes and a Wiktionary section. Russian needed `forms` (stress marks and `ё`). Japanese needed a segmenter (kagome) and dictionary-form headwords; Chinese needed script-variant headwords and the wikitext fallback; both stay in Go.
 
 ## Decide what the language needs
 
@@ -90,3 +90,7 @@ Answer these in order; stop adding hooks as soon as the answer is no.
 ## Sentence boundaries
 
 No hook needed. `internal/inference` ends a sentence at any lone Unicode `Sentence_Terminal` word (`. ! ? 。 ？ ؟ ۔`) and keeps following non-ASCII closing brackets and quotes (`」 ） »`) with it. A script whose terminator lacks that property needs a tokenizer or inference change.
+
+## Language detection
+
+Hover and language-scoped tokenizer rules rely on the built-in detector. If your language is not among those it knows (see `docs/settings.md`), scripts with `tokenizer` rules apply to every line. To teach the detector a language, add a Tatoeba dump (and optionally UD text) and retrain as described in `docs/settings.md`. Galician was tried and dropped: about 10k sentences were too few to separate it from Spanish and Portuguese (64% held-out accuracy).

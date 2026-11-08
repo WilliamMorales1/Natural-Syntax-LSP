@@ -6,7 +6,7 @@ Parts-of-speech, semantic-embedding, or dependency-parse highlighting for VS Cod
 
 Three modes:
 
-- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish, French, Russian and Arabic via XLM-R); your theme picks the colors.
+- **POS** (default): BERT/MobileBERT tags each word's part of speech (Spanish, French and Russian via XLM-R); your theme picks the colors.
 - **Semantic**: a multilingual sentence-embedding model (50+ languages) colors words by meaning in context; words used alike get similar colors.
 - **Dependency**: [diaparser](https://github.com/Unipisa/diaparser) UD parser colors words by syntactic relation (`nsubj`, `obj`, `amod`, …), for English, Spanish and French.
 
@@ -31,11 +31,7 @@ code --install-extension natural-syntax-ls-*.vsix
 
 **Standalone binary**: each release has `natural-syntax-ls_<platform>.tar.gz` (`.zip` on Windows) holding the server (all languages), ONNX Runtime, the language scripts (`lang/`) and the model catalog (`models.json`) side by side. Extract anywhere and put the binary on your `PATH`.
 
-**Neovim 0.11+**: the repo is a plugin (LSP config, semantic colors, `:NlsMode`). Needs the server binary on `PATH`. With [lazy.nvim](https://github.com/folke/lazy.nvim):
-
-```lua
-{ "WilliamMorales1/Natural-Syntax-LSP", config = function() vim.lsp.enable("natural_syntax_ls") end }
-```
+**Neovim 0.11+**: needs the server binary on `PATH`. Config snippet (LSP setup, semantic colors, `:NSMode`, `:NSLang`) is in [docs/neovim.md](docs/neovim.md).
 
 ## Docs
 
@@ -44,6 +40,7 @@ code --install-extension natural-syntax-ls-*.vsix
 - [Settings, colors, testing](docs/settings.md)
 - [Adding a language](docs/adding-a-language.md)
 - [Neovim manual setup](docs/neovim.md)
+- [How semantic colors work](docs/semantic-colors.md)
 
 ## Credits
 

@@ -108,7 +108,7 @@ Original options: (a) fine-tune `bert-base-multilingual-cased` on UD (es_ancora,
 
 - Setup: `setup.sh`/`setup.ps1 --model bert-base|mobilebert|pos-es|pos-fr|multilingual|dependency|dependency-es|dependency-fr|all`; skip-if-present; `_tokenizer.json` or `_vocab.txt` accepted.
 - `export_model.py --int8`; aliases `xlmr-es`, `xlmr-fr`, `multilingual-minilm`. `mpnet` and `minilm` removed; semantic default is `multilingual-minilm`.
-- VS Code model enum and `_tokenizer.json` fallback, Neovim `:NlsMode` semantic file, server fallback list, docs.
+- VS Code model enum and `_tokenizer.json` fallback, Neovim `:NSMode` semantic file, server fallback list, docs.
 - Spanish parser is fp32 (int8 breaks it). Against English: es parser uses 919 MB vs 684 MB, fr parser edits take 244 ms vs 130 ms, POS and semantic start-up is slower (see `docs/models.md`).
 - Off-by-default tests: accuracy (`TestEval`), semantic quality across languages, Neovim latency and memory (`internal/e2e`). Env vars in `docs/settings.md`.
 
@@ -128,18 +128,17 @@ Original options: (a) fine-tune `bert-base-multilingual-cased` on UD (es_ancora,
 
 - UPOS and B-/I- labels map onto Penn tags (`postag.ParseLabel`). EAGLES and CKIP inventories still unmapped.
 - Missing labels sidecar errors for sidecar-tokenizer models. Unknown labels still decode as `O`.
-- Hover text still shows the Penn description (a UPOS `NOUN` reads "Noun, singular or mass"). Needs language-neutral wording without changing English output.
+- Done 2026-11-07: every tagset collapses to one Universal class (`PartOfSpeech.Canonical`) for default color and hover, so English `NNS`/`VBD` look and read like Spanish `NOUN`/`VERB` (`docs/tags.md`). English fine-grained colors are gone by design; `tokenMapUpdate` still overrides single Penn tags. Remaining difference: UPOS `SCONJ` keeps its own hover wording while its color equals `ADP`.
+- Done: UPOS models set `Token.Description` from `postag.LabelDescription` (`NOUN` reads "Noun"); Penn models keep Penn wording.
 
 ### 3. Tokenization
 
 - Wiktionary lookup for Japanese and Chinese pieces: pieces such as `私は` are not dictionary headwords.
-- Test offsets for combining marks, full-width punctuation, and mid-document edits.
-- Spanish and French: test curly quotes, contractions, hyphens.
+- Done (`internal/tokenizer/offsets_test.go`): offsets after mid-document edits, combining marks, full-width punctuation, es/fr punctuation. Found and fixed: curly `’` split English words (`it’s`, `don’t`) where `'` did not; `isApostrophe` now covers both.
 
 ### 4. Sentence and chunk boundaries
 
-- Review POS and semantic chunking (`SplitChunks`) with CJK text.
-- Test Markdown block and paragraph splitting in each script.
+- Done (`internal/inference/chunks_test.go`): `SplitChunks` keeps order, respects `ChunkSize`, and breaks at sentence ends for en/es/fr/ja/zh/ru/ar; markdown block starts hold in ja/ru/ar.
 
 ### 5. Export and setup
 
@@ -360,5 +359,126 @@ Arabic scores whole written words against PADT heads at matching word starts, so
 - gopher-lua quirk: `x = (string.gsub(...))` on a parameter miscompiles; assign through a new local.
 - Open: step 5 (model metadata: labels, UPOS mapping, hidden size, `export_model.py` emitting `<model>.lua`), per-language startup timing, `Reload` on file change, Windows check.
 - Scripts moved out of the binary: `lang/*.lua` in the repo, installed by `setup.sh`/`setup.ps1` into the config dir (no overwrite), bundled by release archives and the extension as `<exe dir>/lang`. Embed and `Seed` removed. Search path now `<exe dir>/lang`, `<model dir>/lang`, config `lang`, `--lang-dir`. A binary with no scripts has only ja and zh.
-- Model catalog moved to `models.json` (repo root, copied to config dir, bundled next to the binary): name, mode, source, language, default, int8. `internal/models` loads it (later dir overrides by name) and the server's default model search uses `default` entries for the current mode; `export_model.py` reads it. `setup.sh --model NAME|all` and `setup.ps1 -Model NAME|all` read it too (`--list` / `-List` prints it; old aliases like `pos-es` are gone; fixed `tr '-./'` slug bug that broke the skip-if-present check). `setup.ps1` untested (no pwsh here). Still hardcoded: the extension `naturalSyntaxLs.model` enum (static package.json); `ModelPrefixes` live in language scripts.
+- Model catalog moved to `data/models.json` (was repo root, copied to config dir, bundled next to the binary): name, mode, source, language, default, int8. `internal/models` loads it (later dir overrides by name) and the server's default model search uses `default` entries for the current mode; `export_model.py` reads it. `setup.sh --model NAME|all` and `setup.ps1 -Model NAME|all` read it too (`--list` / `-List` prints it; old aliases like `pos-es` are gone; fixed `tr '-./'` slug bug that broke the skip-if-present check). `setup.ps1` untested (no pwsh here). Still hardcoded: the extension `naturalSyntaxLs.model` enum (static package.json); `ModelPrefixes` live in language scripts.
 - Release archives are one full build per platform (all languages); the `*_english.*` archives and the english variant in `build-release.sh` are gone. The `english` build tag and its stubs are removed; `nojaseg` stays.
+
+## Plan: simulate a new user adding de, it, pt, ar
+
+Goal: follow only the docs as a new user would, with no repo edits and no commits, and record every snag. Done 2026-11-07 in a scratch config dir (`XDG_CONFIG_HOME` pointed at a copy of the install, with `lang/*.lua` copied from the repo and the real model files symlinked).
+
+Method:
+1. Write `de.lua`, `it.lua`, `pt.lua`, `ar.lua` from `docs/adding-a-language.md` (Italian gets an `elisions` list; Arabic starts with no hooks).
+2. Add `xlmr-de|it|pt|ar` entries (`wietsedv/xlm-roberta-base-ft-udpos28-<code>`) to the scratch `models.json`.
+3. Drive the real binary over LSP (`semantic` mode for tokenization and hover, `pos` mode with `-lang`) on one sentence per language.
+4. Fake an installed `xlmr_de` by symlinking the `xlmr_es` files, to test model selection only. No real export was run (heavy, Colab).
+
+What worked:
+- All four scripts load without code changes. The detector already knows de, it, pt, ar, so hover finds `Hund`, `springt`, `cachorro`, `maçãs`, `cane` in the right language with no `wiktionary_language` setting.
+- Italian elision: with `it.lua` the tokens are `L'`, `amico`, `dell'`, `un'`; without it the apostrophes vanish (`L`, `dell`, `un`). The `elisions` flag is language-neutral, so no Go change.
+- `-lang de` with `xlmr_de` present picks it (different tags from `bert_base`); `-lang it` with no Italian model falls back to the default.
+
+Problems found:
+1. No Italian/German/Portuguese/Arabic entries in the shipped `models.json`; `docs/models.md` has no Arabic POS row even though `xlmr_ar` files exist locally.
+2. Catalog edits do not propagate. `setup.sh` copies `models.json` to the config dir only if absent, and `export_model.py` reads the repo copy before the config copy, so a user who adds entries in the config dir cannot export them, and one who edits the repo copy after the first setup is not seen by the server.
+3. The export script's docstring lists the model names by hand (`xlmr-es|fr|ru` only), against the "no model name in Python" rule.
+4. VS Code `naturalSyntaxLs.model` is a static enum, so new catalog names cannot be picked. The `:NSLang` completion list is also hardcoded.
+5. `-lang CODE` with no installed model for that code silently falls back to the English default; no log line says which model loaded. Should warn, and the server should log the chosen model path.
+6. Auto-detect never switches the model, so a German file under the default setup gets English POS tags (`Hund` is a proper noun at 0.80 under `xlmr_es`-as-de, a noun at 0.99 under bert-base). Only `:NSLang` changes models.
+7. Arabic hover: bare words work (`كلب`) but the definite article (`المدرسة`, `الكلب`) and tashkeel (`كَلْب`) find nothing. The old `arabic.lua` `forms` hook stripped tashkeel; nothing strips `ال`. A new user has to know to write both.
+8. Semantic mode has no POS, so homographs pick the wrong sense: `amico` gives "first-person singular present indicative of amicarsi", `faulen` gives the verb "to rot", `كلب` gives "to be seized by hydrophobia".
+9. `xlm-roberta-base-ft-udpos28-ar` ships only `pytorch_model.bin` (no safetensors); recent torch refuses `torch.load` on it, so the export may fail without a workaround. Not run.
+10. diaparser has no usable de/it/pt/ar dependency parser in the release assets besides `ar_padt.asafaya`; `de_hdt.dbmdz-bert-base`, `it_isdt.dbmdz-*` exist but are untested here.
+11. `:NSLang` completion and `lang` model choice cover only POS models for these languages; semantic mode keeps the multilingual model (correct) and dependency has no match.
+
+Fixed 2026-11-07: 2 (setup no longer copies `models.json`; `export_model.py` merges repo and config catalogs, config wins), 4 (VS Code `model` is free text with examples), 5 (server logs the chosen model and warns when `-lang` has no matching model). `:NSLang` completion stays a static list. Next: ship `xlmr-de|it|pt`; Arabic `forms` script is moot while `lang/arabic.lua` is removed.
+
+## Plan: better language identification than n-gram naive Bayes
+
+Current: `internal/langid`, hashed-free char 1-3-gram naive Bayes, 288 KB, about 11 us per line, 10 languages. Held-out Tatoeba accuracy 95.7-99.98% on sentences, but short text suffers: es 85%, pt 91%, fr 93%, en 95% at 20 characters or fewer. Weak points: es/pt/it confusion, no calibrated confidence (a fixed per-n-gram margin decides abstaining), independence assumption overcounts repeated evidence, pruned vocabulary (3000 n-grams per language) drops rare ones, and every added language needs retraining on Tatoeba.
+
+Candidates, in order to try:
+1. **Discriminative linear model on the same features** (fastText-style: hashed char 1-5-grams plus word unigrams, softmax or one-vs-rest, trained with SGD). Same cost class, usually several points better on short text because it learns weights against confusable languages instead of per-language likelihoods. Keep the pure-Go scorer; only the trainer changes. Expected size 0.5-2 MB at 2^18 buckets, int8.
+2. **Pretrained fastText `lid.176.ftz`** (CC BY-SA 3.0, about 900 KB, 176 languages). Needs a Go reader for the product-quantized format; check license compatibility with the repo's before embedding. Covers languages users add without retraining. Compare against option 1 on the same held-out set.
+3. **Compact CNN or small transformer via ONNX** only if 1 and 2 stay under 97% on texts of 20 characters or fewer. ONNX Runtime is already linked, but start-up and per-line latency rise from microseconds to milliseconds, so run it per paragraph, not per token.
+
+Cheap improvements that apply to any of them:
+- Add word-level features and a prior from the previous line's language (documents are mostly monolingual; smooth across lines).
+- Return a calibrated probability (softmax with temperature fitted on held-out data) instead of the per-n-gram margin, and expose a threshold.
+- Script shortcuts first (kana means ja, Hangul means ko, Cyrillic narrows to ru/uk/bg), so the model only separates within a script.
+- Train on more than Tatoeba: add Wikipedia text and the UD treebanks, plus text with code, URLs and numbers, since Tatoeba sentences are clean and short. Include look-alikes (es/pt/gl/ca, ru/uk/be, zh simplified vs traditional).
+
+Acceptance:
+- Held-out accuracy at least 98% on whole sentences and at least 95% on texts of 20 characters or fewer for every shipped language, measured by `TestHeldOutAccuracy` extended with a third length bucket (6-12 characters).
+- Per-line cost under 100 us and binary growth under 2 MB.
+- No regression in `TestDetect`, `TestElisionsOnlyInDetectedFrench` or `TestTokenAtDetectsLineLanguage`.
+- Adding a language is one data directory plus one trainer run; document the command in `docs/adding-a-language.md`.
+
+Steps:
+1. Extend the eval to report a confusion matrix and the short-text buckets; record the current numbers here.
+2. Implement option 1 in `internal/langid/train` behind the same `model.bin` loader (version byte in the header) and compare.
+3. Evaluate option 2 on the same set; pick by accuracy, size and license.
+4. Add calibration and previous-line smoothing in `Detect` callers (tokenizer line grouping, hover).
+5. Retrain with the wider corpus, update `docs/settings.md`, and note the result here.
+
+Step 1 done 2026-11-07. `TestHeldOutAccuracy` now reports length buckets (1-5, 6-12, 13-20, 21+ runes) and a confusion matrix; run with `NSLS_LANGID_DIR` set to the Tatoeba per-language dumps (`https://downloads.tatoeba.org/exports/per_language/<iso3>/<iso3>_sentences.tsv.bz2`). Baseline (naive Bayes, held-out every 20th sentence):
+
+| Lang | all | 6-12 | 13-20 | 21+ |
+| ---- | --- | ---- | ----- | --- |
+| en | 98.8 | 88.7 | 95.8 | 99.2 |
+| fr | 98.7 | 78.0 | 94.4 | 99.3 |
+| es | 95.7 | 72.9 | 87.4 | 97.4 |
+| de | 99.3 | 84.5 | 95.8 | 99.6 |
+| it | 98.2 | 87.9 | 95.0 | 98.9 |
+| pt | 97.5 | 79.4 | 92.9 | 98.5 |
+| ru | 100.0 | 100.0 | 100.0 | 100.0 |
+| ja | 99.7 | 99.9 | 100.0 | 100.0 |
+| zh | 97.3 | 99.8 | 99.7 | 99.4 |
+| ar | 99.7 | 100.0 | 99.9 | 99.9 |
+
+Findings: the 1-5 bucket is mostly abstentions (by design, under the minimum evidence). Errors are Latin-script only; es loses the most (6-12: 72.9%), and its confusions go to pt (210), `-` (583), it (94). en/fr/it/pt 13-20 sit at 93-96%, under the 95% short-text target for es and pt. Whole-sentence 21+ already meets 98% except es (97.4%). Abstention is the dominant short-text failure for es (583 of 22158), so calibration (step 4) and a discriminative model (step 2) both target the right errors.
+
+Step 2 done 2026-11-07. `internal/langid/linear.go` is a softmax regression over hashed (2^17 buckets) character 1-5-grams plus words, int8 weights, 1.3 MB (`linear.bin`, magic byte 0xFF; the naive Bayes `model.bin` stays as fallback when it is absent). `Detect` uses it, abstaining under probability 0.5. Trainer: `go run ./internal/langid/train -data DIR -out internal/langid/linear.bin -epochs 6 -n 150000 -crop 0.6` (Adagrad, 40% whole sentences and 60% random 4-30 character windows, about 1 minute). Evaluate a candidate file with `NSLS_LANGID_LINEAR=path NSLS_LANGID_DIR=... go test ./internal/langid -run HeldOut -v`. Cost 10.8 us per line (baseline about 11 us).
+
+| Lang | all (was) | 6-12 (was) | 13-20 (was) | 21+ (was) |
+| ---- | --------- | ---------- | ----------- | --------- |
+| en | 99.7 (98.8) | 92.8 (88.7) | 98.7 (95.8) | 99.8 (99.2) |
+| fr | 99.8 (98.7) | 91.3 (78.0) | 98.9 (94.4) | 100.0 (99.3) |
+| es | 99.2 (95.7) | 87.4 (72.9) | 97.3 (87.4) | 99.8 (97.4) |
+| de | 99.95 (99.3) | 96.9 (84.5) | 99.7 (95.8) | 100.0 (99.6) |
+| it | 99.7 (98.2) | 93.9 (87.9) | 99.1 (95.0) | 99.9 (98.9) |
+| pt | 99.5 (97.5) | 89.8 (79.4) | 98.1 (92.9) | 99.8 (98.5) |
+| ru, ja, ar | 99.7-100 | 99.9-100 | 99.9-100 | 99.9-100 |
+| zh | 97.5 (97.3) | 99.8 | 100.0 | 99.7 |
+
+Acceptance status: whole sentences at least 98% everywhere except zh (97.5%, all errors are abstentions on 1-5 character texts, 115 of 4464); 13-20 characters at least 97.3% everywhere; binary growth 1.0 MB net of the kept `model.bin`. Not yet met: 6-12 characters is 87-94% for Latin-script languages (target applies to 20 characters or fewer combined, which now holds). Next: step 3 (compare `lid.176.ftz`), then calibration and previous-line smoothing, then a wider corpus; dropping `model.bin` would save 288 KB.
+
+Incident: a stray `git stash` during this step briefly removed the working-tree changes; popped immediately, all files restored, and the two staged deletions (`lang/arabic.lua`, `scripts/build-release.sh`) re-staged.
+
+Step 3 done 2026-11-07: `lid.176.ftz` (938 KB, CC BY-SA 3.0) scored with the official `fasttext` Python package on the same held-out Tatoeba sentences, picking the best of our ten languages and never abstaining (script kept outside the repo; it needs numpy<2). It loses to the step 2 model nearly everywhere, even though Tatoeba is among its sources:
+
+| Lang | fastText all | ours all | fastText 6-12 | ours 6-12 | fastText 13-20 | ours 13-20 |
+| ---- | ------------ | -------- | ------------- | --------- | -------------- | ---------- |
+| en | 99.7 | 99.7 | 94.4 | 92.8 | 98.8 | 98.7 |
+| fr | 98.8 | 99.8 | 69.9 | 91.3 | 95.0 | 98.9 |
+| es | 98.1 | 99.2 | 82.0 | 87.4 | 94.5 | 97.3 |
+| de | 99.5 | 99.95 | 79.3 | 96.9 | 97.3 | 99.7 |
+| it | 98.8 | 99.7 | 90.6 | 93.9 | 96.4 | 99.1 |
+| pt | 97.0 | 99.5 | 74.9 | 89.8 | 91.6 | 98.1 |
+| ru | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 |
+| ja | 99.7 | 99.7 | 98.8 | 99.9 | 100.0 | 100.0 |
+| zh | 93.2 | 97.5 | 93.5 | 99.8 | 96.3 | 100.0 |
+| ar | 99.7 | 99.7 | 98.8 | 100.0 | 99.9 | 99.9 |
+
+Decision: keep the step 2 model. No Go reader for the product-quantized format, and no CC BY-SA obligation. fastText only wins on English 6-12 characters (+1.6 points). Its one advantage, 176 languages without retraining, stays open: adding a language to ours is one data file plus one trainer run. Remaining steps 4 (calibration, previous-line smoothing) and 5 (wider corpus, docs).
+
+Step 4 done 2026-11-07. Calibration: the linear model is trained on log loss, so its softmax is already close to calibrated (`TestCalibration`, texts of 20 characters or fewer, held out): confidence 0.9-1.0 is 99.9% right (51351 texts), 0.8-0.9 is 98.1%, 0.7-0.8 is 94.8%, 0.6-0.7 is 85.0%, 0.5-0.6 is 64.5%, 0.4-0.5 is 55.2%. Slightly underconfident above 0.6 and overconfident below 0.5, so no temperature fit; the 0.5 report threshold (`minProb`) stays. Smoothing: a tokenizer line the detector cannot classify now takes the previous line's language, then the text's (`options.merge`, test in `unigram_test.go`). Hover still falls back to the whole document; it classifies one line on demand, so previous-line smoothing there would need document line history (not done).
+
+Remaining: step 5 (wider corpus: Wikipedia, UD treebanks, text with code and URLs; look-alikes es/pt/gl/ca, zh simplified vs traditional; document the trainer in `docs/adding-a-language.md`, update `docs/settings.md`). Needs data downloads.
+
+Step 5 done 2026-11-07. Data: Tatoeba for 13 languages plus UD train-file text (`# text =` lines) for 13 of them, never the test files. New classes: Catalan (look-alike of es/fr), Ukrainian (ru), Korean. Training also adds a URL, number or code snippet to 15% of samples (`-noise`). Result: `linear.bin` 1.7 MB (14 classes were tried; Galician dropped, see below). Out-of-domain check (`TestUDOutOfDomain`, UD test sentences, never seen in training; abstentions count as wrong): fr 99.5, es 98.7, de 97.7, it 99.6, pt 97.9, ru 100, ja 98.7, zh 99.8, ar 100, ca 98.8, uk 94.2, ko 99.9, en 88.7. English is the weak one: EWT is web text (headings, emails, names), 188 of 2077 abstain and the rest go to de/it/fr; before this step it scored 86.2. Held-out Tatoeba: all original languages unchanged within 0.3 points, except ru 6-12 characters (100 to 95.0) and 13-20 (100 to 98.7), caused by Ukrainian; ca 93.4 overall (Catalan Tatoeba is small; test bar is 90%), uk 99.3, ko 97.4 (errors are 1-5 character texts).
+
+Galician: with `gl` in (Tatoeba plus UD, about 10k sentences) held-out accuracy was 64% on Tatoeba and 74% on UD, mostly mistaken for es/pt, and es lost 0.1 points; dropped. Simplified versus traditional Chinese stays one class (`zh`), as both use the same models and scripts. Not done: Wikipedia text (large downloads; UD gave the out-of-domain test instead), and `docs/settings.md` accuracy ranges are rounded.
+
+Language-id plan complete except the optional removal of `model.bin` (the naive Bayes fallback, 288 KB).
+
+Naive Bayes removed 2026-11-07: `model.bin`, its loader and the `-format` trainer flag are gone; `linear.bin` is the only model (trainer defaults now match the shipped settings). Earlier numbers in this plan that mention `model.bin` describe the baseline.
