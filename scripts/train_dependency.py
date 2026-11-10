@@ -19,6 +19,10 @@ Needs a GPU and diaparser (pip install --no-deps diaparser nltk "stanza==1.10.1"
 replace "tokenizer.max_len" by "tokenizer.model_max_length" in diaparser/parsers/*.py. Word embeddings
 are off and BERT is not projected, so the model matches what export_model.py can export. Output: WORKDIR/zh_ud.mbert (load with diaparser Parser.load, export with
 export_model.py --mode dependency --model WORKDIR/zh_ud.mbert); pt writes WORKDIR/pt_ud.bertimbau.
+
+    python train_dependency.py --scrub CHECKPOINT
+
+rewrites an already trained checkpoint the way training now leaves it (see scrub).
 """
 
 import argparse
@@ -170,7 +174,25 @@ def write_split(out, lang, split):
     print(f"{out}: {kept} sentences, {dropped} dropped")
 
 
+def scrub(path):
+    """scrub drops the pickled builtins open and getattr that make Hugging Face mark a checkpoint unsafe."""
+    import torch
+    from diaparser.utils.fn import numericalize
+
+    state = torch.load(path, weights_only=False)
+    t = state["transform"]
+    # Same body as CoNLL.get_arcs, but a module function pickles without getattr.
+    t.HEAD.fn = numericalize
+    # CoNLL.load falls back to open when reader is missing.
+    t.__dict__.pop("reader", None)
+    torch.save(state, path)
+
+
 def main():
+    if sys.argv[1:2] == ["--scrub"]:
+        for path in sys.argv[2:]:
+            scrub(path)
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("workdir")
     ap.add_argument("--lang", default="zh", choices=sorted(LANGS))
@@ -199,6 +221,7 @@ def main():
             "--train", f"{w}/{code}-train.conllu", "--dev", f"{w}/{code}-dev.conllu", "--test", f"{w}/{code}-test.conllu",
         ]
     )
+    scrub(os.path.join(w, lang["name"]))
 
 
 if __name__ == "__main__":
